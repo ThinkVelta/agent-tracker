@@ -32,5 +32,6 @@ Package.resolved
 .vscode/
 .idea/
 
-# Claude Code (local settings only)
+# Claude Code (local settings and worktrees only)
 .claude/settings.local.json
+.claude/worktrees/
