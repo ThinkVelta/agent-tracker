@@ -89,31 +89,37 @@ struct MenuContentView: View {
         .help("Show only \"\(state.label)\" sessions")
     }
 
+    /// Deliberately NOT a ScrollView: content inside a ScrollView does not
+    /// reliably paint in a MenuBarExtra window (rows reserve space but render
+    /// blank once the session list updates while the popover is closed).
+    /// A plain VStack always paints; overflow is capped with a "+N more" hint
+    /// and the dot-chip filters narrow the list instead of scrolling.
+    private static let maxVisibleRows = 14
+
     private var sessionList: some View {
-        ScrollView {
-            // Eager VStack on purpose: LazyVStack fails to lay out inside a
-            // MenuBarExtra window when content changes while it is closed
-            // (rows render zero-height), and laziness buys nothing at this
-            // scale anyway.
-            VStack(spacing: 1) {
-                if filteredSessions.isEmpty, let filter {
-                    Text("No \"\(filter.label)\" sessions")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 12)
-                } else {
-                    ForEach(filteredSessions) { session in
-                        SessionRow(session: session) {
-                            TerminalFocuser.focus(session)
-                            store.acknowledge(session)
-                        }
+        VStack(spacing: 1) {
+            if filteredSessions.isEmpty, let filter {
+                Text("No \"\(filter.label)\" sessions")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(filteredSessions.prefix(Self.maxVisibleRows)) { session in
+                    SessionRow(session: session) {
+                        TerminalFocuser.focus(session)
+                        store.acknowledge(session)
                     }
                 }
+                if filteredSessions.count > Self.maxVisibleRows {
+                    Text("+\(filteredSessions.count - Self.maxVisibleRows) more — use the dot filters to narrow down")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
+                }
             }
-            .padding(.vertical, 4)
-            .padding(.horizontal, 4)
         }
-        .frame(maxHeight: 420)
+        .padding(.vertical, 4)
+        .padding(.horizontal, 4)
     }
 
     private var emptyState: some View {

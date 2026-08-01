@@ -122,10 +122,27 @@ final class CodexScanWorker: @unchecked Sendable {
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory),
               isDirectory.boolValue else { return }
         started = true
+        let startedAt = Date()
+        // Liveness FIRST: lsof tells us which rollouts are actually held open
+        // (live sessions, any day-directory), so the day scan afterwards only
+        // has to cover just-created files — not bootstrap-and-discard hundreds
+        // of dead rollouts from a busy day.
+        refreshLivenessLocked()
+        debugLog("first liveness done: \(trackers.count) tracker(s), \(holders.count) held, after \(Self.elapsed(since: startedAt))")
         scanDayDirectoriesLocked()
-        refreshLivenessLocked() // also bootstraps lsof-held files (multi-day sessions)
+        debugLog("day scan done: \(trackers.count) tracker(s) after \(Self.elapsed(since: startedAt))")
         startStreamLocked()
         publishLocked()
+    }
+
+    private static func elapsed(since date: Date) -> String {
+        String(format: "%.2fs", Date().timeIntervalSince(date))
+    }
+
+    private func debugLog(_ message: String) {
+        #if DEBUG
+        print("[codex-scan] \(message)")
+        #endif
     }
 
     private func stopLocked() {
@@ -194,8 +211,12 @@ final class CodexScanWorker: @unchecked Sendable {
 
     // MARK: - Scanning and incremental reads (on queue)
 
-    /// Initial scan: today's and yesterday's day-directories. Multi-day live
-    /// sessions are picked up via lsof-held files in refreshLivenessLocked().
+    /// Scans today's and yesterday's day-directories for rollouts worth
+    /// tracking. Only RECENTLY MODIFIED files are bootstrapped here — they
+    /// cover the create→open race before lsof sees a new session. Everything
+    /// older is either held open (bootstrapped via refreshLivenessLocked) or
+    /// dead (would be bootstrapped then immediately pruned; a busy day leaves
+    /// hundreds of those, and parsing them cost ~8s of startup).
     private func scanDayDirectoriesLocked() {
         let calendar = Calendar.current
         let now = Date()
@@ -207,11 +228,16 @@ final class CodexScanWorker: @unchecked Sendable {
                 .appendingPathComponent(String(format: "%02d", components.month ?? 0))
                 .appendingPathComponent(String(format: "%02d", components.day ?? 0))
             guard let files = try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil
+                at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
             ) else { continue }
             for file in files where file.pathExtension == "jsonl" {
                 let path = file.standardizedFileURL.path
-                if trackers[path] == nil { bootstrapLocked(path: path) }
+                guard trackers[path] == nil, holders[path] == nil else { continue }
+                let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? .distantPast
+                if now.timeIntervalSince(mtime) <= Self.newFileGrace {
+                    bootstrapLocked(path: path)
+                }
             }
         }
     }
@@ -266,16 +292,27 @@ final class CodexScanWorker: @unchecked Sendable {
     private func refreshLivenessLocked() {
         // lsof matches process names by prefix, so "-c codex" covers both the
         // "codex" vendor binary and "codex-code-mode-host".
-        if let output = Self.runProcess("/usr/sbin/lsof", ["-c", "codex", "-F", "pn"], timeout: 5) {
+        // An lsof pass is authoritative ONLY when it reported at least one
+        // process record: lsof exits nonzero (with empty or partial output)
+        // for transient reasons, and trusting an empty pass would wrongly
+        // prune every live session at once.
+        if let output = Self.runProcess("/usr/sbin/lsof", ["-c", "codex", "-F", "pn"], timeout: 5),
+           output.hasPrefix("p") || output.contains("\np") {
             let previouslyHeld = Set(holders.keys)
             holders = Self.parseLsofOutput(output, rootPath: root.path)
+            debugLog("lsof pass: \(holders.count) held rollout(s)")
             // Held files we aren't tracking yet: live sessions whose rollout
             // lives in an older day-directory.
             for path in holders.keys where trackers[path] == nil {
                 bootstrapLocked(path: path)
             }
+            let pruneCountBefore = trackers.count
             pruneDeadLocked(previouslyHeld: previouslyHeld)
+            if trackers.count != pruneCountBefore {
+                debugLog("pruned \(pruneCountBefore - trackers.count) dead tracker(s)")
+            }
         } else {
+            debugLog("lsof pass unusable — degraded mode (pgrep gate)")
             // lsof errored or timed out. Degraded mode: pgrep tells us whether
             // ANY codex process is alive — if none, drop all codex sessions;
             // otherwise keep the current set unchanged (possibly stale until

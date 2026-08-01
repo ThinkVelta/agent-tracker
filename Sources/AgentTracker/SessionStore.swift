@@ -146,7 +146,7 @@ final class SessionStore: ObservableObject {
         }
         #if DEBUG
         let counts = counts
-        print("[store] \(sessions.count) sessions — \(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle: \(sessions.map { "\($0.projectName)(\($0.state.rawValue))" }.joined(separator: ", "))")
+        print("[store] \(sessions.count) sessions — \(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle: \(sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }.joined(separator: ", "))")
         #endif
     }
 
