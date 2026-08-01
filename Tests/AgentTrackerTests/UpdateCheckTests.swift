@@ -21,11 +21,18 @@ final class UpdateCheckTests {
         #expect(!UpdateCheck.isNewer("v0.1.0", than: "v0.1.0"))
     }
 
-    /// A malformed tag must never claim to be newer than a real version, and
-    /// a dev build (non-numeric "current") must always be offered releases.
+    /// A malformed tag must never claim to be newer than a real version —
+    /// including a *partially* numeric one, whose bad segment must not coerce
+    /// to 0 and sneak past. A dev build (non-numeric "current") must always
+    /// be offered releases.
     @Test func malformedInputStaysConservative() {
         #expect(!UpdateCheck.isNewer("banana", than: "0.1.0"))
+        #expect(!UpdateCheck.isNewer("0.1.alpha.1", than: "0.1.0"))
+        #expect(!UpdateCheck.isNewer("0.2-rc1", than: "0.1.0"))
+        #expect(!UpdateCheck.isNewer("", than: "0.1.0"))
         #expect(UpdateCheck.isNewer("0.0.1", than: "dev"))
+        #expect(UpdateCheck.numericVersion("0.1.alpha.1") == nil)
+        #expect(UpdateCheck.numericVersion("v1.2.3") == [1, 2, 3])
     }
 
     @Test func releasePayloadParses() {

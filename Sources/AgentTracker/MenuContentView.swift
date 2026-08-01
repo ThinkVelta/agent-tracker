@@ -38,7 +38,8 @@ struct MenuContentView: View {
         let narrowing = store.selectedFilter != nil || !query.isEmpty
         return SessionSections.build(
             from: filteredSessions,
-            overrides: sectionOverrides,
+            overrides: SessionSections.overridesForNarrowing(
+                sectionOverrides, narrowing: narrowing),
             autoCollapseIdle: !narrowing && folding != .never,
             idleAutoCollapseThreshold: {
                 switch folding {

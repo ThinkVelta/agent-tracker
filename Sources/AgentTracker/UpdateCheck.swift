@@ -19,17 +19,27 @@ enum UpdateCheck {
         case failed(String)
     }
 
-    /// Numeric dotted-version comparison; a tag's leading "v" is cosmetic.
-    /// Non-numeric segments compare as 0 — a malformed tag must never claim
-    /// to be newer than a real version.
-    static func isNewer(_ candidate: String, than current: String) -> Bool {
-        func parts(_ version: String) -> [Int] {
-            version.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-                .split(separator: ".")
-                .map { Int($0) ?? 0 }
+    /// Strictly numeric dotted version; a leading "v" is cosmetic. nil for
+    /// anything else — coercing bad segments to 0 would let a malformed tag
+    /// like "0.1.alpha.1" read as [0,1,0,1] and outrank a real 0.1.0.
+    static func numericVersion(_ raw: String) -> [Int]? {
+        let segments = raw.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+            .split(separator: ".")
+        guard !segments.isEmpty else { return nil }
+        var values: [Int] = []
+        for segment in segments {
+            guard let value = Int(segment) else { return nil }
+            values.append(value)
         }
-        let lhs = parts(candidate)
-        let rhs = parts(current)
+        return values
+    }
+
+    /// Asymmetric on malformed input, deliberately: a malformed *tag* must
+    /// never claim to be newer than a real version, while a non-numeric
+    /// *current* version (a "dev" build) should always be offered releases.
+    static func isNewer(_ candidate: String, than current: String) -> Bool {
+        guard let lhs = numericVersion(candidate) else { return false }
+        guard let rhs = numericVersion(current) else { return true }
         for index in 0..<max(lhs.count, rhs.count) {
             let left = index < lhs.count ? lhs[index] : 0
             let right = index < rhs.count ? rhs[index] : 0
