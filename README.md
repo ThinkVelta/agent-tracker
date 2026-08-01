@@ -70,25 +70,30 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
 Requirements: macOS 14+, Swift toolchain (Xcode or CLT), Python 3.
 
 ```sh
-# 1. Onboard — pick your agent CLIs in an interactive checkbox picker,
-#    see exactly what will change, confirm. Idempotent, configs backed up.
-./install.sh
-#    (non-interactive: ./install.sh --agents claude,codex --yes)
+# Build AgentTracker.app and install it into /Applications
+make install
 
-# 2. Build and run the menu bar app
-swift run AgentTracker
-
-# 3. Start a new agent session — it appears in the menu bar
+# Launch it — the first-run window walks you through the rest:
+# granting Accessibility, connecting your agent CLIs, start at login.
+open /Applications/AgentTracker.app
 ```
 
-Prefer running the scripts manually? The onboarding just orchestrates them:
-`./integrations/install-claude-code.sh` (Claude Code hooks) and
-`./integrations/install-codex.sh` (Codex notify handler). To remove everything
-again, run `./integrations/uninstall.sh` — it strips only the agent-tracker
-entries from your configs (add `--purge` to also delete `~/.agent-tracker`).
+The app is assembled straight from the SwiftPM build (`make app` if you only
+want `dist/AgentTracker.app`), ad-hoc signed by default — set
+`CODESIGN_IDENTITY` to a Developer ID for a distributable build. Installing as
+a bundle is what makes the Accessibility grant stick to the app (running via
+`swift run` attributes it to your terminal) and enables start-at-login.
 
-On the first click-to-focus, macOS will ask you to grant the app Accessibility
-permission (System Settings → Privacy & Security → Accessibility).
+For development, `swift run AgentTracker` still works exactly as before.
+
+Prefer the command line for the agent hookup? `./install.sh` is the same
+onboarding as a checkbox picker (non-interactive:
+`./install.sh --agents claude,codex --yes`), orchestrating
+`./integrations/install-claude-code.sh` and `./integrations/install-codex.sh`.
+Everything is idempotent and configs are backed up before editing. To remove it
+all again — hooks, the installed app, its preferences — run
+`./integrations/uninstall.sh` (add `--purge` to also delete
+`~/.agent-tracker`).
 
 ### State mapping
 
@@ -117,7 +122,9 @@ exiting (`lsof`-based liveness check on the rollout file).
   project-name tab titles).
 - Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
   kitty are wired up but untested.
-- The app runs via `swift run` for now — no .app bundle / login item yet.
+- The default `make app` build is ad-hoc signed: Accessibility sticks to that
+  exact binary, so rebuilding and reinstalling the app re-prompts for the
+  grant. A `CODESIGN_IDENTITY` (Developer ID) build survives updates.
 
 ## Roadmap
 
@@ -126,7 +133,7 @@ exiting (`lsof`-based liveness check on the rollout file).
       red states)
 - [ ] LLM-generated one-line summaries of where each session is at
 - [ ] More providers (Kimi, GLM, …) — the state file schema is provider-agnostic
-- [ ] Onboarding: install as .app + login item
+- [x] Onboarding: install as .app + login item
 
 ## License
 

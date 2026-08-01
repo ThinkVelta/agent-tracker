@@ -1,4 +1,4 @@
-.PHONY: help prepare lint format build test run release
+.PHONY: help prepare lint format build test run release app install
 
 # pre-commit runs through `uvx`, not through a project venv. This repo has no
 # Python package of its own: there is no pyproject.toml and nothing to
@@ -61,3 +61,11 @@ run: ## Build and launch the menu bar app
 release: ## Build the app (release configuration)
 	$(CHECK_PACKAGE)
 	swift build -c release
+
+app: ## Assemble dist/AgentTracker.app (release build, ad-hoc signed; CODESIGN_IDENTITY overrides)
+	$(CHECK_PACKAGE)
+	scripts/make-app.sh
+
+install: ## Build the .app and install it into /Applications (falls back to ~/Applications)
+	$(CHECK_PACKAGE)
+	scripts/make-app.sh --install
