@@ -30,6 +30,24 @@ enum TerminalFocuser {
         let score: Int
     }
 
+    /// A window-title probe derived from a session, ordered by weight.
+    struct TitleCandidate {
+        let text: String
+        let weight: Int
+        /// Exact-title candidates must match the whole (normalized) window
+        /// title: a substring hit would confidently raise a sibling session
+        /// whose name shares a prefix (e.g. "api refactor" matching the
+        /// "api refactor tests" window) — the exact bug this candidate exists
+        /// to prevent. Path/summary fallbacks keep substring matching.
+        let exactOnly: Bool
+
+        init(_ text: String, weight: Int, exactOnly: Bool = false) {
+            self.text = text
+            self.weight = weight
+            self.exactOnly = exactOnly
+        }
+    }
+
     private static let bundleIdentifiers: [String: String] = [
         "ghostty": "com.mitchellh.ghostty",
         "iterm.app": "com.googlecode.iterm2",
@@ -44,7 +62,7 @@ enum TerminalFocuser {
     }
 
     @discardableResult
-    static func focus(_ session: AgentSession) -> Outcome {
+    static func focus(_ session: AgentSession, exactTitle: String? = nil) -> Outcome {
         log(
             "focusing \(session.providerDisplayName) session \(session.sessionId) "
                 + "(cwd: \(session.cwd ?? "?"))"
@@ -71,8 +89,10 @@ enum TerminalFocuser {
                 + "(\(app.bundleIdentifier ?? "?"), pid \(app.processIdentifier))"
         )
 
-        let candidates = titleCandidates(for: session)
-        let described = candidates.map { "\"\($0.text)\" (w\($0.weight))" }
+        let candidates = titleCandidates(for: session, exactTitle: exactTitle)
+        let described = candidates.map {
+            "\"\($0.text)\" (w\($0.weight)\($0.exactOnly ? ", exact" : ""))"
+        }
         log("title candidates: \(described.joined(separator: ", "))")
 
         if let outcome = pressWindowMenuItem(in: app, candidates: candidates) {
@@ -93,7 +113,7 @@ enum TerminalFocuser {
     /// pressing an entry performs the exact jump the user would.
     private static func pressWindowMenuItem(
         in app: NSRunningApplication,
-        candidates: [(text: String, weight: Int)]
+        candidates: [TitleCandidate]
     ) -> Outcome? {
         guard let menu = windowMenu(of: app), let items = children(of: menu) else { return nil }
         log("\(items.count) Window-menu item(s):")
@@ -113,7 +133,7 @@ enum TerminalFocuser {
     /// current Space).
     private static func raiseAXWindow(
         in app: NSRunningApplication,
-        candidates: [(text: String, weight: Int)]
+        candidates: [TitleCandidate]
     ) -> Outcome? {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         guard let windows = copyAttribute(axApp, kAXWindowsAttribute as String) as? [AXUIElement]
@@ -155,7 +175,7 @@ enum TerminalFocuser {
 
     private static func bestTitleMatch(
         in elements: [AXUIElement],
-        candidates: [(text: String, weight: Int)],
+        candidates: [TitleCandidate],
         logZeroScores: Bool
     ) -> AXMatch? {
         var best: AXMatch?
@@ -210,30 +230,37 @@ enum TerminalFocuser {
         return nil
     }
 
-    /// Ordered by reliability: the Claude task summary is near-unique per session,
-    /// path fragments can collide across sessions in the same repo.
-    private static func titleCandidates(
-        for session: AgentSession
-    ) -> [(text: String, weight: Int)] {
-        var candidates: [(String, Int)] = []
+    /// Ordered by reliability: the live window title (statusline-sourced) is
+    /// exact per session, the Claude task summary near-unique, and path
+    /// fragments can collide across sessions in the same repo. Internal for
+    /// tests.
+    static func titleCandidates(
+        for session: AgentSession, exactTitle: String? = nil
+    ) -> [TitleCandidate] {
+        var candidates: [TitleCandidate] = []
+        if let exactTitle, !exactTitle.isEmpty {
+            candidates.append(TitleCandidate(exactTitle, weight: 150, exactOnly: true))
+        }
         if let summary = TranscriptTitle.latestSummary(atPath: session.transcriptPath) {
-            candidates.append((summary, 100))
+            candidates.append(TitleCandidate(summary, weight: 100))
         }
         if let cwd = session.cwd {
-            candidates.append((cwd, 60))  // full path — some terminals title with it
+            // Full path — some terminals title with it.
+            candidates.append(TitleCandidate(cwd, weight: 60))
         }
         if let context = session.pathContext {
-            candidates.append((context, 50))
+            candidates.append(TitleCandidate(context, weight: 50))
         }
         if session.projectName != "Session" {
-            candidates.append((session.projectName, 40))
+            candidates.append(TitleCandidate(session.projectName, weight: 40))
         }
         return candidates
     }
 
-    private static func matchScore(
+    /// Internal for tests.
+    static func matchScore(
         windowTitle: String,
-        candidates: [(text: String, weight: Int)]
+        candidates: [TitleCandidate]
     ) -> Int {
         let title = normalize(windowTitle)
         guard !title.isEmpty else { return 0 }
@@ -243,7 +270,7 @@ enum TerminalFocuser {
             guard !text.isEmpty else { continue }
             if title == text {
                 score = max(score, candidate.weight * 2)
-            } else if title.contains(text) || text.contains(title) {
+            } else if !candidate.exactOnly, title.contains(text) || text.contains(title) {
                 score = max(score, candidate.weight)
             }
         }
