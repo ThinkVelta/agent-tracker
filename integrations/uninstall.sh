@@ -98,6 +98,7 @@ if [ -f "$CONFIG" ] && grep -q "agent-tracker-hook" "$CONFIG"; then
   echo "Backed up $CONFIG to $CONFIG.agent-tracker-uninstall-backup"
   if ! python3 - << 'PYEOF'; then
 import os
+import re
 import sys
 
 config_path = os.path.expanduser("~/.codex/config.toml")
@@ -116,7 +117,8 @@ removed = 0
 i = 0
 while i < len(lines):
     line = lines[i]
-    if line.lstrip().startswith("notify") and "=" in line:
+    # Exact `notify` key only — never `notifications`, `notify_channel`, ….
+    if re.match(r"[ \t]*notify[ \t]*=", line):
         block = [line]
         depth = line.count("[") - line.count("]")
         j = i + 1
