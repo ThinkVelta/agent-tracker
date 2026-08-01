@@ -29,7 +29,9 @@ struct MenuContentView: View {
         guard !query.isEmpty else { return sessions }
         return sessions.filter { session in
             session.displayName.localizedCaseInsensitiveContains(query)
-                || session.projectName.localizedCaseInsensitiveContains(query)
+                // Not displayed, but still findable: this is the name Claude
+                // Code shows in its own terminal, so a user may well type it.
+                || (session.registryName?.localizedCaseInsensitiveContains(query) ?? false)
                 || session.providerDisplayName.localizedCaseInsensitiveContains(query)
                 || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
                 || (session.cwd?.localizedCaseInsensitiveContains(query) ?? false)

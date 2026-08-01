@@ -78,15 +78,20 @@ struct AgentSession: Codable, Identifiable, Equatable {
         return (cwd as NSString).lastPathComponent
     }
 
-    /// What the row is titled. Prefers the name Claude Code gave the session,
-    /// because that is what the user sees in their own terminal and how they
-    /// think about it — a row reading "planner-e8" is recognizable where
-    /// "ruben-pln-388-389-time-entries-registry-and-contracts-5af9e63b" is not.
-    /// Falls back to the directory name when no registry entry exists (Codex
-    /// sessions, or Claude versions that don't keep a registry).
+    /// What the row is titled: the working directory, for every provider.
+    ///
+    /// This deliberately ignores `registryName`. Only Claude Code publishes
+    /// one, so preferring it made the list inconsistent — Claude rows read
+    /// "agent-tracker-13" while Codex rows beside them read "agent-tracker" —
+    /// and the suffix Claude appends is disambiguation noise rather than
+    /// information the user recognizes. One rule for both providers reads
+    /// better than a better rule for one of them.
+    ///
+    /// The registry name stays searchable (it is what Claude shows in its own
+    /// terminal), and long worktree directories truncate in the middle with
+    /// the full path on hover.
     var displayName: String {
-        if let registryName, !registryName.isEmpty { return registryName }
-        return projectName
+        projectName
     }
 
     /// Directories any of this session's terminal windows might report, most

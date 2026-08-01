@@ -25,10 +25,15 @@ final class RegistryEnrichmentTests {
             provider: provider, sessionId: "s1", cwd: cwd, state: state, stateChangedAt: changedAt)
     }
 
-    @Test func registryNameBecomesTheRowTitle() {
+    /// The registry name is joined in and stays searchable, but the row title
+    /// is the directory for EVERY provider — only Claude publishes a registry
+    /// name, and preferring it made Claude and Codex rows read differently.
+    @Test func registryNameIsJoinedButDoesNotTitleTheRow() {
         let enriched = RegistryEnrichment.apply(to: session(), entry: entry())
         #expect(enriched.registryName == "planner-e8")
-        #expect(enriched.displayName == "planner-e8")
+        #expect(enriched.displayName == "pln-388")
+        // Identical with or without a registry entry — that is the point.
+        #expect(enriched.displayName == session().displayName)
     }
 
     /// Without a registry entry nothing changes — Codex sessions and older
