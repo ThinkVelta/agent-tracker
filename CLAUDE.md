@@ -23,7 +23,10 @@ rollout files. See README for the full picture.
   - `CodexSessionScanner.swift` — watches `~/.codex/sessions` rollouts
     read-only (`task_started`/`task_complete`/`turn_aborted` events);
     lsof-based liveness; subagent threads excluded
-  - `StatusIconRenderer.swift` — draws the colored 3-dot menu bar NSImage
+  - `StatusIconRenderer.swift` — draws the colored 3-dot menu bar NSImage and
+    exposes per-dot hit regions for click→filter mapping
+  - `TitleDirectory.swift` — session_id → live window title map, accumulated
+    from `~/.claude/statusline-last.json` (exact window matching)
   - `TerminalFocuser.swift` — AX-based window matching + raise
   - `MenuContentView.swift` — dropdown UI
 - `integrations/` — hook script + onboarding CLI (Python, stdlib only) +
@@ -40,7 +43,8 @@ rollout files. See README for the full picture.
   for automation; `integrations/uninstall.sh` reverses it)
 - Test hook script manually:
   `AGENT_TRACKER_DIR=/tmp/at-test sh -c 'echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"x\"}" | python3 integrations/agent-tracker-hook.py claude'`
-  (`AGENT_TRACKER_DIR` overrides `~/.agent-tracker` for both app and hook)
+  (`AGENT_TRACKER_DIR` overrides `~/.agent-tracker` for both app and hook;
+  `AGENT_TRACKER_CLAUDE_DIR` overrides `~/.claude` for the title directory)
 
 ## Conventions
 

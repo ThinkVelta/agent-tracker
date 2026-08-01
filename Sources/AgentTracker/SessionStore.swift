@@ -8,11 +8,34 @@ struct SessionCounts: Equatable {
     var idle = 0
 
     var total: Int { needsYou + running + idle }
+
+    init() {}
+
+    init(of sessions: [AgentSession]) {
+        for session in sessions {
+            switch session.state {
+            case .needsYou: needsYou += 1
+            case .running: running += 1
+            case .idle: idle += 1
+            }
+        }
+    }
+
+    func count(for state: SessionState) -> Int {
+        switch state {
+        case .needsYou: return needsYou
+        case .running: return running
+        case .idle: return idle
+        }
+    }
 }
 
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
+    /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
+    /// the menu bar and by the in-popover chips, so the two stay in sync.
+    @Published var selectedFilter: SessionState?
 
     static let sessionsDirectory: URL = {
         let base: URL
@@ -30,6 +53,7 @@ final class SessionStore: ObservableObject {
     private var watcher: DirectoryWatcher?
     private var refreshTimer: Timer?
     private var codexScanner: CodexSessionScanner?
+    private let titleDirectory: TitleDirectory
     private var scannerSubscription: AnyCancellable?
     /// Sessions loaded from ~/.agent-tracker state files (hook-written).
     private var fileSessions: [AgentSession] = []
@@ -43,19 +67,18 @@ final class SessionStore: ObservableObject {
         return decoder
     }()
 
-    var counts: SessionCounts {
-        var counts = SessionCounts()
-        for session in sessions {
-            switch session.state {
-            case .needsYou: counts.needsYou += 1
-            case .running: counts.running += 1
-            case .idle: counts.idle += 1
-            }
-        }
-        return counts
+    var counts: SessionCounts { SessionCounts(of: sessions) }
+
+    /// The session's live terminal window title, when known — the top-weight
+    /// candidate for window matching. Claude-only: Codex tab titles are bare
+    /// project names that already exact-match via the path candidates.
+    func exactWindowTitle(for session: AgentSession) -> String? {
+        guard session.provider == "claude-code" else { return nil }
+        return titleDirectory.title(for: session.sessionId)
     }
 
     init() {
+        titleDirectory = TitleDirectory()
         try? FileManager.default.createDirectory(
             at: Self.sessionsDirectory, withIntermediateDirectories: true
         )
@@ -82,6 +105,11 @@ final class SessionStore: ObservableObject {
     }
 
     func reload() {
+        // Piggybacked on every reload tick: recovers the title watcher when
+        // ~/.claude appears late or is recreated, and absorbs payloads from
+        // statusline scripts that rewrite the file in place (no rename, so no
+        // directory event).
+        titleDirectory.refresh()
         let fileManager = FileManager.default
         var loaded: [AgentSession] = []
         if let files = try? fileManager.contentsOfDirectory(
@@ -180,7 +208,7 @@ final class SessionStore: ObservableObject {
                 "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
             if summary != lastLoggedSummary {
                 lastLoggedSummary = summary
-                print("[store] \(summary)")
+                print("[store] \(DebugLog.timestamp()) \(summary)")
             }
         #endif
     }
