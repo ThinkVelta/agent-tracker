@@ -5,6 +5,11 @@ struct MenuContentView: View {
     /// Closes the hosting panel; row clicks invoke it after focusing the
     /// terminal so the panel doesn't float over the window it just raised.
     var dismiss: () -> Void = {}
+    /// Fired whenever the content's rendered size changes — search narrowing,
+    /// section collapse, anything. Geometry-driven rather than enumerating
+    /// height-affecting state, so no future state can be forgotten. The
+    /// hosting panel re-anchors itself to the menu bar on this signal.
+    var onSizeChange: () -> Void = {}
 
     @ObservedObject private var preferences = Preferences.shared
     @Environment(\.openSettings) private var openSettings
@@ -71,6 +76,19 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: Theme.Metrics.popoverWidth)
+        .background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: ContentSizeKey.self, value: proxy.size)
+            }
+        )
+        .onPreferenceChange(ContentSizeKey.self) { _ in onSizeChange() }
+    }
+
+    private struct ContentSizeKey: PreferenceKey {
+        static let defaultValue: CGSize = .zero
+        static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+            value = nextValue()
+        }
     }
 
     // MARK: - Chrome
@@ -352,6 +370,10 @@ struct MenuContentView: View {
         }
         if response == .alertFirstButtonReturn {
             NSApp.terminate(nil)
+        } else {
+            // The alert needed activation; on Cancel, hand it back or the
+            // user is stranded on an active accessory app with no key window.
+            NSApp.deactivate()
         }
     }
 

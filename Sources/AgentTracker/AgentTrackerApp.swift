@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var hitRegions: [StatusIconRenderer.HitRegion] = []
     private var storeSubscription: AnyCancellable?
     private var dismissMonitor: Any?
+    private var workspaceObserver: NSObjectProtocol?
     private var focusObserver: TerminalFocusObserver?
     private var onboardingWindow: NSWindow?
 
@@ -137,7 +138,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func makePanel(for store: SessionStore) -> NSPanel {
         let host = NSHostingController(
-            rootView: MenuContentView(store: store) { [weak self] in self?.closePanel() }
+            rootView: MenuContentView(
+                store: store,
+                dismiss: { [weak self] in self?.closePanel() },
+                onSizeChange: { [weak self] in
+                    guard let self, self.panel?.isVisible == true,
+                        let button = self.statusItem?.button
+                    else { return }
+                    self.layoutPanel(relativeTo: button)
+                }
+            )
         )
         host.sizingOptions = .preferredContentSize
         panelHost = host
@@ -284,12 +294,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.closePanel() }
         }
+        // The click monitor cannot see keyboard-only context switches, and a
+        // nonactivating panel means didResignActive never fires (the app was
+        // never active) — so a Cmd+Tab would strand the panel on screen.
+        // Another app becoming active is the close signal.
+        workspaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let activated =
+                notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication
+            guard activated?.processIdentifier != ProcessInfo.processInfo.processIdentifier
+            else { return }
+            Task { @MainActor in self?.closePanel() }
+        }
     }
 
     private func closePanel() {
         if let dismissMonitor {
             NSEvent.removeMonitor(dismissMonitor)
             self.dismissMonitor = nil
+        }
+        if let workspaceObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(workspaceObserver)
+            self.workspaceObserver = nil
         }
         guard let panel, panel.isVisible else { return }
         panel.orderOut(nil)
