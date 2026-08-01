@@ -38,16 +38,38 @@ enum AXAccess {
             fromDocumentAttribute: attribute(element, kAXDocumentAttribute as String) as? String)
     }
 
+    /// Why a Window-menu lookup came back empty. Reported rather than folded
+    /// into a nil so `[focus]` traces stay diagnosable from a single paste —
+    /// "no menu bar" and "no Window menu" have very different causes.
+    enum WindowMenuLookup {
+        case items([AXUIElement])
+        case noMenuBar
+        case noWindowMenu
+        case emptyMenu
+
+        var describedFailure: String? {
+            switch self {
+            case .items: return nil
+            case .noMenuBar: return "no AX menu bar exposed"
+            case .noWindowMenu:
+                return "no menu titled \"Window\" found (localized menu bar?)"
+            case .emptyMenu: return "the Window menu listed no items"
+            }
+        }
+    }
+
     /// The app's "Window" menu. Matching the English title is a documented
     /// limitation; localized menu bars fall back to the AX window list.
-    static func windowMenuItems(of app: NSRunningApplication) -> [AXUIElement]? {
+    static func windowMenuItems(of app: NSRunningApplication) -> WindowMenuLookup {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         guard let menuBar = element(attribute(axApp, kAXMenuBarAttribute as String)),
-            let topItems = children(of: menuBar),
-            let windowItem = topItems.first(where: { title(of: $0) == "Window" }),
+            let topItems = children(of: menuBar)
+        else { return .noMenuBar }
+        guard let windowItem = topItems.first(where: { title(of: $0) == "Window" }),
             let menu = children(of: windowItem)?.first
-        else { return nil }
-        return children(of: menu)
+        else { return .noWindowMenu }
+        guard let items = children(of: menu), !items.isEmpty else { return .emptyMenu }
+        return .items(items)
     }
 
     static func raise(_ window: AXUIElement) {

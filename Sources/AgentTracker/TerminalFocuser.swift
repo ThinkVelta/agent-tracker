@@ -192,7 +192,13 @@ enum TerminalFocuser {
     ) -> Outcome? {
         let candidates = exactOnly ? candidates.filter(\.exactOnly) : candidates
         guard !candidates.isEmpty else { return nil }
-        guard let items = AXAccess.windowMenuItems(of: app) else { return nil }
+        let lookup = AXAccess.windowMenuItems(of: app)
+        guard case .items(let items) = lookup else {
+            log(
+                "\(lookup.describedFailure ?? "Window menu unavailable") — trying the AX window list"
+            )
+            return nil
+        }
         log("\(items.count) Window-menu item(s)\(exactOnly ? " (session name only)" : ""):")
         guard
             let hit = bestTitleMatch(
@@ -395,6 +401,13 @@ enum TerminalFocuser {
     /// spinner is the only thing separating the one still working from the one
     /// waiting at its prompt (user-reported: clicking a needs-you row raised
     /// the sibling that was still running).
+    ///
+    /// Deliberately provider-agnostic. Review suggested gating this to Codex,
+    /// but both tracked CLIs paint braille frames while a turn is in flight —
+    /// verified against live windows, e.g. a running `claude-code` session
+    /// titled "⠂ Generate alternative LinkedIn post options". Gating it would
+    /// disable a working signal for the more common provider. Add a gate only
+    /// for a provider actually observed not to spin.
     static func activityAgrees(windowTitle: String, state: SessionState) -> Bool {
         showsBusySpinner(windowTitle) == (state == .running)
     }

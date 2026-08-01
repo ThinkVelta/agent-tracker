@@ -187,6 +187,26 @@ final class TerminalFocuserTests {
         #expect(!TerminalFocuser.showsBusySpinner(""))
     }
 
+    /// Claude Code spins too — verified against a live window titled
+    /// "⠂ Generate alternative LinkedIn post options" belonging to a running
+    /// claude-code session. This locks in why the tie-break is not gated to
+    /// Codex: gating it would blind the more common provider.
+    @Test func claudeSessionsAlsoSpinWhileWorking() {
+        let claudeBusy = "⠂ Generate alternative LinkedIn post options"
+        #expect(TerminalFocuser.showsBusySpinner(claudeBusy))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: claudeBusy, state: .running))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: claudeBusy, state: .needsYou))
+
+        // Two Claude sessions in one repo, one working and one waiting: the
+        // tie-break has to separate them exactly as it does for Codex.
+        let session = AgentSession(
+            provider: "claude-code", sessionId: "c1", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let ranking = WindowIdentity.rankTitles(
+            ["⠂ planner", "planner"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 1)
+    }
+
     @Test func activityAgreementFollowsSessionState() {
         #expect(TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .running))
         #expect(!TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .needsYou))
