@@ -16,6 +16,10 @@ final class CodexSessionScanner: ObservableObject {
     /// of groups that actually produced a session are listed, so a notify
     /// fallback row is never deduped without a replacement.
     @Published private(set) var threadIdToSession: [String: String] = [:]
+    /// Every thread id ever identified as a subagent (sticky — see
+    /// CodexSubagentLedger). SessionStore drops (and deletes) notify state
+    /// files for these: they are internal fan-out, never user-facing sessions.
+    @Published private(set) var subagentThreadIds: Set<String> = []
 
     static var defaultRootDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_CODEX_DIR"],
@@ -34,11 +38,12 @@ final class CodexSessionScanner: ObservableObject {
     init(rootDirectory: URL? = nil) {
         let worker = CodexScanWorker(root: rootDirectory ?? Self.defaultRootDirectory)
         self.worker = worker
-        worker.onUpdate = { [weak self] sessions, threadMap in
+        worker.onUpdate = { [weak self] sessions, threadMap, subagentIds in
             Task { @MainActor in
                 guard let self else { return }
                 if self.sessions != sessions { self.sessions = sessions }
                 if self.threadIdToSession != threadMap { self.threadIdToSession = threadMap }
+                if self.subagentThreadIds != subagentIds { self.subagentThreadIds = subagentIds }
             }
         }
         worker.start()
@@ -78,8 +83,10 @@ final class CodexScanWorker: @unchecked Sendable {
     /// rolloutPath -> pid of the codex process holding it open (last lsof pass).
     private var holders: [String: Int] = [:]
 
-    /// Called with fresh session rows + threadId→sessionId map after every change.
-    var onUpdate: (([AgentSession], [String: String]) -> Void)?
+    /// Called with fresh session rows + threadId→sessionId map + sticky
+    /// subagent thread ids after every change.
+    var onUpdate: (([AgentSession], [String: String], Set<String>) -> Void)?
+    private let subagentLedger = CodexSubagentLedger()
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -134,6 +141,10 @@ final class CodexScanWorker: @unchecked Sendable {
         scanDayDirectoriesLocked()
         debugLog(
             "day scan done: \(trackers.count) tracker(s) after \(Self.elapsed(since: startedAt))")
+        harvestHistoryLocked()
+        debugLog(
+            "history harvest done: \(subagentLedger.threadIds.count) subagent id(s) "
+                + "after \(Self.elapsed(since: startedAt))")
         startStreamLocked()
         publishLocked()
     }
@@ -223,16 +234,8 @@ final class CodexScanWorker: @unchecked Sendable {
     /// dead (would be bootstrapped then immediately pruned; a busy day leaves
     /// hundreds of those, and parsing them cost ~8s of startup).
     private func scanDayDirectoriesLocked() {
-        let calendar = Calendar.current
         let now = Date()
-        let days = [now, calendar.date(byAdding: .day, value: -1, to: now) ?? now]
-        for day in days {
-            let components = calendar.dateComponents([.year, .month, .day], from: day)
-            let directory =
-                root
-                .appendingPathComponent(String(format: "%04d", components.year ?? 0))
-                .appendingPathComponent(String(format: "%02d", components.month ?? 0))
-                .appendingPathComponent(String(format: "%02d", components.day ?? 0))
+        for directory in Self.dayDirectories(under: root, endingAt: now, count: 2) {
             guard
                 let files = try? FileManager.default.contentsOfDirectory(
                     at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
@@ -246,8 +249,80 @@ final class CodexScanWorker: @unchecked Sendable {
                     .contentModificationDate ?? .distantPast
                 if now.timeIntervalSince(mtime) <= Self.newFileGrace {
                     bootstrapLocked(path: path)
+                } else {
+                    // Dead rollout, never bootstrapped — but if it was a
+                    // subagent thread, its notify state file may outlive it.
+                    subagentLedger.harvest(path: path)
                 }
             }
+        }
+    }
+
+    /// One-time first-line harvest of subagent ids from day-directories older
+    /// than the two the regular scan covers: a notify state file survives as
+    /// long as its ROOT codex process, and root sessions can live for weeks —
+    /// after an app restart, their older subagents' phantom rows would
+    /// otherwise be unidentifiable. Harvest-only (no bootstrap), walking
+    /// however many day-directories exist newest-first under a work budget
+    /// (not a calendar window, which a long-lived root can always outlive);
+    /// the ledger memoizes per-path so this cannot re-read.
+    private static let historicalHarvestFileCap = 5000
+
+    private func harvestHistoryLocked() {
+        let recent = Set(Self.dayDirectories(under: root, endingAt: Date(), count: 2).map(\.path))
+        var remaining = Self.historicalHarvestFileCap
+        for directory in Self.existingDayDirectories(under: root)
+        where !recent.contains(directory.path) {
+            guard remaining > 0 else { break }
+            guard
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil)
+            else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                guard remaining > 0 else { break }
+                remaining -= 1
+                subagentLedger.harvest(path: file.standardizedFileURL.path)
+            }
+        }
+    }
+
+    /// Every `root/YYYY/MM/DD` directory that exists, newest first; non-numeric
+    /// entries are ignored. Internal for tests.
+    static func existingDayDirectories(under root: URL) -> [URL] {
+        func numericChildren(of url: URL) -> [URL] {
+            let children =
+                (try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil)) ?? []
+            return
+                children
+                .compactMap { child in Int(child.lastPathComponent).map { ($0, child) } }
+                .sorted { $0.0 > $1.0 }
+                .map(\.1)
+        }
+        var days: [URL] = []
+        for year in numericChildren(of: root) {
+            for month in numericChildren(of: year) {
+                days.append(contentsOf: numericChildren(of: month))
+            }
+        }
+        return days
+    }
+
+    /// The `root/YYYY/MM/DD` directories for `count` days, newest first.
+    /// Internal for tests.
+    static func dayDirectories(
+        under root: URL, endingAt end: Date, count: Int, calendar: Calendar = .current
+    ) -> [URL] {
+        (0..<count).compactMap { back in
+            guard let day = calendar.date(byAdding: .day, value: -back, to: end) else {
+                return nil
+            }
+            let components = calendar.dateComponents([.year, .month, .day], from: day)
+            return
+                root
+                .appendingPathComponent(String(format: "%04d", components.year ?? 0))
+                .appendingPathComponent(String(format: "%02d", components.month ?? 0))
+                .appendingPathComponent(String(format: "%02d", components.day ?? 0))
         }
     }
 
@@ -383,14 +458,16 @@ final class CodexScanWorker: @unchecked Sendable {
         // its notify fallback row.
         let produced = Set(sessions.map(\.sessionId))
         var threadIdToSession: [String: String] = [:]
-        for tracker in trackers.values {
-            guard let meta = tracker.accumulator.meta,
-                produced.contains(meta.sessionId)
-            else { continue }
+        for (path, tracker) in trackers {
+            guard let meta = tracker.accumulator.meta else { continue }
+            let fileThreadId = CodexRolloutParser.threadId(fromRolloutFilename: path)
+            subagentLedger.record(meta, fileThreadId: fileThreadId)
+            guard produced.contains(meta.sessionId) else { continue }
             threadIdToSession[meta.sessionId] = meta.sessionId
             if let threadId = meta.threadId { threadIdToSession[threadId] = meta.sessionId }
+            if let fileThreadId { threadIdToSession[fileThreadId] = meta.sessionId }
         }
-        onUpdate?(sessions, threadIdToSession)
+        onUpdate?(sessions, threadIdToSession, subagentLedger.threadIds)
     }
 
 }

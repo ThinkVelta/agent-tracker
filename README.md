@@ -19,7 +19,11 @@ Clicking the icon opens a dropdown listing every session (project, provider,
 status reason, time in state) — and clicking a specific dot opens it
 pre-filtered to that state (click the same dot again to close; the in-dropdown
 chips drive the same filter). Clicking a row jumps straight to that terminal
-window — across Spaces — and marks the session as acknowledged.
+window — across Spaces — and marks the session as acknowledged when the
+raised window is identifiably that session's (a strictly better title match
+than every sibling). Visiting a session's terminal yourself works too: once
+its window has been focused for a few seconds, the session is
+auto-acknowledged (exact, unambiguous title matches only — ties never guess).
 
 ## How it works
 
@@ -41,7 +45,10 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
   Codex's own rollout files in `~/.codex/sessions` (read-only) for
   `task_started`/`task_complete`/`turn_aborted` events, so Codex sessions show
   running/needs-you/idle states in real time. The `notify` hook is just an
-  extra push signal on top.
+  extra push signal on top. Codex multi-agent fan-out is collapsed into its
+  root session: subagent threads get their own rollouts and even fire `notify`
+  per subagent turn, and the app identifies and absorbs them (one session, one
+  row) instead of showing a phantom "needs you" per finished subagent.
 - **Dead sessions are pruned** automatically: each state file records the agent
   CLI's pid, and the app removes files whose process is gone (killed terminal,
   crash) even without a clean `SessionEnd`. Codex sessions are pruned via an

@@ -109,6 +109,39 @@ enum CodexRolloutParser {
         }
     }
 
+    /// The thread id embedded in a rollout filename
+    /// (`rollout-<timestamp>-<uuid>.jsonl`). This — not the meta payload's
+    /// `id`, which resume metas repoint at fork ancestors — is the id the
+    /// notify hook reports as `thread-id`, so it is the authoritative join
+    /// key between a rollout file and its notify state file.
+    static func threadId(fromRolloutFilename path: String) -> String? {
+        let base = ((path as NSString).lastPathComponent as NSString)
+            .deletingPathExtension
+        guard base.hasPrefix("rollout-"), base.count > 36 else { return nil }
+        let uuid = String(base.suffix(36))
+        guard uuid.allSatisfy({ $0.isHexDigit || $0 == "-" }) else { return nil }
+        return uuid
+    }
+
+    /// Reads just the leading `session_meta` line of a rollout file, bounded so
+    /// a malformed file can't stall the scanner (meta lines carry the full base
+    /// instructions and run ~10-100KB). Used to identify subagent threads in
+    /// dead rollouts that are never worth a full bootstrap.
+    static func firstSessionMeta(
+        atPath path: String, limit: Int = 512 * 1024
+    ) -> CodexSessionMeta? {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: limit), !data.isEmpty else { return nil }
+        guard let end = data.firstIndex(of: UInt8(ascii: "\n")) else { return nil }
+        guard let line = String(data: data[..<end], encoding: .utf8),
+            case .sessionMeta(let meta) = parseLine(line)
+        else { return nil }
+        return meta
+    }
+
     /// Cheap prefilter: a line can only parse to something state-relevant if it
     /// mentions one of these markers somewhere in its bytes. False positives
     /// just take the full-parse path; false negatives are impossible because
@@ -155,8 +188,17 @@ struct CodexThreadAccumulator: Equatable {
 
     mutating func apply(_ parsed: CodexRolloutLine) {
         switch parsed {
-        case .sessionMeta(let meta):
-            self.meta = meta  // later metas (resume) win
+        case .sessionMeta(var meta):
+            // Later metas (resume) win, but merge monotonically: resume metas
+            // can carry the PREDECESSOR thread's id (fork lineage) or none at
+            // all, and can flip thread_source back to "user" — a thread born
+            // as a subagent is internal fan-out forever, and its first
+            // observed id must not be lost.
+            if let current = self.meta {
+                if meta.threadId == nil { meta.threadId = current.threadId }
+                if current.isSubagent { meta.isSubagent = true }
+            }
+            self.meta = meta
         case .significantEvent(let event):
             lastSignificant = event
             if case .taskComplete(let message) = event.kind, let message, !message.isEmpty {

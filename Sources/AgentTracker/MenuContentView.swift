@@ -166,9 +166,22 @@ struct MenuContentView: View {
             } else {
                 ForEach(filteredSessions.prefix(Self.maxVisibleRows)) { session in
                     SessionRow(session: session) {
-                        TerminalFocuser.focus(
-                            session, exactTitle: store.exactWindowTitle(for: session))
-                        store.acknowledge(session)
+                        let exactTitle = store.exactWindowTitle(for: session)
+                        let outcome = TerminalFocuser.focus(session, exactTitle: exactTitle)
+                        // Acknowledge only when the raised window is
+                        // identifiably this session's (strictly better match
+                        // than every sibling) — a fallback raise can land on
+                        // an unrelated window, and silencing the session on
+                        // that guess hides a red state the user never saw.
+                        if case .focusedWindow(let title) = outcome,
+                            TerminalFocuser.isPreferredMatch(
+                                windowTitle: title, for: session, exactTitle: exactTitle,
+                                among: store.sessions.map {
+                                    ($0, store.exactWindowTitle(for: $0))
+                                })
+                        {
+                            store.acknowledge(session)
+                        }
                         dismiss()
                     }
                 }
@@ -198,12 +211,11 @@ struct MenuContentView: View {
         .padding(.vertical, 24)
     }
 
+    // No Refresh button: reloads are event-driven (every hook write triggers
+    // one) with a 30s timer as safety net — a manual button implied staleness
+    // that doesn't exist, and it never covered the codex scanner anyway.
     private var footer: some View {
         HStack {
-            Button("Refresh") { store.reload() }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             Spacer()
             Button("Quit") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)

@@ -61,6 +61,93 @@ final class TerminalFocuserTests {
                 == 40)
     }
 
+    // MARK: - Auto-acknowledge matching (exact tier, unambiguous winner only)
+
+    @Test func exactScoreIgnoresSubstringHits() {
+        let candidates = [
+            TerminalFocuser.TitleCandidate("api refactor", weight: 150, exactOnly: true),
+            TerminalFocuser.TitleCandidate("/Users/dev/planner", weight: 60),
+        ]
+        #expect(
+            TerminalFocuser.exactScore(windowTitle: "⠐ api refactor", candidates: candidates)
+                == 300)
+        // Substring-only relationships score zero — not confident enough to
+        // change session state.
+        #expect(
+            TerminalFocuser.exactScore(
+                windowTitle: "⠐ api refactor tests", candidates: candidates) == 0)
+        #expect(
+            TerminalFocuser.exactScore(
+                windowTitle: "dev/planner — zsh", candidates: candidates) == 0)
+    }
+
+    @Test func unambiguousMatchPicksTheSingleExactWinner() {
+        let sessionA = claudeSession(id: "a", cwd: "/Users/dev/planner")
+        let sessionB = claudeSession(id: "b", cwd: "/Users/dev/planner")
+        let winner = TerminalFocuser.unambiguousMatch(
+            windowTitle: "⠐ Fix the flaky scanner test",
+            among: [
+                (sessionA, "Fix the flaky scanner test"),
+                (sessionB, "Port planner tooling"),
+            ]
+        )
+        #expect(winner?.sessionId == "a")
+    }
+
+    @Test func unambiguousMatchRefusesTiesAndFuzz() {
+        // Two same-directory sessions without distinct titles: the bare
+        // project-name window ties (both exact-match "planner" at equal
+        // weight) — never guess.
+        let sessionA = claudeSession(id: "a", cwd: "/Users/dev/planner")
+        let sessionB = claudeSession(id: "b", cwd: "/Users/dev/planner")
+        let tied = TerminalFocuser.unambiguousMatch(
+            windowTitle: "planner", among: [(sessionA, nil), (sessionB, nil)])
+        #expect(tied == nil)
+
+        // A title that only substring-relates to a session must not match.
+        let fuzzy = TerminalFocuser.unambiguousMatch(
+            windowTitle: "planner — zsh — 80x24", among: [(sessionA, nil)])
+        #expect(fuzzy == nil)
+
+        // No sessions at all.
+        #expect(TerminalFocuser.unambiguousMatch(windowTitle: "planner", among: []) == nil)
+    }
+
+    @Test func unambiguousMatchTreatsDifferentWeightExactMatchesAsTie() {
+        // One session exact-matches "planner" via its statusline title (x300),
+        // the other via its project name (x80). Both windows could bear this
+        // title — weight cannot tell which physical window the user sees.
+        let named = claudeSession(id: "named", cwd: "/Users/dev/other")
+        let bare = claudeSession(id: "bare", cwd: "/Users/dev/planner")
+        let winner = TerminalFocuser.unambiguousMatch(
+            windowTitle: "planner", among: [(named, "planner"), (bare, nil)])
+        #expect(winner == nil)
+    }
+
+    @Test func isPreferredMatchAcceptsDecoratedTitlesAndRefusesSharedOnes() {
+        // Decorated title (Terminal.app style): substring match, no exact —
+        // but no sibling matches at all, so the click-ack may proceed.
+        let backend = claudeSession(id: "b", cwd: "/Users/dev/planner/planner-backend")
+        let worktree = claudeSession(
+            id: "w", cwd: "/Users/dev/planner/planner-backend/.claude/worktrees/pln-1-abc")
+        let all = [(backend, String?.none), (worktree, String?.none)]
+        #expect(
+            TerminalFocuser.isPreferredMatch(
+                windowTitle: "planner-backend — zsh — 80x24", for: backend, exactTitle: nil,
+                among: all))
+
+        // A bare parent-directory window relates to both sessions equally
+        // (substring tie) — refuse, this raise proved nothing.
+        #expect(
+            !TerminalFocuser.isPreferredMatch(
+                windowTitle: "planner", for: backend, exactTitle: nil, among: all))
+
+        // Unrelated window: no score at all.
+        #expect(
+            !TerminalFocuser.isPreferredMatch(
+                windowTitle: "totally-unrelated", for: backend, exactTitle: nil, among: all))
+    }
+
     /// The real repro: two Claude sessions plus a Codex session sharing one
     /// repo directory — every session's best-scoring window must be its own.
     @Test func threeSessionsOneRepoEachMatchTheirOwnWindow() {
