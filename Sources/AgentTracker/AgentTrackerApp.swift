@@ -179,6 +179,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.setFrame(frame, display: true)
     }
 
+    /// The trace sink appends asynchronously; without this, the lines logged
+    /// just before quitting — precisely the ones a bug report needs — could
+    /// die in the queue. (Crashes still lose them; stdout under `swift run`
+    /// remains the crash-debugging path.)
+    func applicationWillTerminate(_ notification: Notification) {
+        DebugLog.shared.flush()
+    }
+
     /// Any dismissal of the onboarding window — Done, Skip, the close button,
     /// Cmd+W — counts as completed, so it can never nag twice.
     func windowWillClose(_ notification: Notification) {
