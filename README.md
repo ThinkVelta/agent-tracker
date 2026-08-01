@@ -84,7 +84,7 @@ permission (System Settings → Privacy & Security → Accessibility).
 | Claude Code | `SessionEnd` | removed |
 | Codex | `task_started` (rollout) | running |
 | Codex | `task_complete` (rollout), `agent-turn-complete` (notify) | needs you |
-| Codex | `turn_aborted` (rollout) | idle |
+| Codex | `turn_aborted` (rollout, you interrupted) | needs you |
 
 Codex sessions are auto-pruned within ~30 seconds of their `codex` process
 exiting (`lsof`-based liveness check on the rollout file).

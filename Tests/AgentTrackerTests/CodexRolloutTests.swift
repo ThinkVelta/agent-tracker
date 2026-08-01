@@ -168,8 +168,8 @@ final class CodexRolloutTests {
         accumulator.consume(line: eventLine(
             "turn_aborted", timestamp: "2026-07-31T10:02:00.000Z", extra: ["reason": "interrupted"]
         ))
-        #expect(accumulator.derivedState.state == .idle)
-        #expect(accumulator.derivedState.reason == "Interrupted")
+        #expect(accumulator.derivedState.state == .needsYou)
+        #expect(accumulator.derivedState.reason == "Interrupted — ready for you")
     }
 
     // MARK: - Unknown-input tolerance

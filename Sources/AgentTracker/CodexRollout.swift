@@ -171,7 +171,7 @@ struct CodexThreadAccumulator: Equatable {
         switch lastSignificant?.kind {
         case .taskStarted: return (.running, "Working…")
         case .taskComplete: return (.needsYou, "Turn complete — ready for you")
-        case .turnAborted: return (.idle, "Interrupted")
+        case .turnAborted: return (.needsYou, "Interrupted — ready for you")
         case nil: return (.idle, "Session open")
         }
     }
