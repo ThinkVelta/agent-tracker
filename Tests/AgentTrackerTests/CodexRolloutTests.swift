@@ -15,7 +15,9 @@ final class CodexRolloutTests {
     // MARK: - Fixture builders
 
     private func jsonLine(_ object: [String: Any]) -> String {
-        let data = try! JSONSerialization.data(withJSONObject: object)
+        // Non-throwing fixture builder: a failed encode yields an empty line,
+        // which parses as insignificant and fails the test visibly.
+        let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
         return String(data: data, encoding: .utf8)!
     }
 
@@ -50,7 +52,8 @@ final class CodexRolloutTests {
     }
 
     private func fillerLine(index: Int) -> String {
-        eventLine("agent_reasoning", extra: ["text": String(repeating: "x", count: 180) + "\(index)"])
+        eventLine(
+            "agent_reasoning", extra: ["text": String(repeating: "x", count: 180) + "\(index)"])
     }
 
     private func date(_ string: String) -> Date {
@@ -100,9 +103,11 @@ final class CodexRolloutTests {
     }
 
     @Test func parsesSubagentFlagOnlyForExactValue() {
-        guard case .sessionMeta(let subagent) = CodexRolloutParser.parseLine(
-            metaLine(subagent: true)
-        ) else {
+        guard
+            case .sessionMeta(let subagent) = CodexRolloutParser.parseLine(
+                metaLine(subagent: true)
+            )
+        else {
             Issue.record("expected sessionMeta")
             return
         }
@@ -124,9 +129,10 @@ final class CodexRolloutTests {
     @Test func multipleMetasLaterWins() {
         var accumulator = CodexThreadAccumulator()
         accumulator.consume(line: metaLine(sessionId: "S1", threadId: "T1", cwd: "/old"))
-        accumulator.consume(line: metaLine(
-            sessionId: "S1", threadId: "T1", cwd: "/new", timestamp: "2026-07-31T11:00:00.000Z"
-        ))
+        accumulator.consume(
+            line: metaLine(
+                sessionId: "S1", threadId: "T1", cwd: "/new", timestamp: "2026-07-31T11:00:00.000Z"
+            ))
         #expect(accumulator.meta?.cwd == "/new")
         #expect(accumulator.meta?.timestamp == date("2026-07-31T11:00:00.000Z"))
     }
@@ -152,11 +158,12 @@ final class CodexRolloutTests {
     @Test func taskCompleteIsNeedsYou() {
         var accumulator = CodexThreadAccumulator()
         accumulator.consume(line: eventLine("task_started"))
-        accumulator.consume(line: eventLine(
-            "task_complete",
-            timestamp: "2026-07-31T10:05:00.000Z",
-            extra: ["last_agent_message": "All done"]
-        ))
+        accumulator.consume(
+            line: eventLine(
+                "task_complete",
+                timestamp: "2026-07-31T10:05:00.000Z",
+                extra: ["last_agent_message": "All done"]
+            ))
         #expect(accumulator.derivedState.state == .needsYou)
         #expect(accumulator.derivedState.reason == "Turn complete — ready for you")
         #expect(accumulator.lastAgentMessage == "All done")
@@ -165,9 +172,11 @@ final class CodexRolloutTests {
     @Test func turnAbortedIsInterrupted() {
         var accumulator = CodexThreadAccumulator()
         accumulator.consume(line: eventLine("task_started"))
-        accumulator.consume(line: eventLine(
-            "turn_aborted", timestamp: "2026-07-31T10:02:00.000Z", extra: ["reason": "interrupted"]
-        ))
+        accumulator.consume(
+            line: eventLine(
+                "turn_aborted", timestamp: "2026-07-31T10:02:00.000Z",
+                extra: ["reason": "interrupted"]
+            ))
         #expect(accumulator.derivedState.state == .needsYou)
         #expect(accumulator.derivedState.reason == "Interrupted — ready for you")
     }
@@ -181,7 +190,7 @@ final class CodexRolloutTests {
             jsonLine(["type": "world_state", "payload": ["anything": 1]]),
             jsonLine(["type": "inter_agent_communication_metadata", "payload": [String: Any]()]),
             jsonLine(["type": "some_future_type", "payload": ["x": true]]),
-            jsonLine(["timestamp": "2026-07-31T10:00:00Z", "type": "event_msg"]), // no payload
+            jsonLine(["timestamp": "2026-07-31T10:00:00Z", "type": "event_msg"]),  // no payload
             eventLine("token_count"),
             eventLine("agent_message", extra: ["message": "hi", "phase": "final"]),
             eventLine("user_message", extra: ["message": "injected context"]),
@@ -209,9 +218,11 @@ final class CodexRolloutTests {
         #expect(abs(fractional.timeIntervalSince(plain) - 0.83) < 0.001)
         #expect(CodexRolloutParser.parseDate("yesterday-ish") == nil)
 
-        guard case .significantEvent(let event) = CodexRolloutParser.parseLine(
-            eventLine("task_started", timestamp: "2026-07-31T21:17:35Z")
-        ) else {
+        guard
+            case .significantEvent(let event) = CodexRolloutParser.parseLine(
+                eventLine("task_started", timestamp: "2026-07-31T21:17:35Z")
+            )
+        else {
             Issue.record("expected significantEvent")
             return
         }
@@ -232,19 +243,20 @@ final class CodexRolloutTests {
 
     @Test func completeLinesConsumesOnlyThroughLastNewline() {
         let (noneLines, noneConsumed) = CodexRolloutParser.completeLines(
-            in: "partial with no newline".data(using: .utf8)!
+            in: Data("partial with no newline".utf8)
         )
         #expect(noneLines.isEmpty)
         #expect(noneConsumed == 0)
 
-        let data = "line-one\nline-two\npartial".data(using: .utf8)!
+        let data = Data("line-one\nline-two\npartial".utf8)
         let (lines, consumed) = CodexRolloutParser.completeLines(in: data)
         #expect(lines == ["line-one", "line-two"])
         #expect(consumed == "line-one\nline-two\n".utf8.count)
 
         // Feeding the unconsumed remainder plus its completion yields the line.
-        let remainder = data[data.index(data.startIndex, offsetBy: consumed)...]
-            + " done\n".data(using: .utf8)!
+        let remainder =
+            data[data.index(data.startIndex, offsetBy: consumed)...]
+            + Data(" done\n".utf8)
         let (rest, restConsumed) = CodexRolloutParser.completeLines(in: remainder)
         #expect(rest == ["partial done"])
         #expect(restConsumed == "partial done\n".utf8.count)
@@ -265,13 +277,14 @@ final class CodexRolloutTests {
 
     @Test func bootstrapLargeFileScansAcrossChunkBoundaries() throws {
         var lines = [metaLine(sessionId: "S-big", threadId: "T-big", cwd: "/big/project")]
-        lines += (0..<200).map(fillerLine) // ~50 KB of insignificant middle
+        lines += (0..<200).map(fillerLine)  // ~50 KB of insignificant middle
         lines.append(eventLine("task_started", timestamp: "2026-07-31T11:00:00.000Z"))
-        lines.append(eventLine(
-            "task_complete",
-            timestamp: "2026-07-31T11:05:00.000Z",
-            extra: ["last_agent_message": "Big file done"]
-        ))
+        lines.append(
+            eventLine(
+                "task_complete",
+                timestamp: "2026-07-31T11:05:00.000Z",
+                extra: ["last_agent_message": "Big file done"]
+            ))
         let url = try makeTempFile(lines: lines)
         let size = try fileSize(of: url)
         let chunkSize = 2048
@@ -292,7 +305,7 @@ final class CodexRolloutTests {
         // session as idle). The streaming scan must find it wherever it is.
         var lines = [metaLine(sessionId: "S-mid", threadId: "T-mid")]
         lines.append(eventLine("task_started", timestamp: "2026-07-31T11:00:00.000Z"))
-        lines += (0..<800).map(fillerLine) // ~200 KB of reasoning after the event
+        lines += (0..<800).map(fillerLine)  // ~200 KB of reasoning after the event
         let url = try makeTempFile(lines: lines)
 
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 4096))
@@ -342,10 +355,11 @@ final class CodexRolloutTests {
     @Test func bootstrapLaterMetaInTailWins() throws {
         var lines = [metaLine(sessionId: "S-resume", threadId: "T-resume", cwd: "/original")]
         lines += (0..<200).map(fillerLine)
-        lines.append(metaLine(
-            sessionId: "S-resume", threadId: "T-resume", cwd: "/resumed",
-            timestamp: "2026-07-31T12:00:00.000Z"
-        ))
+        lines.append(
+            metaLine(
+                sessionId: "S-resume", threadId: "T-resume", cwd: "/resumed",
+                timestamp: "2026-07-31T12:00:00.000Z"
+            ))
         let url = try makeTempFile(lines: lines)
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 2048))
         #expect(result.accumulator.meta?.cwd == "/resumed")
@@ -360,11 +374,12 @@ final class CodexRolloutTests {
 
         var newer = CodexThreadAccumulator()
         newer.consume(line: metaLine(sessionId: "S1", threadId: "T-new", cwd: "/new"))
-        newer.consume(line: eventLine(
-            "task_complete",
-            timestamp: "2026-07-31T11:00:00.000Z",
-            extra: ["last_agent_message": "Done here"]
-        ))
+        newer.consume(
+            line: eventLine(
+                "task_complete",
+                timestamp: "2026-07-31T11:00:00.000Z",
+                extra: ["last_agent_message": "Done here"]
+            ))
 
         let sessions = CodexSessionGrouper.sessions(from: [
             snapshot(older, fileActivityAt: date("2026-07-31T10:00:00Z")),
@@ -390,14 +405,16 @@ final class CodexRolloutTests {
         primary.consume(line: eventLine("task_started", timestamp: "2026-07-31T10:00:00.000Z"))
 
         var subagent = CodexThreadAccumulator()
-        subagent.consume(line: metaLine(
-            sessionId: "S1", threadId: "T-sub", cwd: "/sub", subagent: true
-        ))
-        subagent.consume(line: eventLine(
-            "task_complete",
-            timestamp: "2026-07-31T12:00:00.000Z", // newest event, but a subagent's
-            extra: ["last_agent_message": "subagent chatter"]
-        ))
+        subagent.consume(
+            line: metaLine(
+                sessionId: "S1", threadId: "T-sub", cwd: "/sub", subagent: true
+            ))
+        subagent.consume(
+            line: eventLine(
+                "task_complete",
+                timestamp: "2026-07-31T12:00:00.000Z",  // newest event, but a subagent's
+                extra: ["last_agent_message": "subagent chatter"]
+            ))
 
         let sessions = CodexSessionGrouper.sessions(from: [
             snapshot(primary, fileActivityAt: date("2026-07-31T10:00:00Z")),

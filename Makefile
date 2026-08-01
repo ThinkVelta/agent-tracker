@@ -41,7 +41,7 @@ format: ## Rewrite Swift sources (swift-format, then swiftlint autocorrect)
 	$(CHECK_PACKAGE)
 	@command -v swift >/dev/null || \
 	  { echo "error: swift not found — install Xcode or the Command Line Tools"; exit 1; }
-	swift format format --in-place --recursive Sources
+	swift format format --in-place --recursive Sources Tests
 	@if command -v swiftlint >/dev/null; then \
 	  scripts/swiftlint.sh --fix --quiet; \
 	else \
@@ -51,8 +51,8 @@ format: ## Rewrite Swift sources (swift-format, then swiftlint autocorrect)
 build: ## Build the app (debug; skips until Package.swift lands)
 	@if test -f Package.swift; then swift build; else $(SKIP_NO_PACKAGE); fi
 
-test: ## Run the test suite (skips until Package.swift lands)
-	@if test -f Package.swift; then swift test; else $(SKIP_NO_PACKAGE); fi
+test: ## Run the test suite (via test.sh — plain `swift test` silently runs 0 tests on CLT-only machines)
+	@if test -f Package.swift; then ./test.sh; else $(SKIP_NO_PACKAGE); fi
 
 run: ## Build and launch the menu bar app
 	$(CHECK_PACKAGE)

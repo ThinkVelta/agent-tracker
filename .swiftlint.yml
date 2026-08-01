@@ -2,9 +2,9 @@
 # lint; formatting is owned by swift-format (.swift-format), so this config
 # stays deliberately small: default rules plus a few safe opt-ins.
 
-# Add Tests when it exists on main.
 included:
   - Sources
+  - Tests
 
 opt_in_rules:
   - contains_over_filter_is_empty
