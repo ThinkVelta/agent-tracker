@@ -143,6 +143,11 @@ final class SessionStore: ObservableObject {
         // directory event).
         titleDirectory.refresh()
         claudeRegistry.refresh()
+        // Codex has no hook to write a state file, and FSEvents does not
+        // reliably report appends to its rollouts — so the scanner's cheap
+        // re-read rides this same tick. Without it, a Codex turn starting or
+        // finishing stayed invisible until the scanner's 30s liveness pass.
+        codexScanner?.refreshFiles()
         let fileManager = FileManager.default
         var loaded: [AgentSession] = []
         if let files = try? fileManager.contentsOfDirectory(
@@ -227,6 +232,14 @@ final class SessionStore: ObservableObject {
                 })
         }
 
+        // Last word on state: a needs-you row nothing has touched for long
+        // enough is no longer news. Applied after every other source so it
+        // ages the FINAL state, and derived per rebuild (never persisted), so
+        // a fresh event turns the row red again immediately.
+        let now = Date()
+        let fadeAfter = Preferences.shared.needsYouFadesAfter
+        merged = merged.map { NeedsYouAging.apply(to: $0, now: now, fadeAfter: fadeAfter) }
+
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
                 return lhs.state.sortRank < rhs.state.sortRank
@@ -237,25 +250,23 @@ final class SessionStore: ObservableObject {
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
         advanceClockIfNeeded()
-        #if DEBUG
-            // Change-only: rebuilds fire on every hook event and timer tick; the
-            // periodic "[codex-scan] lsof pass" line remains as the heartbeat.
-            let counts = counts
-            let rows = sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }
-            let tallies =
-                "\(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle"
-            let summary =
-                "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
-            if summary != lastLoggedSummary {
-                lastLoggedSummary = summary
-                DebugLog.log("[store] \(DebugLog.timestamp()) \(summary)")
-            }
-        #endif
+        // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
+        // report from the installed app useful, and rebuilds fire on every
+        // hook event and timer tick so the change filter is what keeps the
+        // log quiet.
+        let counts = counts
+        let rows = sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }
+        let tallies =
+            "\(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle"
+        let summary =
+            "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
+        if summary != lastLoggedSummary {
+            lastLoggedSummary = summary
+            DebugLog.log("[store] \(DebugLog.timestamp()) \(summary)")
+        }
     }
 
-    #if DEBUG
-        private var lastLoggedSummary = ""
-    #endif
+    private var lastLoggedSummary = ""
 
     /// Row timestamps read "now/3m/2h/1d", so they only ever change on a
     /// 30-second boundary — republish on that boundary rather than every tick.

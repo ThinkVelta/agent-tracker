@@ -133,6 +133,22 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(attentionCue, forKey: Keys.attentionCue) }
     }
 
+    // MARK: - Needs-you aging
+
+    /// How long a session may sit in needs-you before it reads as idle.
+    /// 0 = never fade. Without this nothing reaches idle on its own — see
+    /// `NeedsYouAging`.
+    @Published var needsYouFadesAfter: TimeInterval {
+        didSet { defaults.set(needsYouFadesAfter, forKey: Keys.needsYouFadesAfter) }
+    }
+
+    static let fadeOptions: [(label: String, seconds: TimeInterval)] = [
+        ("Never", 0), ("15 minutes", 900), ("30 minutes", 1800), ("1 hour", 3600),
+        ("4 hours", 14400),
+    ]
+
+    static let defaultFadeAfter: TimeInterval = 1800
+
     // MARK: - Quit confirmation
 
     /// Ask before quitting from the panel's power button. Turned off by the
@@ -148,6 +164,7 @@ final class Preferences: ObservableObject {
         static let idleFolding = "idleFoldingThreshold"
         static let autoAckDwell = "autoAckDwellSeconds"
         static let refreshInterval = "refreshIntervalSeconds"
+        static let needsYouFadesAfter = "needsYouFadesAfterSeconds"
         static let confirmQuit = "confirmQuit"
         static let iconMode = "iconMode"
         static let attentionCue = "attentionCue"
@@ -185,6 +202,12 @@ final class Preferences: ObservableObject {
             loadedInterval.flatMap { interval in
                 Self.refreshOptions.contains { $0.seconds == interval } ? interval : nil
             } ?? SessionStore.defaultRefreshInterval
+
+        let loadedFade = defaults.object(forKey: Keys.needsYouFadesAfter) as? Double
+        needsYouFadesAfter =
+            loadedFade.flatMap { fade in
+                Self.fadeOptions.contains { $0.seconds == fade } ? fade : nil
+            } ?? Self.defaultFadeAfter
 
         confirmQuit = defaults.object(forKey: Keys.confirmQuit) as? Bool ?? true
         iconMode =

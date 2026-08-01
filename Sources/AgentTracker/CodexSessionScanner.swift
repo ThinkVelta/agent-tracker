@@ -35,6 +35,12 @@ final class CodexSessionScanner: ObservableObject {
     private let worker: CodexScanWorker
     private var livenessTimer: Timer?
 
+    /// Re-reads tracked rollouts. Driven by `SessionStore`'s refresh tick so
+    /// Codex state tracks the same cadence the user picked in Settings.
+    func refreshFiles() {
+        worker.refreshFiles()
+    }
+
     init(rootDirectory: URL? = nil) {
         let worker = CodexScanWorker(root: rootDirectory ?? Self.defaultRootDirectory)
         self.worker = worker
@@ -96,6 +102,28 @@ final class CodexScanWorker: @unchecked Sendable {
         queue.async { self.startLocked() }
     }
 
+    /// Cheap pass: stat every tracked file and read any growth. Runs at the
+    /// store's refresh cadence (1s by default) because **FSEvents does not
+    /// reliably report appends to these rollouts** — measured: a `task_started`
+    /// written to a held-open rollout was invisible until the next 30s
+    /// liveness pass, 22s later. Rather than trust the stream, poll: a stat
+    /// per tracked file costs nothing, and reads happen only when the size
+    /// actually moved past our offset.
+    func refreshFiles() {
+        queue.async {
+            guard self.started else {
+                self.startLocked()  // root directory may have appeared since
+                return
+            }
+            // Snapshot the keys — processFileLocked mutates trackers.
+            for path in Array(self.trackers.keys) { self.processFileLocked(path) }
+            self.publishLocked()
+        }
+    }
+
+    /// Full pass: the file poll above plus the expensive `lsof` liveness
+    /// check, which is what prunes dead sessions and adopts rollouts from
+    /// older day-directories. Stays on its own slow timer.
     func refresh() {
         queue.async {
             if self.started {
@@ -103,10 +131,6 @@ final class CodexScanWorker: @unchecked Sendable {
                     // FSEvents unavailable — degrade to rescanning on the timer.
                     self.scanDayDirectoriesLocked()
                 }
-                // Heal missed/coalesced FSEvents even with a live stream: stat
-                // every tracked file and read any growth (reads happen only
-                // when the size actually moved past our offset). Snapshot the
-                // keys — processFileLocked mutates trackers.
                 for path in Array(self.trackers.keys) { self.processFileLocked(path) }
                 self.refreshLivenessLocked()
                 self.publishLocked()
@@ -154,9 +178,7 @@ final class CodexScanWorker: @unchecked Sendable {
     }
 
     private func debugLog(_ message: String) {
-        #if DEBUG
-            DebugLog.log("[codex-scan] \(DebugLog.timestamp()) \(message)")
-        #endif
+        DebugLog.log("[codex-scan] \(DebugLog.timestamp()) \(message)")
     }
 
     private func stopLocked() {

@@ -207,6 +207,20 @@ private struct SessionsSettingsTab: View {
                     .frame(width: 130)
                 }
                 SettingsRow(
+                    title: "Needs-you fades after",
+                    detail: "A session waiting this long stops showing red and reads as idle "
+                        + "— it is no longer news. Any new activity turns it red again.",
+                    divided: true
+                ) {
+                    Picker("", selection: $preferences.needsYouFadesAfter) {
+                        ForEach(Preferences.fadeOptions, id: \.seconds) { option in
+                            Text(option.label)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+                SettingsRow(
                     title: "Background check every",
                     detail: "Session changes appear instantly either way — this only paces "
                         + "the cleanup pass that prunes dead sessions and refreshes "

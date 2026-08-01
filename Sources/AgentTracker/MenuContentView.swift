@@ -248,22 +248,30 @@ struct MenuContentView: View {
     }
 
     private func row(for session: AgentSession) -> some View {
-        SessionRow(session: session, clockTick: store.clockTick) {
-            let exactTitle = store.exactWindowTitle(for: session)
-            let outcome = TerminalFocuser.focus(session, exactTitle: exactTitle)
-            // Acknowledge only when the raised window is identifiably this
-            // session's (strictly better match than every sibling) — a
-            // fallback raise can land on an unrelated window, and silencing
-            // the session on that guess hides a red state the user never saw.
-            if case .focusedWindow(let title) = outcome,
-                TerminalFocuser.isPreferredMatch(
-                    windowTitle: title, for: session, exactTitle: exactTitle,
-                    among: store.sessions.map { ($0, store.exactWindowTitle(for: $0)) })
-            {
-                store.acknowledge(session)
-            }
-            dismiss()
-        }
+        // Auto-acknowledge only fires when the raised window identifies ONE
+        // session beyond doubt, which same-repo siblings never can — so those
+        // rows would stay red forever. onAcknowledge is the escape hatch: the
+        // user says they've seen it, no guessing required.
+        SessionRow(
+            session: session,
+            clockTick: store.clockTick,
+            onAcknowledge: { store.acknowledge(session) },
+            onSelect: {
+                let exactTitle = store.exactWindowTitle(for: session)
+                let outcome = TerminalFocuser.focus(session, exactTitle: exactTitle)
+                // Acknowledge only when the raised window is identifiably this
+                // session's (strictly better match than every sibling) — a
+                // fallback raise can land on an unrelated window, and silencing
+                // the session on that guess hides a red state the user never saw.
+                if case .focusedWindow(let title) = outcome,
+                    TerminalFocuser.isPreferredMatch(
+                        windowTitle: title, for: session, exactTitle: exactTitle,
+                        among: store.sessions.map { ($0, store.exactWindowTitle(for: $0)) })
+                {
+                    store.acknowledge(session)
+                }
+                dismiss()
+            })
     }
 
     /// Sessions exist, but none survived the filter or the query. Centered and
@@ -461,12 +469,39 @@ struct SessionRow: View {
     /// Re-renders the relative time on a quiet machine; the value itself is
     /// unused (see `SessionStore.clockTick`).
     var clockTick = 0
+    /// Clears a needs-you row without jumping to its terminal.
+    var onAcknowledge: () -> Void = {}
     let onSelect: () -> Void
 
     @State private var hovering = false
     @State private var showsPath = false
 
     var body: some View {
+        // The acknowledge control is a SIBLING of the row button, not nested
+        // inside it: a button within a button is unreliable in SwiftUI, and a
+        // click landing on the row action would focus the terminal and dismiss
+        // the panel — exactly what "acknowledge without jumping" must not do.
+        ZStack(alignment: .trailing) {
+            rowButton
+            if session.state == .needsYou {
+                Button(action: onAcknowledge) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(hovering ? 1 : 0)
+                // Never steals a click while invisible.
+                .allowsHitTesting(hovering)
+                .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
+                .help("Mark as seen (clears the red state)")
+            }
+        }
+    }
+
+    private var rowButton: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: Theme.Metrics.accentBarWidth / 2)
@@ -495,6 +530,11 @@ struct SessionRow: View {
                 Text(relativeTime)
                     .font(Theme.Typography.timestamp)
                     .foregroundStyle(.tertiary)
+                // Reserves the space the overlaid acknowledge button occupies,
+                // so the jump affordance never sits underneath it.
+                if session.state == .needsYou {
+                    Color.clear.frame(width: 18, height: 18)
+                }
                 Image(systemName: "arrow.up.forward.app")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
