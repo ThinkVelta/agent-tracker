@@ -201,6 +201,18 @@ def unwrap(tokens: list[str]) -> list[str]:
                     tokens = tokens[1:]
                 elif tokens[0] == "-u" and len(tokens) >= 2:
                     tokens = tokens[2:]
+                # `env -S 'git push ...'` re-splits its payload at exec time, so
+                # the guarded command hides inside one opaque token and never
+                # reaches the prog checks below. Fail closed on every spelling:
+                # -S, --split-string[=..], attached (-S'..'), and short-option
+                # clusters (-vS'..').
+                elif re.match(r"^-[A-Za-z0-9]*S", tokens[0]) or tokens[0].startswith(
+                    "--split-string"
+                ):
+                    block(
+                        "BLOCKED: env -S/--split-string obscures the real command. "
+                        "Invoke the command directly instead."
+                    )
                 elif tokens[0].startswith("-"):
                     tokens = tokens[1:]
                 else:
