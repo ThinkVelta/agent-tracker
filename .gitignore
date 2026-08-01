@@ -41,3 +41,4 @@ playground.xcworkspace
 .claude/worktrees/
 .claude/agent-memory/
 .claude/*.lock
+dist/

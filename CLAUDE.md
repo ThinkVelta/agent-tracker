@@ -41,6 +41,9 @@ rollout files. See README for the full picture.
   Xcode.app) builds but silently executes zero tests and exits 0 (see the
   Package.swift header for why)
 - Run: `swift run AgentTracker` (menu bar only, no Dock icon)
+- Bundle: `make app` → `dist/AgentTracker.app` (self-validating; ad-hoc signed,
+  `CODESIGN_IDENTITY` overrides); `make install` places it in /Applications.
+  First-run onboarding shows once (`--onboarding` re-opens it on demand)
 - Onboard: `./install.sh` (interactive picker; `--agents claude,codex --yes`
   for automation; `integrations/uninstall.sh` reverses it)
 - Test hook script manually:

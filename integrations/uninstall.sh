@@ -157,6 +157,29 @@ else
   echo "Codex: no agent-tracker notify setting in $CONFIG — nothing to do"
 fi
 
+# --- Installed app bundle ----------------------------------------------------
+# `make install` places AgentTracker.app in /Applications (or ~/Applications).
+# Removing it also disables its start-at-login registration — launchd drops a
+# login item whose bundle is gone.
+BUNDLE_ID="com.thinkvelta.agent-tracker"
+for APP in "/Applications/AgentTracker.app" "$HOME/Applications/AgentTracker.app"; do
+  if [ -d "$APP" ]; then
+    if pgrep -x AgentTracker > /dev/null 2>&1; then
+      echo "Stopping the running AgentTracker"
+      pkill -x AgentTracker || true
+      sleep 1
+    fi
+    rm -rf "$APP"
+    echo "Removed $APP"
+  fi
+done
+# The preferences domain (onboarding-completed flag, future settings). Guarded:
+# `defaults delete` on a missing domain exits non-zero, which is not a failure.
+if defaults read "$BUNDLE_ID" > /dev/null 2>&1; then
+  defaults delete "$BUNDLE_ID"
+  echo "Removed the $BUNDLE_ID preferences domain"
+fi
+
 # --- Data directory ----------------------------------------------------------
 if [ "$PURGE" -eq 1 ]; then
   if [ -d "$DATA_DIR" ]; then

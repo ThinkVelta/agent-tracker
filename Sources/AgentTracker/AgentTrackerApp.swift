@@ -17,7 +17,7 @@ struct AgentTrackerApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: SessionStore?
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
@@ -25,6 +25,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var storeSubscription: AnyCancellable?
     private var dismissMonitor: Any?
     private var focusObserver: TerminalFocusObserver?
+    private var onboardingWindow: NSWindow?
+
+    private static let onboardingCompletedKey = "onboardingCompleted"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only — no Dock icon, no app switcher entry.
@@ -36,6 +39,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.store = store
         setUpStatusItem(for: store)
         focusObserver = TerminalFocusObserver(store: store)
+        showOnboardingIfNeeded()
+    }
+
+    /// First-run only: a menu bar app that silently appears and does nothing
+    /// until an unrequested permission is granted makes a terrible first
+    /// impression. One window, shown once — see `Onboarding.shouldShow`.
+    private func showOnboardingIfNeeded() {
+        let environment = Onboarding.Environment(
+            accessibilityGranted: TerminalFocuser.hasAccessibilityPermission,
+            claudeHookInstalled: HookSetup.claudeHookInstalled(),
+            codexHookInstalled: HookSetup.codexHookInstalled(),
+            claudePresent: HookSetup.claudePresent(),
+            codexPresent: HookSetup.codexPresent(),
+            completedBefore: UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
+        )
+        // `--onboarding` re-opens the window on demand (debugging, support,
+        // "how do I set this up again") without wiping the completion flag.
+        let forced = CommandLine.arguments.contains("--onboarding")
+        guard forced || Onboarding.shouldShow(environment) else { return }
+
+        let host = NSHostingController(
+            rootView: OnboardingView { [weak self] in self?.onboardingWindow?.close() })
+        let window = NSWindow(contentViewController: host)
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.delegate = self
+        onboardingWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     private func setUpStatusItem(for store: SessionStore) {
@@ -71,6 +106,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             Task { @MainActor in self?.closePopover() }
         }
+    }
+
+    /// Any dismissal of the onboarding window — Done, Skip, the close button,
+    /// Cmd+W — counts as completed, so it can never nag twice.
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === onboardingWindow else {
+            return
+        }
+        UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+        onboardingWindow = nil
+        // Onboarding activated this accessory app; hand focus back like the
+        // popover does, or the user is stranded with no key window.
+        NSApp.deactivate()
     }
 
     private func updateIcon(for counts: SessionCounts) {
@@ -157,10 +205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Debug utility:
-    /// `AgentTracker --render-preview out.png [--filter needsYou] [--appearance dark]`
-    /// renders the dropdown with live data to a PNG and exits — lets the
-    /// popover be inspected/iterated without clicking the menu bar. Returns
-    /// true when preview mode is active (the status item is skipped).
+    /// `AgentTracker --render-preview out.png [--filter needsYou] [--appearance dark]
+    ///  [--view onboarding]`
+    /// renders the dropdown (or the onboarding window) with live data to a PNG
+    /// and exits — lets the UI be inspected/iterated without clicking the menu
+    /// bar. Returns true when preview mode is active (the status item is
+    /// skipped).
     ///
     /// Caveat worth knowing before trusting a preview: `ImageRenderer` does not
     /// rasterize AppKit-backed views, so `TextField` renders as a coloured
@@ -190,25 +240,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let appearance = NSAppearance(named: darkMode ? .darkAqua : .aqua)
         NSApp.appearance = appearance
+        var view = "popover"
+        if let viewIndex = arguments.firstIndex(of: "--view"), arguments.count > viewIndex + 1 {
+            view = arguments[viewIndex + 1]
+        }
         Task {
-            let store = SessionStore()
-            if let filterIndex = arguments.firstIndex(of: "--filter"),
-                arguments.count > filterIndex + 1,
-                let state = SessionState(rawValue: arguments[filterIndex + 1])
-            {
-                store.selectedFilter = state
-            }
-            // Wait for the codex scanner's first publish (slow lsof pass +
-            // multi-MB bootstraps), up to 15s; renders early once a codex
-            // row lands.
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if store.sessions.contains(where: { $0.provider == "codex" }) { break }
+            let content: AnyView
+            switch view {
+            case "onboarding":
+                content = AnyView(OnboardingView())
+            case "popover":
+                let store = SessionStore()
+                if let filterIndex = arguments.firstIndex(of: "--filter"),
+                    arguments.count > filterIndex + 1,
+                    let state = SessionState(rawValue: arguments[filterIndex + 1])
+                {
+                    store.selectedFilter = state
+                }
+                // Wait for the codex scanner's first publish (slow lsof pass +
+                // multi-MB bootstraps), up to 15s; renders early once a codex
+                // row lands.
+                for _ in 0..<30 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                    if store.sessions.contains(where: { $0.provider == "codex" }) { break }
+                }
+                content = AnyView(MenuContentView(store: store))
+            default:
+                FileHandle.standardError.write(
+                    Data("[preview] --view expects popover or onboarding\n".utf8))
+                exit(2)
             }
             let renderer = ImageRenderer(
-                content: MenuContentView(store: store)
+                content:
+                    content
                     .environment(\.colorScheme, darkMode ? .dark : .light)
-                    // The real popover's background is the system's; here there
+                    // The real window's background is the system's; here there
                     // is none, so dark-mode text would render white on
                     // transparency and flatten to white-on-white. Hard-coded
                     // rather than semantic because dynamic NSColors do not

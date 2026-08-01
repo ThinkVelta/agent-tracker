@@ -123,3 +123,10 @@ jobs:
       - name: Swift format lint
         if: steps.package.outputs.present == 'true'
         run: swift format lint --strict --recursive Sources Tests
+
+      # The bundle pipeline validates itself (plist lint, LSUIElement,
+      # signature, bundled installers), so running it IS the regression test
+      # for `make app` — a broken assembly fails here, not on a user's machine.
+      - name: Assemble app bundle
+        if: steps.package.outputs.present == 'true'
+        run: make app
