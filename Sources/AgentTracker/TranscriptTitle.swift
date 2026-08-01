@@ -29,21 +29,23 @@ enum TranscriptTitle {
                 return byte != UInt8(ascii: "\n")
             }()
             guard (try? handle.seek(toOffset: chunk.offset)) != nil,
-                let data = try? handle.read(upToCount: chunk.length),
-                var text = String(data: data, encoding: .utf8)
+                let data = try? handle.read(upToCount: chunk.length)
             else { continue }
-            if startsMidLine, let firstNewline = text.firstIndex(of: "\n") {
-                text = String(text[text.index(after: firstNewline)...])
+            // Trim to newline-bounded BYTES before any decoding: a window
+            // boundary can split a multibyte scalar, and a whole-chunk decode
+            // would then fail and drop every line in the window.
+            let newline = UInt8(ascii: "\n")
+            var bytes = data[data.startIndex...]
+            if startsMidLine, let first = bytes.firstIndex(of: newline) {
+                bytes = bytes[bytes.index(after: first)...]
             }
-            if chunk.offset + UInt64(chunk.length) < size,
-                let lastNewline = text.lastIndex(of: "\n")
-            {
-                text = String(text[..<lastNewline])
+            if chunk.offset + UInt64(chunk.length) < size, let last = bytes.lastIndex(of: newline) {
+                bytes = bytes[..<last]
             }
-            for line in text.split(separator: "\n") {
-                guard line.contains("\"type\":\"summary\"") else { continue }
-                guard let lineData = line.data(using: .utf8),
-                    let object = try? JSONSerialization.jsonObject(with: lineData)
+            for raw in bytes.split(separator: newline, omittingEmptySubsequences: true) {
+                guard let line = String(data: Data(raw), encoding: .utf8),
+                    line.contains("\"type\":\"summary\""),
+                    let object = try? JSONSerialization.jsonObject(with: Data(raw))
                         as? [String: Any],
                     let summary = object["summary"] as? String, !summary.isEmpty
                 else { continue }
