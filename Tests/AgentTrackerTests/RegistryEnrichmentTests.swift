@@ -36,6 +36,17 @@ final class RegistryEnrichmentTests {
         #expect(enriched.displayName == session().displayName)
     }
 
+    /// A row with no hook cwd still has the registry's; falling through to the
+    /// generic "Session" placeholder would throw away a real directory name.
+    @Test func theRegistryDirectoryTitlesARowThatHasNoHookCwd() {
+        let enriched = RegistryEnrichment.apply(
+            to: session(cwd: nil), entry: entry(cwd: "/Users/dev/Planner"))
+        #expect(enriched.displayName == "Planner")
+        // Nothing anywhere: the placeholder is still the honest answer.
+        let empty = RegistryEnrichment.apply(to: session(cwd: nil), entry: entry(cwd: nil))
+        #expect(empty.displayName == "Session")
+    }
+
     /// Without a registry entry nothing changes — Codex sessions and older
     /// Claude versions keep the directory name.
     @Test func rowsWithoutARegistryEntryAreUntouched() {

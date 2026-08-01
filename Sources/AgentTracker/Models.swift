@@ -91,7 +91,18 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// terminal), and long worktree directories truncate in the middle with
     /// the full path on hover.
     var displayName: String {
-        projectName
+        // A row can arrive without a hook cwd but with the registry's — use
+        // that rather than degrade to the generic "Session" placeholder.
+        if let name = Self.lastComponent(of: cwd) ?? Self.lastComponent(of: registryCwd) {
+            return name
+        }
+        return projectName
+    }
+
+    private static func lastComponent(of path: String?) -> String? {
+        guard let path, !path.isEmpty else { return nil }
+        let component = (path as NSString).lastPathComponent
+        return component.isEmpty || component == "/" ? nil : component
     }
 
     /// Directories any of this session's terminal windows might report, most
