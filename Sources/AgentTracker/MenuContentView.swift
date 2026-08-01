@@ -314,7 +314,7 @@ struct MenuContentView: View {
     }
 
     // No Refresh button: reloads are event-driven (every hook write triggers
-    // one) with a 1s timer as safety net — a manual button implied staleness
+    // one) with a periodic safety-net reload (cadence in Settings) — a manual button implied staleness
     // that doesn't exist, and it never covered the codex scanner anyway.
     /// Settings far left, quit far right — a routine control and a
     /// destructive one should not be adjacent (user feedback: quit felt

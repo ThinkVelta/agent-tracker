@@ -206,6 +206,21 @@ private struct SessionsSettingsTab: View {
                     .labelsHidden()
                     .frame(width: 130)
                 }
+                SettingsRow(
+                    title: "Background check every",
+                    detail: "Session changes appear instantly either way — this only paces "
+                        + "the cleanup pass that prunes dead sessions and refreshes "
+                        + "timestamps.",
+                    divided: true
+                ) {
+                    Picker("", selection: $preferences.refreshInterval) {
+                        ForEach(Preferences.refreshOptions, id: \.seconds) { option in
+                            Text(option.label)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
             }
         }
         .padding(20)

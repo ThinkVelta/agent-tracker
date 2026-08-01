@@ -50,13 +50,15 @@ final class SessionStore: ObservableObject {
         return base.appendingPathComponent("sessions")
     }()
 
-    /// How often the safety-net reload runs. Hook/rollout watchers already
-    /// deliver state changes instantly; this bounds how stale a *derived*
-    /// display can get (dead-process pruning, relative timestamps).
-    static let refreshInterval: TimeInterval = 1
+    /// Default cadence of the safety-net reload. Hook/rollout watchers already
+    /// deliver state changes instantly; the tick bounds how stale a *derived*
+    /// display can get (dead-process pruning, relative timestamps). The user
+    /// picks the actual cadence in Settings (`Preferences.refreshInterval`).
+    nonisolated static let defaultRefreshInterval: TimeInterval = 1
 
     private var watcher: DirectoryWatcher?
     private var refreshTimer: Timer?
+    private var preferencesSubscription: AnyCancellable?
     /// Bumped when a displayed relative time would have changed, so rows
     /// re-render on a quiet machine without republishing identical sessions.
     @Published private(set) var clockTick = 0
@@ -99,15 +101,20 @@ final class SessionStore: ObservableObject {
         }
         // Hook writes and rollout edits arrive by watcher, so this tick is the
         // safety net: it prunes sessions whose process died without a clean
-        // SessionEnd and catches anything a watcher missed. At 1s the menu bar
-        // is never meaningfully behind reality; the cost is one directory
-        // listing plus a kill(0) per session, and `rebuild` only republishes
-        // when something actually changed, so an idle machine stays idle.
-        refreshTimer = Timer.scheduledTimer(
-            withTimeInterval: Self.refreshInterval, repeats: true
-        ) { [weak self] _ in
-            Task { @MainActor in self?.reload() }
-        }
+        // SessionEnd and catches anything a watcher missed. At the default 1s
+        // the menu bar is never meaningfully behind reality; the cost is one
+        // directory listing plus a kill(0) per session, and `rebuild` only
+        // republishes when something actually changed, so an idle machine
+        // stays idle. The cadence is a preference; changing it reschedules
+        // the timer live.
+        // The publisher's initial emission performs the first schedule;
+        // removeDuplicates keeps unrelated preference churn from restarting
+        // the timer (a restart resets its phase).
+        preferencesSubscription = Preferences.shared.$refreshInterval
+            .removeDuplicates()
+            .sink { [weak self] interval in
+                Task { @MainActor in self?.scheduleRefreshTimer(interval: interval) }
+            }
 
         // Codex has no turn-start hook; live state comes from watching rollout
         // files directly.
@@ -119,6 +126,14 @@ final class SessionStore: ObservableObject {
                 // Hop a tick so the scanner's published properties are set.
                 Task { @MainActor in self?.rebuild() }
             }
+    }
+
+    private func scheduleRefreshTimer(interval: TimeInterval) {
+        refreshTimer?.invalidate()
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) {
+            [weak self] _ in
+            Task { @MainActor in self?.reload() }
+        }
     }
 
     func reload() {
