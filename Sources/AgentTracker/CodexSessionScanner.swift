@@ -260,25 +260,52 @@ final class CodexScanWorker: @unchecked Sendable {
 
     /// One-time first-line harvest of subagent ids from day-directories older
     /// than the two the regular scan covers: a notify state file survives as
-    /// long as its ROOT codex process, and root sessions live for days — after
-    /// an app restart, their older subagents' phantom rows would otherwise be
-    /// unidentifiable. Harvest-only (no bootstrap), bounded by the day window;
+    /// long as its ROOT codex process, and root sessions can live for weeks —
+    /// after an app restart, their older subagents' phantom rows would
+    /// otherwise be unidentifiable. Harvest-only (no bootstrap), walking
+    /// however many day-directories exist newest-first under a work budget
+    /// (not a calendar window, which a long-lived root can always outlive);
     /// the ledger memoizes per-path so this cannot re-read.
-    private static let historicalHarvestDays = 7
+    private static let historicalHarvestFileCap = 5000
 
     private func harvestHistoryLocked() {
-        let older = Self.dayDirectories(
-            under: root, endingAt: Date(), count: Self.historicalHarvestDays + 2
-        ).dropFirst(2)
-        for directory in older {
+        let recent = Set(Self.dayDirectories(under: root, endingAt: Date(), count: 2).map(\.path))
+        var remaining = Self.historicalHarvestFileCap
+        for directory in Self.existingDayDirectories(under: root)
+        where !recent.contains(directory.path) {
+            guard remaining > 0 else { break }
             guard
                 let files = try? FileManager.default.contentsOfDirectory(
                     at: directory, includingPropertiesForKeys: nil)
             else { continue }
             for file in files where file.pathExtension == "jsonl" {
+                guard remaining > 0 else { break }
+                remaining -= 1
                 subagentLedger.harvest(path: file.standardizedFileURL.path)
             }
         }
+    }
+
+    /// Every `root/YYYY/MM/DD` directory that exists, newest first; non-numeric
+    /// entries are ignored. Internal for tests.
+    static func existingDayDirectories(under root: URL) -> [URL] {
+        func numericChildren(of url: URL) -> [URL] {
+            let children =
+                (try? FileManager.default.contentsOfDirectory(
+                    at: url, includingPropertiesForKeys: nil)) ?? []
+            return
+                children
+                .compactMap { child in Int(child.lastPathComponent).map { ($0, child) } }
+                .sorted { $0.0 > $1.0 }
+                .map(\.1)
+        }
+        var days: [URL] = []
+        for year in numericChildren(of: root) {
+            for month in numericChildren(of: year) {
+                days.append(contentsOf: numericChildren(of: month))
+            }
+        }
+        return days
     }
 
     /// The `root/YYYY/MM/DD` directories for `count` days, newest first.

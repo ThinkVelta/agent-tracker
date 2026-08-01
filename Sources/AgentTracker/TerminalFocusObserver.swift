@@ -50,6 +50,14 @@ final class TerminalFocusObserver {
             pollTimer = nil
             return
         }
+        // A different terminal app must restart the dwell: its focused window
+        // can carry the same title string (same project in two terminals),
+        // and inheriting the previous stableSince would acknowledge without a
+        // fresh 3s stay.
+        if frontTerminalPid != app.processIdentifier {
+            stableTitle = nil
+            stableSince = nil
+        }
         frontTerminalPid = app.processIdentifier
         guard pollTimer == nil else { return }
         pollTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in

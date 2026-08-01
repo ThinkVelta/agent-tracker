@@ -174,6 +174,21 @@ final class CodexSubagentLedgerTests {
             ])
     }
 
+    @Test func existingDayDirectoriesWalkNewestFirstIgnoringJunk() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-root-\(UUID().uuidString)")
+        tempFiles.append(root)
+        for path in ["2025/12/31", "2026/01/02", "2026/01/15", "notes", "2026/junk"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(path), withIntermediateDirectories: true)
+        }
+        let days = CodexScanWorker.existingDayDirectories(under: root)
+        // Compare by trailing components — /tmp resolves to /private/tmp on
+        // macOS, so absolute prefixes differ from the unresolved root.
+        let relative = days.map { $0.pathComponents.suffix(3).joined(separator: "/") }
+        #expect(relative == ["2026/01/15", "2026/01/02", "2025/12/31"])
+    }
+
     @Test func threadIdFromRolloutFilename() {
         let path =
             "/x/2026/08/01/rollout-2026-08-01T13-20-44-"
