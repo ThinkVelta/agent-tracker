@@ -28,6 +28,8 @@ rollout files. See README for the full picture.
   - `TitleDirectory.swift` — session_id → live window title map, accumulated
     from `~/.claude/statusline-last.json` (exact window matching)
   - `TerminalFocuser.swift` — AX-based window matching + raise
+  - `TerminalFocusObserver.swift` — auto-acknowledges sessions whose terminal
+    the user visits directly (3s dwell, exact unambiguous matches only)
   - `MenuContentView.swift` — dropdown UI
 - `integrations/` — hook script + onboarding CLI (Python, stdlib only) +
   idempotent installers + uninstaller

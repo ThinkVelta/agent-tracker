@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hitRegions: [StatusIconRenderer.HitRegion] = []
     private var storeSubscription: AnyCancellable?
     private var dismissMonitor: Any?
+    private var focusObserver: TerminalFocusObserver?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only — no Dock icon, no app switcher entry.
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let store = SessionStore()
         self.store = store
         setUpStatusItem(for: store)
+        focusObserver = TerminalFocusObserver(store: store)
     }
 
     private func setUpStatusItem(for store: SessionStore) {
