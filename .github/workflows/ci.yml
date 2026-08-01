@@ -122,4 +122,4 @@ jobs:
       # ships with the Xcode toolchain, so it runs here on macOS.
       - name: Swift format lint
         if: steps.package.outputs.present == 'true'
-        run: swift format lint --strict --recursive Sources
+        run: swift format lint --strict --recursive Sources Tests

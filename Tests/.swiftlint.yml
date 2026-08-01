@@ -1,0 +1,6 @@
+# Test-tree relaxations layered onto the root config. Test suites are
+# naturally long — fixture builders plus one @Test per behavior — so the
+# length ceilings stay enforced for app code under Sources/ only.
+disabled_rules:
+  - file_length
+  - type_body_length
