@@ -15,6 +15,8 @@ struct SettingsView: View {
                 .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             SessionsSettingsTab()
                 .tabItem { Label("Sessions", systemImage: "circle.grid.2x1") }
+            AdvancedSettingsTab()
+                .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
             AboutSettingsTab()
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
@@ -34,6 +36,8 @@ struct SettingsPreviewStack: View {
             MenuBarSettingsTab()
             Divider()
             SessionsSettingsTab()
+            Divider()
+            AdvancedSettingsTab()
             Divider()
             AboutSettingsTab()
         }
@@ -189,14 +193,41 @@ private struct MenuBarSettingsTab: View {
 
 private struct SessionsSettingsTab: View {
     @ObservedObject private var preferences = Preferences.shared
+    @State private var accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
+
+    /// The user grants this in System Settings, not here, so the row has to
+    /// notice by itself.
+    private let statusTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 12) {
             SettingsCard {
+                // Sits directly above auto-acknowledge because it GATES it:
+                // without this permission the app cannot see which terminal
+                // window is focused, so visiting a session never clears its
+                // red state. Burying that dependency under "About" is what
+                // made it invisible.
+                SettingsRow(
+                    title: "Accessibility permission",
+                    detail: accessibilityGranted
+                        ? "Granted — click-to-focus works, and visiting a session's terminal "
+                            + "clears its red state."
+                        : "Not granted, so click-to-focus and auto-acknowledge below cannot "
+                            + "work. Already listed? Remove AgentTracker with − and add it "
+                            + "again — a rebuilt app invalidates its old grant."
+                ) {
+                    if accessibilityGranted {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Open Settings…") { TerminalFocuser.openAccessibilitySettings() }
+                    }
+                }
                 SettingsRow(
                     title: "Auto-acknowledge after",
                     detail: "Visiting a session's terminal yourself clears its red state once "
-                        + "the window has been focused this long."
+                        + "the window has been focused this long.",
+                    divided: true
                 ) {
                     Picker("", selection: $preferences.autoAckDwell) {
                         ForEach(Preferences.dwellOptions, id: \.seconds) { option in
@@ -227,47 +258,20 @@ private struct SessionsSettingsTab: View {
     }
 }
 
-// MARK: - About
+// MARK: - Advanced
 
-private struct AboutSettingsTab: View {
-    @State private var accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
-    @State private var updateState: UpdateState = .idle
+/// Troubleshooting and removal — technical, occasionally destructive, and
+/// deliberately not mixed in with the app's identity page.
+private struct AdvancedSettingsTab: View {
     @State private var copiedUninstall = false
-
-    private let statusTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
-
-    private enum UpdateState: Equatable {
-        case idle
-        case checking
-        case done(UpdateCheck.Outcome)
-    }
 
     var body: some View {
         VStack(spacing: 12) {
-            header
             SettingsCard {
-                SettingsRow(
-                    title: "Accessibility",
-                    detail: accessibilityGranted
-                        ? "Granted — click-to-focus can raise terminal windows."
-                        : "Not granted. If AgentTracker is already listed, remove it with − "
-                            + "and add it again — a rebuilt app invalidates its old grant."
-                ) {
-                    if accessibilityGranted {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Open Settings…") { TerminalFocuser.openAccessibilitySettings() }
-                    }
-                }
-                SettingsRow(title: "Updates", detail: updateDetail, divided: true) {
-                    updateAccessory
-                }
                 SettingsRow(
                     title: "Diagnostics",
                     detail: "Click traces, focus decisions and state changes, for bug "
-                        + "reports. Plain text, local only, capped at 2 MB.",
-                    divided: true
+                        + "reports. Plain text, local only, capped at 2 MB."
                 ) {
                     Button("Show Log") {
                         let log = DebugLog.shared.fileURL
@@ -285,8 +289,8 @@ private struct AboutSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Uninstall",
-                    detail: "Removes the hooks, the app and its settings. From the repo:\n"
-                        + "./integrations/uninstall.sh",
+                    detail: "Removes the agent hooks, the app and its settings. From the "
+                        + "repo: ./integrations/uninstall.sh",
                     divided: true
                 ) {
                     Button(copiedUninstall ? "Copied" : "Copy command") {
@@ -297,32 +301,82 @@ private struct AboutSettingsTab: View {
                     }
                 }
             }
-            Link(
-                "github.com/ThinkVelta/agent-tracker",
-                destination: URL(string: "https://github.com/ThinkVelta/agent-tracker")!
-            )
-            .font(Theme.Typography.footer)
+            Spacer()
         }
         .padding(20)
-        .onReceive(statusTick) { _ in
-            accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
+    }
+}
+
+// MARK: - About
+
+/// The app's identity page: what this is, whose it is, how to reach it.
+/// Nothing here changes behaviour — those controls live in the tabs before it.
+private struct AboutSettingsTab: View {
+    @State private var updateState: UpdateState = .idle
+
+    private enum UpdateState: Equatable {
+        case idle
+        case checking
+        case done(UpdateCheck.Outcome)
+    }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            header
+            SettingsCard {
+                SettingsRow(title: "Updates", detail: updateDetail) {
+                    updateAccessory
+                }
+            }
+            credits
+            Spacer()
         }
+        .padding(20)
     }
 
     private var header: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 8) {
-                Circle().fill(.red).frame(width: 12, height: 12)
-                Circle().fill(.green).frame(width: 12, height: 12)
-                Circle().fill(.gray).frame(width: 12, height: 12)
+        VStack(spacing: 7) {
+            HStack(spacing: 9) {
+                Circle().fill(.red).frame(width: 14, height: 14)
+                Circle().fill(.green).frame(width: 14, height: 14)
+                Circle().fill(.gray).frame(width: 14, height: 14)
             }
+            .padding(.bottom, 2)
             Text("AgentTracker")
-                .font(.system(size: 15, weight: .bold))
+                .font(.system(size: 17, weight: .bold))
+            Text("Every agent session, one glance away.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
             Text(versionLine)
                 .font(Theme.Typography.footer)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.tertiary)
         }
-        .padding(.bottom, 4)
+        .padding(.top, 6)
+    }
+
+    private var credits: some View {
+        VStack(spacing: 5) {
+            Text("Made by Ruben Broekx")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            HStack(spacing: 5) {
+                Link(
+                    "Source",
+                    destination: URL(string: "https://github.com/ThinkVelta/agent-tracker")!)
+                Text("·").foregroundStyle(.tertiary)
+                Link(
+                    "Report an issue",
+                    destination: URL(
+                        string: "https://github.com/ThinkVelta/agent-tracker/issues")!)
+                Text("·").foregroundStyle(.tertiary)
+                Link(
+                    "MIT License",
+                    destination: URL(
+                        string:
+                            "https://github.com/ThinkVelta/agent-tracker/blob/main/LICENSE")!)
+            }
+            .font(.system(size: 11))
+        }
     }
 
     private var versionLine: String {
