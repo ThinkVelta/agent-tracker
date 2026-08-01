@@ -27,7 +27,8 @@ enum TranscriptTitle {
             if chunk.offset > 0, let firstNewline = text.firstIndex(of: "\n") {
                 text = String(text[text.index(after: firstNewline)...])
             }
-            if chunk.offset + UInt64(chunk.length) < size, let lastNewline = text.lastIndex(of: "\n")
+            if chunk.offset + UInt64(chunk.length) < size,
+                let lastNewline = text.lastIndex(of: "\n")
             {
                 text = String(text[..<lastNewline])
             }
