@@ -8,16 +8,16 @@ enum TranscriptTitle {
     /// click path, so scan only the head (summaries cluster at the start of
     /// resumed transcripts) and the tail (for late additions), never the whole
     /// file. The last summary seen wins, preferring tail hits.
-    private static let window = 256 * 1024
+    static let defaultWindow = 256 * 1024
 
-    static func latestSummary(atPath path: String?) -> String? {
+    static func latestSummary(atPath path: String?, window: Int = defaultWindow) -> String? {
         guard let path, let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)),
             let size = try? handle.seekToEnd()
         else { return nil }
         defer { try? handle.close() }
 
         var latest: String?
-        for chunk in windowRanges(fileSize: size) {
+        for chunk in windowRanges(fileSize: size, window: window) {
             // A window starting exactly on a line boundary keeps its first
             // line; only a true mid-line start drops the fragment.
             let startsMidLine: Bool = {
@@ -53,7 +53,9 @@ enum TranscriptTitle {
         return latest
     }
 
-    private static func windowRanges(fileSize: UInt64) -> [(offset: UInt64, length: Int)] {
+    private static func windowRanges(
+        fileSize: UInt64, window: Int
+    ) -> [(offset: UInt64, length: Int)] {
         if fileSize <= UInt64(window * 2) {
             return [(0, Int(fileSize))]
         }
