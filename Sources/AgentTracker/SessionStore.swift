@@ -144,6 +144,10 @@ final class SessionStore: ObservableObject {
             }
             return (lhs.stateChangedAt ?? .distantPast) > (rhs.stateChangedAt ?? .distantPast)
         }
+        #if DEBUG
+        let counts = counts
+        print("[store] \(sessions.count) sessions — \(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle: \(sessions.map { "\($0.projectName)(\($0.state.rawValue))" }.joined(separator: ", "))")
+        #endif
     }
 
     private func applyAcknowledgement(_ session: AgentSession) -> AgentSession {

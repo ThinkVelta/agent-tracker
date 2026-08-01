@@ -2,6 +2,13 @@ import SwiftUI
 
 struct MenuContentView: View {
     @ObservedObject var store: SessionStore
+    /// When set, the list shows only sessions in this state (dot-chip filter).
+    @State private var filter: SessionState?
+
+    private var filteredSessions: [AgentSession] {
+        guard let filter else { return store.sessions }
+        return store.sessions.filter { $0.state == filter }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -44,30 +51,62 @@ struct MenuContentView: View {
     }
 
     private var header: some View {
-        HStack {
+        HStack(spacing: 6) {
             Text("Agent Sessions")
                 .font(.system(size: 13, weight: .bold))
             Spacer()
-            Text(summaryText)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            chip(.needsYou, store.counts.needsYou)
+            chip(.running, store.counts.running)
+            chip(.idle, store.counts.idle)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
     }
 
-    private var summaryText: String {
-        let counts = store.counts
-        return "\(counts.needsYou) need you · \(counts.running) running · \(counts.idle) idle"
+    /// Clickable state filter: tap a dot to show only that state, tap again to
+    /// clear the filter.
+    private func chip(_ state: SessionState, _ count: Int) -> some View {
+        Button {
+            filter = (filter == state) ? nil : state
+        } label: {
+            HStack(spacing: 3) {
+                Circle()
+                    .fill(state.color.opacity(count == 0 ? 0.35 : 1))
+                    .frame(width: 7, height: 7)
+                Text("\(count)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(count == 0 ? .secondary : .primary)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(filter == state ? Color.primary.opacity(0.12) : .clear))
+            .overlay(Capsule().stroke(
+                filter == state ? Color.primary.opacity(0.25) : .clear, lineWidth: 1
+            ))
+        }
+        .buttonStyle(.plain)
+        .help("Show only \"\(state.label)\" sessions")
     }
 
     private var sessionList: some View {
         ScrollView {
-            LazyVStack(spacing: 1) {
-                ForEach(store.sessions) { session in
-                    SessionRow(session: session) {
-                        TerminalFocuser.focus(session)
-                        store.acknowledge(session)
+            // Eager VStack on purpose: LazyVStack fails to lay out inside a
+            // MenuBarExtra window when content changes while it is closed
+            // (rows render zero-height), and laziness buys nothing at this
+            // scale anyway.
+            VStack(spacing: 1) {
+                if filteredSessions.isEmpty, let filter {
+                    Text("No \"\(filter.label)\" sessions")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 12)
+                } else {
+                    ForEach(filteredSessions) { session in
+                        SessionRow(session: session) {
+                            TerminalFocuser.focus(session)
+                            store.acknowledge(session)
+                        }
                     }
                 }
             }

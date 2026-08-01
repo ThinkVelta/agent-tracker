@@ -56,16 +56,80 @@ enum TerminalFocuser {
         let candidates = titleCandidates(for: session)
         log("title candidates: \(candidates.map { "\"\($0.text)\" (w\($0.weight))" }.joined(separator: ", "))")
 
-        guard let best = bestWindow(in: app, candidates: candidates) else {
-            log("no window title matched — activating \(app.localizedName ?? "the app") without raising a specific window")
+        // Primary: the app's Window menu. Unlike the AX window list (current
+        // Space only), it enumerates every window AND tab across all Spaces,
+        // and pressing an entry performs the exact jump the user would.
+        if let menuHit = bestWindowMenuItem(in: app, candidates: candidates) {
+            log("pressing Window-menu item \"\(menuHit.title)\" (score \(menuHit.score))")
+            let pressResult = AXUIElementPerformAction(menuHit.item, kAXPressAction as CFString)
             app.activate()
-            return .activatedAppOnly
+            if pressResult == .success {
+                return .focusedWindow(title: menuHit.title)
+            }
+            log("menu press failed (\(pressResult.rawValue)) — falling back to AX window raise")
         }
-        log("raising window \"\(best.title)\" (score \(best.score))")
-        AXUIElementPerformAction(best.window, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(best.window, kAXMainAttribute as CFString, kCFBooleanTrue)
+
+        // Fallback: raise a matching window from the AX window list (only sees
+        // the current Space).
+        if let best = bestWindow(in: app, candidates: candidates) {
+            log("raising window \"\(best.title)\" (score \(best.score))")
+            AXUIElementPerformAction(best.window, kAXRaiseAction as CFString)
+            AXUIElementSetAttributeValue(best.window, kAXMainAttribute as CFString, kCFBooleanTrue)
+            app.activate()
+            return .focusedWindow(title: best.title)
+        }
+
+        log("no title matched — activating \(app.localizedName ?? "the app") without raising a specific window")
         app.activate()
-        return .focusedWindow(title: best.title)
+        return .activatedAppOnly
+    }
+
+    /// Finds the best-matching entry in the app's "Window" menu. Menu items are
+    /// AX-accessible regardless of Spaces, and the window section lists every
+    /// window and tab by title.
+    private static func bestWindowMenuItem(
+        in app: NSRunningApplication,
+        candidates: [(text: String, weight: Int)]
+    ) -> (item: AXUIElement, title: String, score: Int)? {
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        var menuBarValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue) == .success,
+              let menuBarRef = menuBarValue else {
+            log("no AX menu bar exposed")
+            return nil
+        }
+        let menuBar = menuBarRef as! AXUIElement
+        var topValue: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(menuBar, kAXChildrenAttribute as CFString, &topValue) == .success,
+              let topItems = topValue as? [AXUIElement] else { return nil }
+
+        for top in topItems {
+            var titleValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(top, kAXTitleAttribute as CFString, &titleValue) == .success,
+                  (titleValue as? String) == "Window" else { continue }
+            var menusValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(top, kAXChildrenAttribute as CFString, &menusValue) == .success,
+                  let menus = menusValue as? [AXUIElement], let menu = menus.first else { return nil }
+            var itemsValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(menu, kAXChildrenAttribute as CFString, &itemsValue) == .success,
+                  let items = itemsValue as? [AXUIElement] else { return nil }
+            log("\(items.count) Window-menu item(s):")
+
+            var best: (item: AXUIElement, title: String, score: Int)?
+            for item in items {
+                var itemTitleValue: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &itemTitleValue) == .success,
+                      let title = itemTitleValue as? String, !title.isEmpty else { continue }
+                let score = matchScore(windowTitle: title, candidates: candidates)
+                if score > 0 { log("  \"\(title)\" -> score \(score)") }
+                if score > (best?.score ?? 0) {
+                    best = (item, title, score)
+                }
+            }
+            return best
+        }
+        log("no menu titled \"Window\" found")
+        return nil
     }
 
     private static func terminalApp(for session: AgentSession) -> NSRunningApplication? {
@@ -145,9 +209,14 @@ enum TerminalFocuser {
     }
 
     private static func normalize(_ text: String) -> String {
-        text.lowercased()
-            .trimmingCharacters(in: CharacterSet(charactersIn: "✳·⚒…~ \t"))
-            .trimmingCharacters(in: .whitespaces)
+        // Strip leading status glyphs — ✳, braille spinner frames (⠂⠐…),
+        // bullets, ellipsis — that terminals/CLIs prefix onto titles.
+        var stripped = Substring(text.lowercased())
+        while let first = stripped.first,
+              !(first.isLetter || first.isNumber || first == "/" || first == "~" || first == ".") {
+            stripped = stripped.dropFirst()
+        }
+        return stripped.trimmingCharacters(in: .whitespaces)
     }
 
     static func openAccessibilitySettings() {
