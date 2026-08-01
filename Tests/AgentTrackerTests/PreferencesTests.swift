@@ -59,6 +59,27 @@ final class PreferencesTests {
             Preferences(defaults: defaults).autoAckDwell == TerminalFocusObserver.defaultDwell)
     }
 
+    /// Numerically fine but not a selectable option: a picker with no matching
+    /// tag renders blank, so these must snap to the default too.
+    @Test func valuesOutsideTheOptionSetsSnapToDefaults() {
+        let defaults = makeDefaults()
+        defaults.set(7, forKey: "idleFoldingThreshold")
+        defaults.set(2.0, forKey: "autoAckDwellSeconds")
+        let preferences = Preferences(defaults: defaults)
+        #expect(preferences.idleFolding == .past(Theme.Metrics.idleAutoCollapseThreshold))
+        #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
+
+        // Every offerable option survives the round trip unchanged.
+        for folding in Preferences.IdleFolding.options {
+            defaults.set(folding.stored, forKey: "idleFoldingThreshold")
+            #expect(Preferences(defaults: defaults).idleFolding == folding)
+        }
+        for option in Preferences.dwellOptions {
+            defaults.set(option.seconds, forKey: "autoAckDwellSeconds")
+            #expect(Preferences(defaults: defaults).autoAckDwell == option.seconds)
+        }
+    }
+
     // MARK: - Dwell decision (pure)
 
     @Test func dwellRequiresTheConfiguredStay() {

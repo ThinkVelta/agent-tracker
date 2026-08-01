@@ -123,15 +123,23 @@ final class Preferences: ObservableObject {
         appearanceOverride =
             AppearanceOverride(rawValue: defaults.string(forKey: Keys.appearance) ?? "")
             ?? .system
-        idleFolding =
+        // Loaded values snap to the option sets Settings offers, not just to
+        // sane ranges: a numerically-fine value with no matching picker tag
+        // (a defaults-write `7`, or a future build's option) renders as a
+        // BLANK picker, which is worse than losing the stored value.
+        let defaultFolding = IdleFolding.past(Theme.Metrics.idleAutoCollapseThreshold)
+        let loadedFolding =
             defaults.object(forKey: Keys.idleFolding) == nil
-            ? .past(Theme.Metrics.idleAutoCollapseThreshold)
+            ? defaultFolding
             : IdleFolding(stored: defaults.integer(forKey: Keys.idleFolding))
-        let dwell =
+        idleFolding = IdleFolding.options.contains(loadedFolding) ? loadedFolding : defaultFolding
+
+        let loadedDwell =
             defaults.object(forKey: Keys.autoAckDwell) == nil
             ? TerminalFocusObserver.defaultDwell
             : defaults.double(forKey: Keys.autoAckDwell)
-        // A negative or absurd stored value is corruption, not a preference.
-        autoAckDwell = (0...60).contains(dwell) ? dwell : TerminalFocusObserver.defaultDwell
+        autoAckDwell =
+            Self.dwellOptions.contains { $0.seconds == loadedDwell }
+            ? loadedDwell : TerminalFocusObserver.defaultDwell
     }
 }
