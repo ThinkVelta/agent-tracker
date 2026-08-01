@@ -255,6 +255,10 @@ private struct SessionsSettingsTab: View {
             }
         }
         .padding(20)
+        .onReceive(statusTick) { _ in
+            accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
+        }
+        .onAppear { accessibilityGranted = TerminalFocuser.hasAccessibilityPermission }
     }
 }
 
