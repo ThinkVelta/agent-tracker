@@ -98,8 +98,9 @@ final class CodexScanWorker: @unchecked Sendable {
                 }
                 // Heal missed/coalesced FSEvents even with a live stream: stat
                 // every tracked file and read any growth (reads happen only
-                // when the size actually moved past our offset).
-                for path in self.trackers.keys { self.processFileLocked(path) }
+                // when the size actually moved past our offset). Snapshot the
+                // keys — processFileLocked mutates trackers.
+                for path in Array(self.trackers.keys) { self.processFileLocked(path) }
                 self.refreshLivenessLocked()
                 self.publishLocked()
             } else {
@@ -328,7 +329,9 @@ final class CodexScanWorker: @unchecked Sendable {
             // ANY codex process is alive — if none, drop all codex sessions;
             // otherwise keep the current set unchanged (possibly stale until
             // lsof recovers on a later refresh).
-            if let output = ProcessProbe.run("/usr/bin/pgrep", ["-x", "codex"], timeout: 5),
+            // Prefix regex mirrors lsof's "-c codex": matches the vendor
+            // binary and auxiliaries like codex-code-mode-host.
+            if let output = ProcessProbe.run("/usr/bin/pgrep", ["^codex"], timeout: 5),
                 output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             {
                 trackers.removeAll()
@@ -342,21 +345,23 @@ final class CodexScanWorker: @unchecked Sendable {
     /// grace for the create→open race.
     private func pruneDeadLocked(previouslyHeld: Set<String>) {
         let now = Date()
-        for (path, _) in trackers where holders[path] == nil {
+        var dead: [String] = []
+        for path in trackers.keys where holders[path] == nil {
             if previouslyHeld.contains(path) {
-                trackers.removeValue(forKey: path)
+                dead.append(path)
                 continue
             }
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
                 let mtime = attributes[.modificationDate] as? Date
             else {
-                trackers.removeValue(forKey: path)  // file gone
+                dead.append(path)  // file gone
                 continue
             }
             if now.timeIntervalSince(mtime) > Self.newFileGrace {
-                trackers.removeValue(forKey: path)
+                dead.append(path)
             }
         }
+        for path in dead { trackers.removeValue(forKey: path) }
     }
 
     // MARK: - Publishing (on queue)
