@@ -20,8 +20,17 @@ enum TranscriptTitle {
         for chunk in windowRanges(fileSize: size) {
             guard (try? handle.seek(toOffset: chunk.offset)) != nil,
                 let data = try? handle.read(upToCount: chunk.length),
-                let text = String(data: data, encoding: .utf8)
+                var text = String(data: data, encoding: .utf8)
             else { continue }
+            // Drop partial lines cut at window boundaries — a fragment can't
+            // parse and must not shadow a complete line in the other window.
+            if chunk.offset > 0, let firstNewline = text.firstIndex(of: "\n") {
+                text = String(text[text.index(after: firstNewline)...])
+            }
+            if chunk.offset + UInt64(chunk.length) < size, let lastNewline = text.lastIndex(of: "\n")
+            {
+                text = String(text[..<lastNewline])
+            }
             for line in text.split(separator: "\n") {
                 guard line.contains("\"type\":\"summary\"") else { continue }
                 guard let lineData = line.data(using: .utf8),
