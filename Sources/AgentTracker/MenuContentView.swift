@@ -29,10 +29,12 @@ struct MenuContentView: View {
         guard !query.isEmpty else { return sessions }
         return sessions.filter { session in
             session.displayName.localizedCaseInsensitiveContains(query)
-                || session.projectName.localizedCaseInsensitiveContains(query)
+                // Not displayed, but still findable: this is the name Claude
+                // Code shows in its own terminal, so a user may well type it.
+                || (session.registryName?.localizedCaseInsensitiveContains(query) ?? false)
                 || session.providerDisplayName.localizedCaseInsensitiveContains(query)
                 || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
-                || (session.cwd?.localizedCaseInsensitiveContains(query) ?? false)
+                || (session.primaryDirectory?.localizedCaseInsensitiveContains(query) ?? false)
         }
     }
 
@@ -564,7 +566,7 @@ struct SessionRow: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if showsPath, let cwd = session.cwd {
+            if showsPath, let cwd = session.primaryDirectory {
                 Text(cwd)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)
@@ -586,7 +588,8 @@ struct SessionRow: View {
             }
         }
         .animation(Theme.Motion.quick, value: showsPath)
-        .accessibilityLabel("\(session.displayName), \(metadata), \(session.cwd ?? "")")
+        .accessibilityLabel(
+            "\(session.displayName), \(metadata), \(session.primaryDirectory ?? "")")
     }
 
     /// One dimmed line under the name: provider, where it lives, what it is

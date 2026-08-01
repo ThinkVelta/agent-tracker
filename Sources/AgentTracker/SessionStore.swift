@@ -232,14 +232,6 @@ final class SessionStore: ObservableObject {
                 })
         }
 
-        // Last word on state: a needs-you row nothing has touched for long
-        // enough is no longer news. Applied after every other source so it
-        // ages the FINAL state, and derived per rebuild (never persisted), so
-        // a fresh event turns the row red again immediately.
-        let now = Date()
-        let fadeAfter = Preferences.shared.needsYouFadesAfter
-        merged = merged.map { NeedsYouAging.apply(to: $0, now: now, fadeAfter: fadeAfter) }
-
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
                 return lhs.state.sortRank < rhs.state.sortRank
@@ -284,7 +276,7 @@ final class SessionStore: ObservableObject {
         else { return session }
         var acknowledged = session
         acknowledged.state = .idle
-        acknowledged.reason = "Acknowledged"
+        acknowledged.reason = "Seen"
         return acknowledged
     }
 
@@ -297,7 +289,7 @@ final class SessionStore: ObservableObject {
                 var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { return }
             object["state"] = SessionState.idle.rawValue
-            object["reason"] = "Acknowledged"
+            object["reason"] = "Seen"
             object["stateChangedAt"] = ISO8601DateFormatter().string(from: Date())
             if let updated = try? JSONSerialization.data(
                 withJSONObject: object, options: [.prettyPrinted, .sortedKeys])

@@ -168,10 +168,16 @@ enum TerminalFocuser {
         {
             chosen = hits[ranking.index]
         } else {
+            // Nothing separates these windows, so skip whichever one the user
+            // is already looking at — raising that one reads as a dead click,
+            // and repeated clicks then cycle through the candidates.
+            let focused = AXAccess.focusedWindowIndex(in: windows, of: app)
+            guard let pick = WindowIdentity.chooseAmbiguous(hits: hits, focused: focused)
+            else { return nil }
             log(
                 "ambiguous: \(hits.count) window(s) share this session's directory "
-                    + "and nothing distinguishes them — raising the first")
-            chosen = hits[0]
+                    + "and nothing distinguishes them — cycling past the focused one")
+            chosen = pick
         }
 
         let windowTitle = AXAccess.title(of: windows[chosen]) ?? ""

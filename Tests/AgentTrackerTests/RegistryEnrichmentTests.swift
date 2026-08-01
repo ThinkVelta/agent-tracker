@@ -25,10 +25,26 @@ final class RegistryEnrichmentTests {
             provider: provider, sessionId: "s1", cwd: cwd, state: state, stateChangedAt: changedAt)
     }
 
-    @Test func registryNameBecomesTheRowTitle() {
+    /// The registry name is joined in and stays searchable, but the row title
+    /// is the directory for EVERY provider — only Claude publishes a registry
+    /// name, and preferring it made Claude and Codex rows read differently.
+    @Test func registryNameIsJoinedButDoesNotTitleTheRow() {
         let enriched = RegistryEnrichment.apply(to: session(), entry: entry())
         #expect(enriched.registryName == "planner-e8")
-        #expect(enriched.displayName == "planner-e8")
+        #expect(enriched.displayName == "pln-388")
+        // Identical with or without a registry entry — that is the point.
+        #expect(enriched.displayName == session().displayName)
+    }
+
+    /// A row with no hook cwd still has the registry's; falling through to the
+    /// generic "Session" placeholder would throw away a real directory name.
+    @Test func theRegistryDirectoryTitlesARowThatHasNoHookCwd() {
+        let enriched = RegistryEnrichment.apply(
+            to: session(cwd: nil), entry: entry(cwd: "/Users/dev/Planner"))
+        #expect(enriched.displayName == "Planner")
+        // Nothing anywhere: the placeholder is still the honest answer.
+        let empty = RegistryEnrichment.apply(to: session(cwd: nil), entry: entry(cwd: nil))
+        #expect(empty.displayName == "Session")
     }
 
     /// Without a registry entry nothing changes — Codex sessions and older

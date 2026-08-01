@@ -123,24 +123,6 @@ final class PreferencesTests {
         }
     }
 
-    @Test func fadePreferenceRoundTripsAndSnapsToOptions() {
-        let defaults = makeDefaults()
-        #expect(Preferences(defaults: defaults).needsYouFadesAfter == Preferences.defaultFadeAfter)
-        let first = Preferences(defaults: defaults)
-        first.needsYouFadesAfter = 0
-        #expect(Preferences(defaults: defaults).needsYouFadesAfter == 0)
-        for bad: Any in [-5.0, 42.0, "soon"] {
-            defaults.set(bad, forKey: "needsYouFadesAfterSeconds")
-            #expect(
-                Preferences(defaults: defaults).needsYouFadesAfter
-                    == Preferences.defaultFadeAfter)
-        }
-        for option in Preferences.fadeOptions {
-            defaults.set(option.seconds, forKey: "needsYouFadesAfterSeconds")
-            #expect(Preferences(defaults: defaults).needsYouFadesAfter == option.seconds)
-        }
-    }
-
     @Test func iconPreferencesRoundTripAndSnapToDefaults() {
         let defaults = makeDefaults()
         let first = Preferences(defaults: defaults)
