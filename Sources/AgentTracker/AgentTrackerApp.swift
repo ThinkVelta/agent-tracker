@@ -104,7 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Maps the click's x-position inside the status button back to the dot it
-    /// hit; nil = outside every dot region → unfiltered.
+    /// hit (near-misses snap to the nearest dot); nil = beyond snap tolerance
+    /// of every dot → unfiltered.
     private func clickedState(in button: NSStatusBarButton) -> SessionState? {
         guard let event = NSApp.currentEvent, let image = button.image else {
             print("[ui] click mapping failed: no current event or image")
@@ -114,13 +115,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The button centers its image; hit regions are in image coordinates.
         let originX = (button.bounds.width - image.size.width) / 2
         let imageX = point.x - originX
-        let hit = hitRegions.first { $0.range.contains(imageX) }?.state
+        let hit = StatusIconRenderer.state(atImageX: imageX, regions: hitRegions)
+        let exact = hitRegions.contains { $0.range.contains(imageX) }
+        let label = "\(hit?.rawValue ?? "none")\(hit != nil && !exact ? " (snapped)" : "")"
         let regions = hitRegions.map {
             "\($0.state.rawValue):\(Int($0.range.lowerBound))-\(Int($0.range.upperBound))"
         }
         print(
             "[ui] click x=\(String(format: "%.1f", imageX)) "
-                + "→ \(hit?.rawValue ?? "none") (regions \(regions.joined(separator: " ")))")
+                + "→ \(label) (regions \(regions.joined(separator: " ")))")
         return hit
     }
 
