@@ -69,6 +69,25 @@ struct AgentSession: Codable, Identifiable, Equatable {
         return parts.suffix(2).joined(separator: "/")
     }
 
+    /// Where this session lives, for the row's metadata line: the directory
+    /// containing `projectName`. Container directories that name no project
+    /// are skipped — a worktree at `…/Planner/worktrees/pln-388` belongs to
+    /// "Planner", and answering "worktrees" would tell the user nothing.
+    var locationContext: String? {
+        guard let cwd else { return nil }
+        var parts = (cwd as NSString).pathComponents.filter { $0 != "/" }
+        guard !parts.isEmpty else { return nil }
+        parts.removeLast()
+        while let last = parts.last, Self.containerDirectoryNames.contains(last.lowercased()) {
+            parts.removeLast()
+        }
+        return parts.last
+    }
+
+    private static let containerDirectoryNames: Set<String> = [
+        "worktrees", ".worktrees", "repos", "src",
+    ]
+
     var providerDisplayName: String {
         switch provider {
         case "claude-code": return "Claude"

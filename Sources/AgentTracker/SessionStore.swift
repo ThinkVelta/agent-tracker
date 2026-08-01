@@ -50,8 +50,17 @@ final class SessionStore: ObservableObject {
         return base.appendingPathComponent("sessions")
     }()
 
+    /// How often the safety-net reload runs. Hook/rollout watchers already
+    /// deliver state changes instantly; this bounds how stale a *derived*
+    /// display can get (dead-process pruning, relative timestamps).
+    static let refreshInterval: TimeInterval = 1
+
     private var watcher: DirectoryWatcher?
     private var refreshTimer: Timer?
+    /// Bumped when a displayed relative time would have changed, so rows
+    /// re-render on a quiet machine without republishing identical sessions.
+    @Published private(set) var clockTick = 0
+    private var lastClockBucket = 0
     private var codexScanner: CodexSessionScanner?
     private let titleDirectory: TitleDirectory
     private var scannerSubscription: AnyCancellable?
@@ -86,9 +95,15 @@ final class SessionStore: ObservableObject {
         watcher = DirectoryWatcher(url: Self.sessionsDirectory) { [weak self] in
             self?.reload()
         }
-        // Periodic reload keeps relative timestamps fresh and prunes dead sessions
-        // even when no new events arrive.
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+        // Hook writes and rollout edits arrive by watcher, so this tick is the
+        // safety net: it prunes sessions whose process died without a clean
+        // SessionEnd and catches anything a watcher missed. At 1s the menu bar
+        // is never meaningfully behind reality; the cost is one directory
+        // listing plus a kill(0) per session, and `rebuild` only republishes
+        // when something actually changed, so an idle machine stays idle.
+        refreshTimer = Timer.scheduledTimer(
+            withTimeInterval: Self.refreshInterval, repeats: true
+        ) { [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
 
@@ -191,12 +206,16 @@ final class SessionStore: ObservableObject {
                 })
         }
 
-        sessions = merged.sorted { lhs, rhs in
+        let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
                 return lhs.state.sortRank < rhs.state.sortRank
             }
             return (lhs.stateChangedAt ?? .distantPast) > (rhs.stateChangedAt ?? .distantPast)
         }
+        // Reloading every second, so publish only real changes: an unchanged
+        // assignment would still redraw the icon and re-render the popover.
+        if sessions != sorted { sessions = sorted }
+        advanceClockIfNeeded()
         #if DEBUG
             // Change-only: rebuilds fire on every hook event and timer tick; the
             // periodic "[codex-scan] lsof pass" line remains as the heartbeat.
@@ -216,6 +235,15 @@ final class SessionStore: ObservableObject {
     #if DEBUG
         private var lastLoggedSummary = ""
     #endif
+
+    /// Row timestamps read "now/3m/2h/1d", so they only ever change on a
+    /// 30-second boundary — republish on that boundary rather than every tick.
+    private func advanceClockIfNeeded() {
+        let bucket = Int(Date().timeIntervalSince1970 / 30)
+        guard bucket != lastClockBucket else { return }
+        lastClockBucket = bucket
+        clockTick &+= 1
+    }
 
     private func applyAcknowledgement(_ session: AgentSession) -> AgentSession {
         guard session.state == .needsYou,

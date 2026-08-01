@@ -7,13 +7,17 @@ struct MenuContentView: View {
     var dismiss: () -> Void = {}
 
     @State private var searchText = ""
+    /// Explicit collapse choices, which override the automatic idle folding
+    /// below. Absent means "whatever the list thinks is sensible".
+    @State private var sectionOverrides: [SessionState: Bool] = [:]
+
+    private var query: String { searchText.trimmingCharacters(in: .whitespaces) }
 
     private var filteredSessions: [AgentSession] {
         var sessions = store.sessions
         if let filter = store.selectedFilter {
             sessions = sessions.filter { $0.state == filter }
         }
-        let query = searchText.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return sessions }
         return sessions.filter { session in
             session.projectName.localizedCaseInsensitiveContains(query)
@@ -23,13 +27,18 @@ struct MenuContentView: View {
         }
     }
 
+    private var sections: [SessionSections.Section] {
+        SessionSections.build(
+            from: filteredSessions,
+            overrides: sectionOverrides,
+            autoCollapseIdle: store.selectedFilter == nil && query.isEmpty
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            header
-            // Stays visible while a query is active even if the list shrinks
-            // below the cap — otherwise a non-empty filter would keep applying
-            // with no visible way to clear it.
-            if store.sessions.count > Self.maxVisibleRows || !searchText.isEmpty {
+            filterTiles
+            if showsSearch {
                 searchField
             }
             Divider()
@@ -45,7 +54,64 @@ struct MenuContentView: View {
             Divider()
             footer
         }
-        .frame(width: 340)
+        .frame(width: Theme.Metrics.popoverWidth)
+    }
+
+    // MARK: - Chrome
+
+    /// Counts and the state filter in one control: the three tiles answer
+    /// "does anything need me?" at a glance and are the way to narrow the
+    /// list. Backed by the store, so menu bar dot clicks and these stay in
+    /// sync — clicking the active one clears the filter.
+    private var filterTiles: some View {
+        HStack(spacing: 4) {
+            ForEach(SessionState.allCases, id: \.self) { state in
+                FilterTile(
+                    state: state,
+                    total: store.counts.count(for: state),
+                    isSelected: store.selectedFilter == state
+                ) {
+                    store.selectedFilter = (store.selectedFilter == state) ? nil : state
+                }
+            }
+        }
+        .padding(.horizontal, Theme.Metrics.gutter)
+        .padding(.vertical, 8)
+    }
+
+    /// Shown from a modest number of sessions rather than only on overflow:
+    /// the user was surprised to learn the field existed at all.
+    private var showsSearch: Bool {
+        store.sessions.count >= Theme.Metrics.searchVisibleFromRows || !searchText.isEmpty
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            TextField("Filter sessions", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(Theme.Typography.search)
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 7)
+        .frame(height: Theme.Metrics.searchFieldHeight)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.Metrics.searchCornerRadius)
+                .fill(Theme.Palette.tileRest)
+        )
+        .padding(.horizontal, Theme.Metrics.gutter)
+        .padding(.bottom, 8)
     }
 
     private var permissionBanner: some View {
@@ -69,93 +135,13 @@ struct MenuContentView: View {
         .padding(.vertical, 8)
     }
 
-    private var header: some View {
-        HStack(spacing: 6) {
-            Text("Agent Sessions")
-                .font(.system(size: 13, weight: .bold))
-            Spacer()
-            chip(.needsYou, store.counts.needsYou)
-            chip(.running, store.counts.running)
-            chip(.idle, store.counts.idle)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
-    /// Clickable state filter: tap a dot to show only that state, tap again to
-    /// clear the filter. Backed by the store so menu-bar dot clicks and chips
-    /// share one filter.
-    private func chip(_ state: SessionState, _ count: Int) -> some View {
-        Button {
-            store.selectedFilter = (store.selectedFilter == state) ? nil : state
-        } label: {
-            HStack(spacing: 3) {
-                Circle()
-                    .fill(state.color.opacity(count == 0 ? 0.35 : 1))
-                    .frame(width: 7, height: 7)
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(count == 0 ? .secondary : .primary)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(
-                Capsule().fill(
-                    store.selectedFilter == state ? Color.primary.opacity(0.12) : .clear)
-            )
-            .overlay(
-                Capsule().stroke(
-                    store.selectedFilter == state ? Color.primary.opacity(0.25) : .clear,
-                    lineWidth: 1
-                ))
-        }
-        .buttonStyle(.plain)
-        .help("Show only \"\(state.label)\" sessions")
-    }
+    // MARK: - List
 
     /// Deliberately NOT a ScrollView: under the previous MenuBarExtra host,
     /// rows inside a ScrollView reserved space but painted blank whenever the
     /// list updated while the window was closed. The NSPopover host may not
-    /// share that bug, but the cap plus the dot filters and search field make
-    /// scrolling unnecessary, so the always-painting plain VStack stays.
-    private static let maxVisibleRows = 14
-
-    /// Shown only when the list overflows: filters by project, provider,
-    /// status reason, or path, composing with the dot filter.
-    private var searchField: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-            TextField("Filter sessions", text: $searchText)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-            if !searchText.isEmpty {
-                Button {
-                    searchText = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 6)
-    }
-
-    private var emptyFilterMessage: String {
-        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
-            return "No sessions match \"\(searchText)\""
-        }
-        if let filter = store.selectedFilter {
-            return "No \"\(filter.label)\" sessions"
-        }
-        return "No agent sessions"
-    }
-
+    /// share that bug, but the row cap plus filter tiles, search and
+    /// collapsible sections make scrolling unnecessary.
     private var sessionList: some View {
         VStack(spacing: 1) {
             if filteredSessions.isEmpty {
@@ -164,30 +150,16 @@ struct MenuContentView: View {
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 12)
             } else {
-                ForEach(filteredSessions.prefix(Self.maxVisibleRows)) { session in
-                    SessionRow(session: session) {
-                        let exactTitle = store.exactWindowTitle(for: session)
-                        let outcome = TerminalFocuser.focus(session, exactTitle: exactTitle)
-                        // Acknowledge only when the raised window is
-                        // identifiably this session's (strictly better match
-                        // than every sibling) — a fallback raise can land on
-                        // an unrelated window, and silencing the session on
-                        // that guess hides a red state the user never saw.
-                        if case .focusedWindow(let title) = outcome,
-                            TerminalFocuser.isPreferredMatch(
-                                windowTitle: title, for: session, exactTitle: exactTitle,
-                                among: store.sessions.map {
-                                    ($0, store.exactWindowTitle(for: $0))
-                                })
-                        {
-                            store.acknowledge(session)
-                        }
-                        dismiss()
+                let sections = sections
+                ForEach(sections) { section in
+                    sectionHeader(section)
+                    ForEach(section.rows) { session in
+                        row(for: session)
                     }
                 }
-                if filteredSessions.count > Self.maxVisibleRows {
-                    let hidden = filteredSessions.count - Self.maxVisibleRows
-                    Text("+\(hidden) more — use the dot filters or search to narrow down")
+                let hidden = sections.reduce(0) { $0 + $1.hiddenByBudget }
+                if hidden > 0 {
+                    Text("+\(hidden) more — narrow down with the tiles or search")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
@@ -198,8 +170,76 @@ struct MenuContentView: View {
         .padding(.horizontal, 4)
     }
 
+    /// A hairline rule carrying the state, its count, and the collapse
+    /// affordance. Grouping is what makes a long list readable — the state
+    /// filter narrows, sections organize.
+    private func sectionHeader(_ section: SessionSections.Section) -> some View {
+        Button {
+            withAnimation(Theme.Motion.quick) {
+                sectionOverrides[section.state] = !section.isCollapsed
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(section.state.color)
+                    .frame(width: 6, height: 6)
+                Text(section.state.label.uppercased())
+                    .font(Theme.Typography.sectionHeader)
+                    .kerning(0.8)
+                    .foregroundStyle(.tertiary)
+                Image(systemName: section.isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundStyle(.quaternary)
+                Rectangle()
+                    .fill(Theme.Palette.hairline)
+                    .frame(height: 1)
+                Text("\(section.total)")
+                    .font(Theme.Typography.sectionHeader)
+                    .foregroundStyle(.tertiary)
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, Theme.Metrics.rowHorizontalPadding)
+            .frame(height: Theme.Metrics.sectionHeaderHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(
+            section.isCollapsed
+                ? "Show \(section.state.label) sessions"
+                : "Hide \(section.state.label) sessions")
+    }
+
+    private func row(for session: AgentSession) -> some View {
+        SessionRow(session: session, clockTick: store.clockTick) {
+            let exactTitle = store.exactWindowTitle(for: session)
+            let outcome = TerminalFocuser.focus(session, exactTitle: exactTitle)
+            // Acknowledge only when the raised window is identifiably this
+            // session's (strictly better match than every sibling) — a
+            // fallback raise can land on an unrelated window, and silencing
+            // the session on that guess hides a red state the user never saw.
+            if case .focusedWindow(let title) = outcome,
+                TerminalFocuser.isPreferredMatch(
+                    windowTitle: title, for: session, exactTitle: exactTitle,
+                    among: store.sessions.map { ($0, store.exactWindowTitle(for: $0)) })
+            {
+                store.acknowledge(session)
+            }
+            dismiss()
+        }
+    }
+
+    private var emptyFilterMessage: String {
+        if !query.isEmpty { return "No sessions match \"\(searchText)\"" }
+        if let filter = store.selectedFilter { return "No \"\(filter.label)\" sessions" }
+        return "No agent sessions"
+    }
+
     private var emptyState: some View {
         VStack(spacing: 6) {
+            Image(systemName: "circle.dotted")
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 2)
             Text("No agent sessions")
                 .font(.system(size: 12, weight: .medium))
             Text("Start a Claude Code or Codex session,\nor run the installers in integrations/.")
@@ -212,70 +252,150 @@ struct MenuContentView: View {
     }
 
     // No Refresh button: reloads are event-driven (every hook write triggers
-    // one) with a 30s timer as safety net — a manual button implied staleness
+    // one) with a 1s timer as safety net — a manual button implied staleness
     // that doesn't exist, and it never covered the codex scanner anyway.
     private var footer: some View {
-        HStack {
+        HStack(spacing: 0) {
+            Text(sessionSummary)
+                .font(Theme.Typography.footer)
+                .foregroundStyle(.tertiary)
             Spacer()
-            Button("Quit") { NSApp.terminate(nil) }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Image(systemName: "power")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Quit AgentTracker")
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.leading, Theme.Metrics.gutter)
+        .padding(.trailing, Theme.Metrics.gutter - 4)
+        .padding(.vertical, 5)
+    }
+
+    private var sessionSummary: String {
+        let total = store.sessions.count
+        let noun = total == 1 ? "session" : "sessions"
+        guard store.selectedFilter != nil || !query.isEmpty else { return "\(total) \(noun)" }
+        return "\(filteredSessions.count) of \(total) \(noun)"
+    }
+}
+
+/// One state's count, doubling as the filter control for that state.
+private struct FilterTile: View {
+    let state: SessionState
+    /// Not named `count`: SwiftLint's empty_count rule rewrites `count == 0`
+    /// into `isEmpty`, which an Int does not have.
+    let total: Int
+    let isSelected: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(state.color.opacity(total == 0 ? Theme.Palette.emptyStateOpacity : 1))
+                    .frame(width: 7, height: 7)
+                Text("\(total)")
+                    .font(Theme.Typography.tileCount)
+                    .foregroundStyle(total == 0 ? .secondary : .primary)
+                Text(state.label)
+                    .font(Theme.Typography.tileLabel)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Metrics.tileCornerRadius)
+                    .fill(fill)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.tileCornerRadius))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(isSelected ? "Show all sessions" : "Show only \"\(state.label)\" sessions")
+    }
+
+    private var fill: Color {
+        if isSelected { return Theme.Palette.tileSelected }
+        return hovering ? Theme.Palette.tileHover : Theme.Palette.tileRest
     }
 }
 
 struct SessionRow: View {
     let session: AgentSession
+    /// Re-renders the relative time on a quiet machine; the value itself is
+    /// unused (see `SessionStore.clockTick`).
+    var clockTick = 0
     let onSelect: () -> Void
 
     @State private var hovering = false
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 10) {
-                Circle()
-                    .fill(session.state.color)
-                    .frame(width: 9, height: 9)
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: Theme.Metrics.accentBarWidth / 2)
+                    // Idle is the state you are not looking for; its rail
+                    // recedes so the reds and greens carry the eye.
+                    .fill(
+                        session.state.color.opacity(
+                            session.state == .idle ? Theme.Palette.idleAccentOpacity : 1)
+                    )
+                    .frame(width: Theme.Metrics.accentBarWidth)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(session.projectName)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                        Text(session.providerDisplayName)
-                            .font(.system(size: 9, weight: .semibold))
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(Capsule().fill(.quaternary))
-                            .foregroundStyle(.secondary)
-                    }
-                    Text(session.reason ?? session.state.label)
-                        .font(.system(size: 11))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(session.projectName)
+                        .font(Theme.Typography.sessionName)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(metadata)
+                        .font(Theme.Typography.sessionMeta)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        .truncationMode(.tail)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 6)
 
                 Text(relativeTime)
-                    .font(.system(size: 11))
-                    .monospacedDigit()
+                    .font(Theme.Typography.timestamp)
                     .foregroundStyle(.tertiary)
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .opacity(hovering ? 1 : 0)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
-            .contentShape(RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, Theme.Metrics.rowHorizontalPadding)
+            .padding(.vertical, Theme.Metrics.rowVerticalPadding)
+            .contentShape(RoundedRectangle(cornerRadius: Theme.Metrics.rowCornerRadius))
             .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
+                RoundedRectangle(cornerRadius: Theme.Metrics.rowCornerRadius)
+                    .fill(hovering ? Theme.Palette.rowHover : Color.clear)
             )
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(session.cwd ?? "")
+    }
+
+    /// One dimmed line under the name: provider, where it lives, what it is
+    /// doing. The location matters — several sessions in one repo otherwise
+    /// render as identical rows, which is exactly how the user ends up with
+    /// sessions they cannot identify.
+    private var metadata: String {
+        [
+            session.providerDisplayName, session.locationContext,
+            session.reason ?? session.state.label,
+        ]
+        .compactMap { $0 }
+        .joined(separator: " · ")
     }
 
     private var relativeTime: String {
