@@ -298,12 +298,12 @@ struct MenuContentView: View {
     // No Refresh button: reloads are event-driven (every hook write triggers
     // one) with a 1s timer as safety net — a manual button implied staleness
     // that doesn't exist, and it never covered the codex scanner anyway.
+    /// Settings far left, quit far right — a routine control and a
+    /// destructive one should not be adjacent (user feedback: quit felt
+    /// misclickable next to the gear). The count sits between symmetric
+    /// spacers, so it lands dead center.
     private var footer: some View {
         HStack(spacing: 0) {
-            Text(sessionSummary)
-                .font(Theme.Typography.footer)
-                .foregroundStyle(.tertiary)
-            Spacer()
             FooterIconButton(systemName: "gearshape", help: "Settings (⌘,)") {
                 // Close the panel first or the settings window opens behind
                 // it; activate because an accessory app's windows otherwise
@@ -312,12 +312,16 @@ struct MenuContentView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
             }
+            Spacer()
+            Text(sessionSummary)
+                .font(Theme.Typography.footer)
+                .foregroundStyle(.tertiary)
+            Spacer()
             FooterIconButton(systemName: "power", help: "Quit AgentTracker") {
                 requestQuit()
             }
         }
-        .padding(.leading, Theme.Metrics.gutter)
-        .padding(.trailing, Theme.Metrics.gutter - 4)
+        .padding(.horizontal, Theme.Metrics.gutter - 4)
         .padding(.vertical, 5)
     }
 
