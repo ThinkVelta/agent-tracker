@@ -25,9 +25,12 @@ enum ProcessProbe {
 
         if finished.wait(timeout: .now() + timeout) == .timedOut {
             process.terminate()
-            let pid = process.processIdentifier
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
-                kill(pid, SIGKILL)  // hard kill if SIGTERM was ignored
+                // Guard on OUR child still running: a raw-PID kill after the
+                // child exited could hit an unrelated process that reused it.
+                if process.isRunning {
+                    kill(process.processIdentifier, SIGKILL)
+                }
             }
             return nil
         }
