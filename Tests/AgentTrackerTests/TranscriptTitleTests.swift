@@ -64,6 +64,34 @@ final class TranscriptTitleTests {
         #expect(found == nil)
     }
 
+    @Test func windowBoundaryInsideMultibyteScalarStillFindsSummary() throws {
+        // Regression: byte-first trimming must survive a tail-window boundary
+        // landing INSIDE a multibyte scalar — a whole-chunk String decode used
+        // to fail on the split scalar and drop every line in the window,
+        // including the summary.
+        let window = 256
+        let summary = "{\"type\":\"summary\",\"summary\":\"Emoji safe\"}\n"
+        let emojiPrefix = "{\"type\":\"filler\",\"pad\":\""
+        let emojiLine = emojiPrefix + String(repeating: "🙂", count: 20) + "\"}\n"
+
+        var head = ""
+        while head.utf8.count <= window { head += fillerLine(length: 64) }
+
+        // Choose the tail length so the boundary (size - window) lands two
+        // bytes into the first emoji — strictly mid-scalar.
+        let boundaryOffset = head.utf8.count + emojiPrefix.utf8.count + 2
+        let tailPadding =
+            window - (emojiLine.utf8.count - emojiPrefix.utf8.count - 2)
+            - summary.utf8.count
+        let content = head + emojiLine + summary + fillerLine(length: tailPadding)
+        #expect(content.utf8.count - window == boundaryOffset, "boundary must split the emoji")
+        #expect(content.utf8.count > 2 * window, "fixture must exceed both windows")
+
+        let url = try makeTranscript(content)
+        let found = TranscriptTitle.latestSummary(atPath: url.path, window: window)
+        #expect(found == "Emoji safe")
+    }
+
     @Test func smallFileIsReadWhole() throws {
         let summary = "{\"type\":\"summary\",\"summary\":\"Small file\"}\n"
         let url = try makeTranscript(fillerLine(length: 64) + summary)
