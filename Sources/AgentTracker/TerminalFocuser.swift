@@ -31,6 +31,21 @@ enum TerminalFocuser {
         let activityAgrees: Bool
     }
 
+    /// The session being focused, plus the other live sessions it competes
+    /// with. Every strategy needs the roster: a window that exactly names a
+    /// different session is that session's, whatever else agrees.
+    private struct Target {
+        let session: AgentSession
+        let exactTitle: String?
+        let candidates: [TitleCandidate]
+        let roster: [(session: AgentSession, exactTitle: String?)]
+
+        func ownedByAnother(_ windowTitle: String) -> Bool {
+            WindowIdentity.ownedByAnotherSession(
+                windowTitle: windowTitle, session: session, exactTitle: exactTitle, among: roster)
+        }
+    }
+
     /// A window-title probe derived from a session, ordered by weight.
     struct TitleCandidate {
         let text: String
@@ -67,8 +82,15 @@ enum TerminalFocuser {
         AXIsProcessTrusted()
     }
 
+    /// - Parameter roster: every live session with its exact title, so the
+    ///   focuser can tell "a window in the right directory" from "another
+    ///   session's window that happens to sit in the right directory".
     @discardableResult
-    static func focus(_ session: AgentSession, exactTitle: String? = nil) -> Outcome {
+    static func focus(
+        _ session: AgentSession,
+        exactTitle: String? = nil,
+        among roster: [(session: AgentSession, exactTitle: String?)] = []
+    ) -> Outcome {
         log(
             "focusing \(session.providerDisplayName) session \(session.sessionId) "
                 + "(cwd: \(session.cwd ?? "?"))"
@@ -100,6 +122,8 @@ enum TerminalFocuser {
             "\"\($0.text)\" (w\($0.weight)\($0.exactOnly ? ", exact" : ""))"
         }
         log("title candidates: \(described.joined(separator: ", "))")
+        let target = Target(
+            session: session, exactTitle: exactTitle, candidates: candidates, roster: roster)
 
         // Strongest identity first. An exact-only candidate is a name for
         // THIS session (statusline-sourced), so the Window menu — which sees
@@ -108,20 +132,17 @@ enum TerminalFocuser {
         // otherwise land on a different agent's session in another project.
         let hasSessionIdentity = candidates.contains(where: \.exactOnly)
         if hasSessionIdentity,
-            let outcome = pressWindowMenuItem(
-                in: app, candidates: candidates, state: session.state, exactOnly: true)
+            let outcome = pressWindowMenuItem(in: app, target: target, exactOnly: true)
         {
             return outcome
         }
-        if let outcome = raiseByWorkingDirectory(in: app, session: session, candidates: candidates)
-        {
+        if let outcome = raiseByWorkingDirectory(in: app, target: target) {
             return outcome
         }
-        if let outcome = pressWindowMenuItem(in: app, candidates: candidates, state: session.state)
-        {
+        if let outcome = pressWindowMenuItem(in: app, target: target) {
             return outcome
         }
-        if let outcome = raiseAXWindow(in: app, candidates: candidates, state: session.state) {
+        if let outcome = raiseAXWindow(in: app, target: target) {
             return outcome
         }
         log("no title matched — activating \(app.localizedName ?? "the app") only")
@@ -137,22 +158,34 @@ enum TerminalFocuser {
     /// title-based paths rather than being treated as "no such window".
     private static func raiseByWorkingDirectory(
         in app: NSRunningApplication,
-        session: AgentSession,
-        candidates: [TitleCandidate]
+        target: Target
     ) -> Outcome? {
+        let session = target.session
         let wanted = session.windowDirectories
         guard !wanted.isEmpty else { return nil }
         guard let windows = AXAccess.windows(of: app) else { return nil }
 
         let directories = windows.map { AXAccess.documentPath(of: $0) }
-        let hits = WindowIdentity.matchingIndices(
+        let matched = WindowIdentity.matchingIndices(
             windowDirectories: directories, sessionDirectories: wanted)
-        guard !hits.isEmpty else {
+        guard !matched.isEmpty else {
             let known = directories.compactMap { $0 }.count
             let described = wanted.map(WindowIdentity.normalize).joined(separator: " or ")
             log(
                 "no window on this Space reports cwd \(described) "
                     + "(\(known)/\(windows.count) window(s) reported one) — falling back to titles")
+            return nil
+        }
+
+        // A shared directory is the weakest kind of agreement: several agents
+        // routinely sit in one repo. Windows that exactly name another live
+        // session are hers, not this session's — dropping them is what stops
+        // a Codex row raising a Claude Code window.
+        let hits = matched.filter { !target.ownedByAnother(AXAccess.title(of: windows[$0]) ?? "") }
+        guard !hits.isEmpty else {
+            log(
+                "\(matched.count) window(s) here belong to other sessions by name "
+                    + "— falling back to titles, which see every Space")
             return nil
         }
 
@@ -163,7 +196,7 @@ enum TerminalFocuser {
         if hits.count == 1 {
             chosen = hits[0]
         } else if let ranking = WindowIdentity.rankTitles(
-            titles, candidates: candidates, state: session.state),
+            titles, candidates: target.candidates, state: session.state),
             ranking.tiedWithWinner == 0
         {
             chosen = hits[ranking.index]
@@ -194,11 +227,10 @@ enum TerminalFocuser {
     ///   path fallbacks that several sessions can share.
     private static func pressWindowMenuItem(
         in app: NSRunningApplication,
-        candidates: [TitleCandidate],
-        state: SessionState,
+        target: Target,
         exactOnly: Bool = false
     ) -> Outcome? {
-        let candidates = exactOnly ? candidates.filter(\.exactOnly) : candidates
+        let candidates = exactOnly ? target.candidates.filter(\.exactOnly) : target.candidates
         guard !candidates.isEmpty else { return nil }
         let lookup = AXAccess.windowMenuItems(of: app)
         guard case .items(let items) = lookup else {
@@ -210,7 +242,7 @@ enum TerminalFocuser {
         log("\(items.count) Window-menu item(s)\(exactOnly ? " (session name only)" : ""):")
         guard
             let hit = bestTitleMatch(
-                in: items, candidates: candidates, state: state, logZeroScores: false)
+                in: items, candidates: candidates, target: target, logZeroScores: false)
         else { return nil }
         log("pressing Window-menu item \"\(hit.title)\" (score \(hit.score))")
         let result = AXUIElementPerformAction(hit.element, kAXPressAction as CFString)
@@ -226,8 +258,7 @@ enum TerminalFocuser {
     /// current Space).
     private static func raiseAXWindow(
         in app: NSRunningApplication,
-        candidates: [TitleCandidate],
-        state: SessionState
+        target: Target
     ) -> Outcome? {
         guard let windows = AXAccess.windows(of: app) else {
             log(
@@ -239,7 +270,7 @@ enum TerminalFocuser {
         log("\(windows.count) window(s) visible via Accessibility (current Space only):")
         guard
             let best = bestTitleMatch(
-                in: windows, candidates: candidates, state: state, logZeroScores: true)
+                in: windows, candidates: target.candidates, target: target, logZeroScores: true)
         else { return nil }
         log("raising window \"\(best.title)\" (score \(best.score))")
         AXAccess.raise(best.element)
@@ -252,11 +283,17 @@ enum TerminalFocuser {
     private static func bestTitleMatch(
         in elements: [AXUIElement],
         candidates: [TitleCandidate],
-        state: SessionState,
+        target: Target,
         logZeroScores: Bool
     ) -> AXMatch? {
+        let state = target.session.state
+        // Same rule as the directory path: a window that exactly names another
+        // live session is never this one's, however well its path fragments
+        // score. Without this a bare "Planner" candidate can outrank nothing
+        // and still win a menu full of other sessions' windows.
         let titled = elements.compactMap { element -> (element: AXUIElement, title: String)? in
             guard let title = AXAccess.title(of: element), !title.isEmpty else { return nil }
+            guard !target.ownedByAnother(title) else { return nil }
             return (element, title)
         }
         for entry in titled {
@@ -343,69 +380,6 @@ enum TerminalFocuser {
         return candidates
     }
 
-    /// Scores only the exact-equality tier: nonzero only when the normalized
-    /// window title equals one of the candidates outright. This is the
-    /// confidence bar for state-changing actions (acknowledging a session) —
-    /// substring hits are good enough to *raise* a window, not to silence one.
-    static func exactScore(windowTitle: String, candidates: [TitleCandidate]) -> Int {
-        let title = normalize(windowTitle)
-        guard !title.isEmpty else { return 0 }
-        var score = 0
-        for candidate in candidates {
-            let text = normalize(candidate.text)
-            guard !text.isEmpty, title == text else { continue }
-            score = max(score, candidate.weight * 2)
-        }
-        return score
-    }
-
-    /// The single session the window title identifies beyond doubt: exactly
-    /// one session may exact-match, no matter through which candidate or at
-    /// what weight — a second exact match means two windows could plausibly
-    /// bear this title, and weight cannot tell WHICH physical window the user
-    /// is looking at. Ties return nil — never guess. Callers should pass ALL
-    /// sessions (not just needs-you ones) so invisible siblings count as ties.
-    static func unambiguousMatch(
-        windowTitle: String,
-        among sessions: [(session: AgentSession, exactTitle: String?)]
-    ) -> AgentSession? {
-        let matches = sessions.filter { entry in
-            exactScore(
-                windowTitle: windowTitle,
-                candidates: titleCandidates(for: entry.session, exactTitle: entry.exactTitle)
-            ) > 0
-        }
-        guard matches.count == 1, let winner = matches.first else { return nil }
-        return winner.session
-    }
-
-    /// Whether the raised window belongs to `session` more than to any other
-    /// session: a positive match score, strictly ahead of every sibling's.
-    /// Softer than `unambiguousMatch` (substring tiers count) — used to gate
-    /// the row-click acknowledge, where the user already chose the session and
-    /// the only question is whether the raise landed on a plausible window;
-    /// decorated titles ("… — zsh — 80x24") must still clear the red state.
-    static func isPreferredMatch(
-        windowTitle: String,
-        for session: AgentSession,
-        exactTitle: String?,
-        among sessions: [(session: AgentSession, exactTitle: String?)]
-    ) -> Bool {
-        let own = matchScore(
-            windowTitle: windowTitle,
-            candidates: titleCandidates(for: session, exactTitle: exactTitle)
-        )
-        guard own > 0 else { return false }
-        for entry in sessions where entry.session.id != session.id {
-            let other = matchScore(
-                windowTitle: windowTitle,
-                candidates: titleCandidates(for: entry.session, exactTitle: entry.exactTitle)
-            )
-            if other >= own { return false }
-        }
-        return true
-    }
-
     /// True when the title carries a braille spinner frame (U+2800–U+28FF) —
     /// the animation agent TUIs paint into the title while a turn is in
     /// flight. Deliberately narrow: braille frames mean "working right now" in
@@ -453,7 +427,9 @@ enum TerminalFocuser {
         return score
     }
 
-    private static func normalize(_ text: String) -> String {
+    /// Internal, not private: the ownership predicates in SessionOwnership
+    /// score titles with the same stripping rules.
+    static func normalize(_ text: String) -> String {
         // Strip leading status glyphs — ✳, braille spinner frames (⠂⠐…),
         // bullets, ellipsis — that terminals/CLIs prefix onto titles.
         var stripped = Substring(text.lowercased())

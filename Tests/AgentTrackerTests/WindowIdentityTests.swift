@@ -85,6 +85,63 @@ final class WindowIdentityTests {
         #expect(WindowIdentity.chooseAmbiguous(hits: [], focused: nil) == nil)
     }
 
+    /// The reported critical failure, straight from a `[focus]` trace: a Codex
+    /// session in .../Planner raised the window titled "⠐ Reduce Pondria ToS
+    /// visibility in Google search results" — a Claude Code session's window
+    /// that merely shared the directory. Ownership by name has to beat a
+    /// directory tie.
+    @Test func aWindowNamingAnotherSessionIsNotOurs() {
+        let codex = AgentSession(
+            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+        let claude = AgentSession(
+            provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
+        let roster: [(session: AgentSession, exactTitle: String?)] = [
+            (codex, nil), (claude, "Reduce Pondria ToS visibility in Google search results"),
+        ]
+        #expect(
+            WindowIdentity.ownedByAnotherSession(
+                windowTitle: "⠐ Reduce Pondria ToS visibility in Google search results",
+                session: codex, exactTitle: nil, among: roster))
+        // …and the owner may still raise it herself.
+        #expect(
+            !WindowIdentity.ownedByAnotherSession(
+                windowTitle: "⠐ Reduce Pondria ToS visibility in Google search results",
+                session: claude,
+                exactTitle: "Reduce Pondria ToS visibility in Google search results",
+                among: roster))
+    }
+
+    /// Two Codex sessions in one repo both title their window "Planner". That
+    /// is a tie, not somebody else's property — excluding it would leave the
+    /// click with nothing to raise at all.
+    @Test func aTitleBothSessionsAnswerToIsNotOwnedByEither() {
+        let first = AgentSession(
+            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+        let second = AgentSession(
+            provider: "codex", sessionId: "c2", cwd: "/Users/dev/Planner", state: .running)
+        let roster: [(session: AgentSession, exactTitle: String?)] = [(first, nil), (second, nil)]
+        #expect(
+            !WindowIdentity.ownedByAnotherSession(
+                windowTitle: "⠸ Planner", session: first, exactTitle: nil, among: roster))
+    }
+
+    /// A plain shell titled with its path belongs to nobody, and an empty
+    /// roster (tests, or a store that hasn't loaded) must exclude nothing.
+    @Test func unclaimedTitlesAndEmptyRostersExcludeNothing() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+        let other = AgentSession(
+            provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Marrow", state: .idle)
+        #expect(
+            !WindowIdentity.ownedByAnotherSession(
+                windowTitle: "…/Documents/dev/Planner", session: session, exactTitle: nil,
+                among: [(session, nil), (other, "Initial setup and access granted")]))
+        #expect(
+            !WindowIdentity.ownedByAnotherSession(
+                windowTitle: "✳ Initial setup and access granted", session: session,
+                exactTitle: nil, among: []))
+    }
+
     @Test func siblingSessionsInOneRepoAllMatch() {
         let directories: [String?] = Array(repeating: "/Users/dev/Planner", count: 3)
         #expect(
