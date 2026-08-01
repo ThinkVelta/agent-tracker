@@ -1,0 +1,20 @@
+# mise: the single source of truth for tool versions across host, CI
+# (jdx/mise-action), and agents.
+# https://mise.jdx.dev/configuration.html
+#
+# Bootstrap: `curl https://mise.run | sh` (or `brew install mise`), then:
+#   mise install                # installs every tool listed below
+#   eval "$(mise activate zsh)" # auto-activate when you cd into the project
+#
+# Swift itself comes from Xcode and cannot be pinned here. uv is pinned because
+# `make lint` drives pre-commit through `uvx`, and the pin keeps that
+# resolution identical across developers and CI. swiftlint is pinned here
+# because the pre-commit hook for it is `language: system` (mise resolves the
+# version to a prebuilt release binary — no source build). The linters that
+# pre-commit provisions itself (markdownlint, shellcheck, shfmt, ruff,
+# actionlint) are deliberately NOT re-pinned here: each comes from the rev
+# pinned in .pre-commit-config.yaml.
+
+[tools]
+uv = "0.11.16"
+swiftlint = "0.65.0"

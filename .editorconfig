@@ -1,0 +1,25 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Two trailing spaces are a hard line break in markdown.
+[*.md]
+trim_trailing_whitespace = false
+
+# Match swift-format's indentation (4 spaces), not the 2-space repo default.
+[*.swift]
+indent_size = 4
+
+# Match ruff's formatting (4 spaces) for the agent hook script.
+[*.py]
+indent_size = 4
+
+# make requires literal tabs in recipe lines; spaces there are a syntax error.
+[Makefile]
+indent_style = tab

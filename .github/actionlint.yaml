@@ -1,0 +1,10 @@
+# actionlint configuration.
+#
+# actionlint v1.7.7 (pinned in .pre-commit-config.yaml) ships a built-in
+# runner-label list that predates the macos-26 image (GA since 2026-02-26), so
+# ci.yml's deliberate `runs-on: macos-26` pin is flagged as unknown. Listing it
+# here whitelists the label. Drop this file once the pinned actionlint rev
+# knows the image natively.
+self-hosted-runner:
+  labels:
+    - macos-26

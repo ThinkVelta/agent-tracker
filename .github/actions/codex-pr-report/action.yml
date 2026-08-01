@@ -1,0 +1,83 @@
+name: Codex PR Report
+description: Post Codex's review as the one canonical PR comment and publish the `Codex review` commit status.
+
+inputs:
+  final-message:
+    description: >-
+      Codex's review text, from whichever attempt produced it. An empty value
+      fails the job.
+    required: false
+    default: ''
+  github-token:
+    description: >-
+      Token used to upsert the PR comment and create the commit status. A
+      composite action cannot read `secrets`, so the caller passes
+      `github.token`.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Report Codex feedback
+      uses: actions/github-script@v9.0.0
+      env:
+        CODEX_FINAL_MESSAGE: ${{ inputs.final-message }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const MARKER = '<!-- codex-pr-review -->';
+          const opts = { owner: context.repo.owner, repo: context.repo.repo };
+          const prNumber = context.payload.pull_request.number;
+          const headSha = context.payload.pull_request.head.sha;
+          const raw = process.env.CODEX_FINAL_MESSAGE;
+          // An empty payload means no attempt produced a review. Fail the job rather
+          // than returning quietly: a silent pass posts no comment and no `Codex
+          // review` status, which on the PR is indistinguishable from a clean review,
+          // so a broken reviewer would read as an approving one.
+          if (!raw || !raw.trim()) {
+            core.setFailed('Codex produced no review text. The reviewer did not run to completion.');
+            return;
+          }
+          const body = `${MARKER}\n${raw}`;
+
+          const withRetry = async (fn) => {
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              try { return await fn(); }
+              catch (err) {
+                const status = err.status ?? 0;
+                if ((status !== 401 && status < 500) || attempt === 3) throw err;
+                core.warning(`attempt ${attempt} failed with ${status}; retrying in ${attempt * 5}s`);
+                await new Promise(r => setTimeout(r, attempt * 5000));
+              }
+            }
+          };
+
+          // One canonical comment, updated in place on every push (no stale duplicates).
+          const comments = await github.paginate(github.rest.issues.listComments, { ...opts, issue_number: prNumber });
+          const existing = comments.find(c => c.user?.login === 'github-actions[bot]' && c.body?.includes(MARKER));
+          const posted = await withRetry(() => existing
+            ? github.rest.issues.updateComment({ ...opts, comment_id: existing.id, body })
+            : github.rest.issues.createComment({ ...opts, issue_number: prNumber, body }));
+
+          // Surface the unresolved-finding count as a commit STATUS (not a Checks-API
+          // check run). A check run created via the API gets nested under an arbitrary
+          // sibling workflow in the PR checks list (for example under whichever other
+          // workflow happened to run on the PR); a commit status renders as a flat
+          // `Codex review` with no misleading prefix. Non-blocking: `failure` shows
+          // red, but the status is not a required check, so the human still merges.
+          // A missing trailer fails the job (fail closed): a malformed review must
+          // not publish a green status that is indistinguishable from a clean one.
+          // The comment above is still posted, so the raw review stays inspectable.
+          const m = raw.match(/<!--\s*codex-review:\s*unresolved=(\d+),\s*high=(\d+)\s*-->/i);
+          if (!m) {
+            core.setFailed('Missing codex-review trailer; cannot determine unresolved findings.');
+            return;
+          }
+          const unresolved = Number(m[1]);
+          const state = unresolved > 0 ? 'failure' : 'success';
+          const description = unresolved > 0
+            ? `${unresolved} unresolved finding(s)` : 'All findings resolved';
+          await withRetry(() => github.rest.repos.createCommitStatus({
+            ...opts, sha: headSha, context: 'Codex review', state, description,
+            target_url: posted?.data?.html_url,
+          }));

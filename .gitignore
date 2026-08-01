@@ -21,7 +21,9 @@ playground.xcworkspace
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+# Package.resolved is deliberately NOT ignored: this is an app/executable, so
+# it is committed to pin exact dependency versions for reproducible builds and
+# CI caching.
 
 # Environment / secrets
 .env
@@ -29,9 +31,13 @@ Package.resolved
 *.local
 
 # Editors
-.vscode/
+# .vscode/ is deliberately NOT ignored: settings.json and extensions.json are
+# shared editor config and are committed.
 .idea/
 
-# Claude Code (local settings and worktrees only)
+# Claude Code — machine-local state only. Shared config IS committed:
+# .claude/settings.json, hooks/, rules/, skills/, agents/, and README.md.
 .claude/settings.local.json
 .claude/worktrees/
+.claude/agent-memory/
+.claude/*.lock
