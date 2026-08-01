@@ -1,0 +1,47 @@
+version: 2
+
+# github-actions is the only active ecosystem. `main` has no package manifest
+# yet: the lint toolchain is pinned by rev in .pre-commit-config.yaml (which
+# Dependabot does not support) and by version in .mise.toml, so both are
+# bumped by hand.
+updates:
+  - package-ecosystem: github-actions
+    # `/` covers .github/workflows only; the composite-action directories are
+    # listed explicitly so the action pins inside their action.yml files get
+    # bumped too.
+    directories:
+      - "/"
+      - "/.github/actions/codex-pr-review"
+      - "/.github/actions/codex-pr-report"
+    schedule:
+      interval: monthly
+    # Hold new releases for two weeks so broken, yanked, or compromised
+    # versions have time to surface before they enter this repo's automation.
+    cooldown:
+      default-days: 14
+    commit-message:
+      prefix: "ci"
+      include: scope
+    groups:
+      ci-dependencies:
+        patterns:
+          - "*"
+
+  # Enable once Package.swift (with dependencies) lands on main. Kept
+  # commented out until then: an active ecosystem without a manifest surfaces
+  # errors in the Dependabot UI.
+  # - package-ecosystem: swift
+  #   directory: /
+  #   schedule:
+  #     interval: monthly
+  #   cooldown:
+  #     default-days: 14
+  #   commit-message:
+  #     # `build` rather than `ci`: SwiftPM bumps change what ships in the app,
+  #     # not just the pipeline.
+  #     prefix: "build"
+  #     include: scope
+  #   groups:
+  #     swift-dependencies:
+  #       patterns:
+  #         - "*"

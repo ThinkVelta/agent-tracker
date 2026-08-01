@@ -1,0 +1,21 @@
+# SwiftLint configuration for agent-tracker. SwiftLint carries the semantic
+# lint; formatting is owned by swift-format (.swift-format), so this config
+# stays deliberately small: default rules plus a few safe opt-ins.
+
+# Add Tests when it exists on main.
+included:
+  - Sources
+
+opt_in_rules:
+  - contains_over_filter_is_empty
+  - empty_count
+  - redundant_type_annotation
+  - sorted_imports
+
+# Mirrors swift-format's lineLength (100) and the editor rulers; the error
+# threshold leaves headroom for the odd unbreakable line.
+line_length:
+  warning: 100
+  error: 140
+  ignores_urls: true
+  ignores_comments: true

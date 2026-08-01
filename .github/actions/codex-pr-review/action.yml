@@ -1,0 +1,144 @@
+name: Codex PR Review
+description: Fetch the PR conversation and run openai/codex-action with this project's standard PR-review prompt.
+
+inputs:
+  openai-api-key:
+    description: OpenAI API key forwarded to the Codex action.
+    required: true
+  github-token:
+    description: >-
+      Token used to read the PR conversation. A composite action cannot read
+      `secrets`, so the caller passes `github.token`.
+    required: true
+  excluded-comment-logins:
+    description: >-
+      Comma-separated bot logins whose PR comments are dropped before the
+      conversation reaches Codex. Empty keeps everything.
+    required: false
+    default: ''
+
+outputs:
+  final-message:
+    description: Codex's review text.
+    value: ${{ steps.codex.outputs['final-message'] }}
+
+runs:
+  using: composite
+  steps:
+    - name: Fail fast on missing OPENAI_API_KEY
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        if [ -z "${OPENAI_API_KEY}" ]; then
+          echo "OPENAI_API_KEY is not set for this workflow run."
+          exit 1
+        fi
+
+    - name: Pre-fetch base and head refs for the PR
+      shell: bash
+      env:
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        git fetch --no-tags origin "$BASE_REF" "+refs/pull/${PR_NUMBER}/head"
+
+    - name: Fetch PR conversation
+      id: conversation
+      uses: actions/github-script@v9.0.0
+      env:
+        EXCLUDED_LOGINS: ${{ inputs.excluded-comment-logins }}
+      with:
+        github-token: ${{ inputs.github-token }}
+        result-encoding: string
+        script: |
+          const prNumber = context.payload.pull_request.number;
+          const opts = { owner: context.repo.owner, repo: context.repo.repo };
+
+          const [issueComments, reviews, reviewComments] = await Promise.all([
+            github.paginate(github.rest.issues.listComments, { ...opts, issue_number: prNumber }),
+            github.paginate(github.rest.pulls.listReviews, { ...opts, pull_number: prNumber }),
+            github.paginate(github.rest.pulls.listReviewComments, { ...opts, pull_number: prNumber }),
+          ]);
+
+          // Match the listed identities exactly (not by prefix) so a legitimately-named
+          // human or bot is never dropped. `.filter(Boolean)` is load-bearing rather than
+          // cosmetic: without it the empty default would put `''` in the set, making
+          // `isExcluded(undefined)` true and silently dropping every comment whose author
+          // login is missing.
+          const excluded = new Set(
+            (process.env.EXCLUDED_LOGINS ?? '')
+              .split(',')
+              .map(s => s.trim().toLowerCase())
+              .filter(Boolean),
+          );
+          const isExcluded = login => excluded.has((login ?? '').toLowerCase());
+
+          const all = [
+            ...issueComments
+              .filter(c => !isExcluded(c.user?.login))
+              .map(c => ({ date: c.created_at, text: `@${c.user.login}: ${c.body}` })),
+            ...reviews
+              .filter(r => r.body && !isExcluded(r.user?.login))
+              .map(r => ({ date: r.submitted_at, text: `@${r.user.login} (review ${r.state}): ${r.body}` })),
+            ...reviewComments
+              .filter(c => !isExcluded(c.user?.login))
+              .map(c => ({ date: c.created_at, text: `@${c.user.login} (on ${c.path}): ${c.body}` })),
+          ];
+
+          all.sort((a, b) => new Date(a.date) - new Date(b.date));
+          return all.map(e => e.text).join('\n---\n');
+
+    # - name: Show PR conversation
+    #   shell: bash
+    #   env:
+    #     CONVERSATION: ${{ steps.conversation.outputs.result }}
+    #   run: |
+    #     echo "--- PR conversation history ---"
+    #     printf '%s\n' "$CONVERSATION"
+
+    - name: Prepare Codex home
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.codex"
+
+    - id: codex
+      uses: openai/codex-action@v1
+      with:
+        openai-api-key: ${{ inputs.openai-api-key }}
+        model: gpt-5.3-codex
+        effort: medium
+        codex-args: '["-c", "model_reasoning_summary=none"]'
+        prompt: |
+          This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
+          Base SHA: ${{ github.event.pull_request.base.sha }}
+          Head SHA: ${{ github.event.pull_request.head.sha }}
+
+          Review ONLY the changes introduced by the PR.
+          Suggest any improvements, potential bugs, or issues.
+          Be concise and specific in your feedback.
+          Write in markdown format, with a new title for each issue/topic you raise.
+          When generating tables, make sure they're formatted correctly and don't forget the header separator row. Inside a table cell, a literal `|` character breaks the row: escape every pipe as `\|` (this includes pipes inside backticks, e.g. write `` `curl … \| bash` ``). When in doubt, rewrite the cell to avoid the pipe (e.g. use "piped to" instead of `|`).
+          Include code snippets where appropriate, in properly formatted code blocks.
+          Analyze the conversation history to understand the context of the PR and previous feedback given. Give your new feedback in relation to this, highlighting what has been fixed and what has been missed, as well as any new issues that have been introduced.
+
+          This repository is Agent Tracker: a lightweight native macOS menu bar app (Swift + SwiftUI, `MenuBarExtra`) built as a SwiftPM executable package, which tracks the status of running AI agent sessions. Alongside the Swift sources it contains hook/integration helpers (Python and shell scripts) that agent CLIs call to report session state, plus repo tooling and workflow config. There is no server, database, or web frontend in this tree. Review what is actually here: Swift correctness (state management and concurrency, file-system watching, parsing of agent session logs, menu bar UI behavior), correctness of the shell and Python helpers (quoting, error handling, `set -euo pipefail`, exit codes, path handling), whether changes keep the app lightweight and avoid unnecessary dependencies, internal consistency with the conventions in `CLAUDE.md`, stale or broken cross references between files, and GitHub Actions workflow and composite-action correctness.
+
+          If a maintainer has replied to a feedback item with a reasoned decision not to act on it (a rejection, a "won't fix", or an explanation that it is intentional or out of scope), treat that item as resolved: mark it ✅ in the summary table with a one-line note of their rationale, and do NOT re-raise it under Open Issues. The maintainer's decision is final: your role is to advise, not to re-litigate. Re-raise such an item only if later changes to the PR have genuinely invalidated their reasoning.
+
+          Format your feedback message as follows:
+            - A `## Feedback Summary` section with a table tracking ALL feedback ever raised across the PR's lifetime (columns: `Issue`, `Severity`, `Summary`, `Resolved`). Include every issue from previous reviews as well as new ones. Use ✅ for resolved issues and ❌ for unresolved ones. Sort by severity (highest first), then resolved status (unresolved first).
+            - A `## Open Issues` section containing only the unresolved issues. Each issue gets its own `###` subheading formatted as `### Issue title [severity]`. Within each subheading, structure the content with bold labels:
+              - **Issue:** A clear explanation of the problem, with code snippets in fenced code blocks where appropriate.
+              - **Proposed fix:** A concrete solution, including code snippets showing the recommended change.
+              - **Related files:** A list of file paths affected by this issue.
+            - End your message with a single machine-readable HTML comment on its own line: `<!-- codex-review: unresolved=N, high=M -->`, where N is the number of ❌ (unresolved) rows in the Feedback Summary table and M is how many of those are severity High. Always include this line, even when N is 0, because CI parses it to publish the `codex-review` status check.
+
+          Pull request title and body:
+          ----
+          ${{ github.event.pull_request.title }}
+          ${{ github.event.pull_request.body }}
+
+          Current PR's conversation history:
+          ----
+          ${{ steps.conversation.outputs.result }}
