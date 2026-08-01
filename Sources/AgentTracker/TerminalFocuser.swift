@@ -36,13 +36,16 @@ enum TerminalFocuser {
     /// different session is that session's, whatever else agrees.
     private struct Target {
         let session: AgentSession
-        let exactTitle: String?
         let candidates: [TitleCandidate]
-        let roster: [(session: AgentSession, exactTitle: String?)]
+        /// Every other live session's candidates, derived once per click:
+        /// ownership is tested per window per rival, and deriving candidates
+        /// reads that session's transcript.
+        let rivalCandidates: [[TitleCandidate]]
 
         func ownedByAnother(_ windowTitle: String) -> Bool {
             WindowIdentity.ownedByAnotherSession(
-                windowTitle: windowTitle, session: session, exactTitle: exactTitle, among: roster)
+                windowTitle: windowTitle, ownCandidates: candidates,
+                rivalCandidates: rivalCandidates)
         }
     }
 
@@ -82,14 +85,16 @@ enum TerminalFocuser {
         AXIsProcessTrusted()
     }
 
-    /// - Parameter roster: every live session with its exact title, so the
-    ///   focuser can tell "a window in the right directory" from "another
-    ///   session's window that happens to sit in the right directory".
+    /// - Parameter roster: every live session with its exact title. Required,
+    ///   not defaulted: without it the focuser cannot tell "a window in the
+    ///   right directory" from "another session's window that happens to sit
+    ///   in the right directory", and omitting it would silently disable that
+    ///   protection. Pass all sessions — the caller's own is filtered out.
     @discardableResult
     static func focus(
         _ session: AgentSession,
         exactTitle: String? = nil,
-        among roster: [(session: AgentSession, exactTitle: String?)] = []
+        among roster: [(session: AgentSession, exactTitle: String?)]
     ) -> Outcome {
         log(
             "focusing \(session.providerDisplayName) session \(session.sessionId) "
@@ -123,7 +128,11 @@ enum TerminalFocuser {
         }
         log("title candidates: \(described.joined(separator: ", "))")
         let target = Target(
-            session: session, exactTitle: exactTitle, candidates: candidates, roster: roster)
+            session: session, candidates: candidates,
+            rivalCandidates:
+                roster
+                .filter { $0.session.id != session.id }
+                .map { titleCandidates(for: $0.session, exactTitle: $0.exactTitle) })
 
         // Strongest identity first. An exact-only candidate is a name for
         // THIS session (statusline-sourced), so the Window menu — which sees

@@ -95,20 +95,18 @@ final class WindowIdentityTests {
             provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let claude = AgentSession(
             provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
-        let roster: [(session: AgentSession, exactTitle: String?)] = [
-            (codex, nil), (claude, "Reduce Pondria ToS visibility in Google search results"),
-        ]
+        let summary = "Reduce Pondria ToS visibility in Google search results"
+        let codexCandidates = TerminalFocuser.titleCandidates(for: codex, exactTitle: nil)
+        let claudeCandidates = TerminalFocuser.titleCandidates(for: claude, exactTitle: summary)
         #expect(
             WindowIdentity.ownedByAnotherSession(
-                windowTitle: "⠐ Reduce Pondria ToS visibility in Google search results",
-                session: codex, exactTitle: nil, among: roster))
+                windowTitle: "⠐ \(summary)", ownCandidates: codexCandidates,
+                rivalCandidates: [claudeCandidates]))
         // …and the owner may still raise it herself.
         #expect(
             !WindowIdentity.ownedByAnotherSession(
-                windowTitle: "⠐ Reduce Pondria ToS visibility in Google search results",
-                session: claude,
-                exactTitle: "Reduce Pondria ToS visibility in Google search results",
-                among: roster))
+                windowTitle: "⠐ \(summary)", ownCandidates: claudeCandidates,
+                rivalCandidates: [codexCandidates]))
     }
 
     /// Two Codex sessions in one repo both title their window "Planner". That
@@ -119,27 +117,31 @@ final class WindowIdentityTests {
             provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let second = AgentSession(
             provider: "codex", sessionId: "c2", cwd: "/Users/dev/Planner", state: .running)
-        let roster: [(session: AgentSession, exactTitle: String?)] = [(first, nil), (second, nil)]
         #expect(
             !WindowIdentity.ownedByAnotherSession(
-                windowTitle: "⠸ Planner", session: first, exactTitle: nil, among: roster))
+                windowTitle: "⠸ Planner",
+                ownCandidates: TerminalFocuser.titleCandidates(for: first, exactTitle: nil),
+                rivalCandidates: [TerminalFocuser.titleCandidates(for: second, exactTitle: nil)]))
     }
 
-    /// A plain shell titled with its path belongs to nobody, and an empty
-    /// roster (tests, or a store that hasn't loaded) must exclude nothing.
+    /// A plain shell titled with its path belongs to nobody, and a lone
+    /// session (no rivals loaded yet) must exclude nothing.
     @Test func unclaimedTitlesAndEmptyRostersExcludeNothing() {
         let session = AgentSession(
             provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let other = AgentSession(
             provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Marrow", state: .idle)
+        let own = TerminalFocuser.titleCandidates(for: session, exactTitle: nil)
+        let rival = TerminalFocuser.titleCandidates(
+            for: other, exactTitle: "Initial setup and access granted")
         #expect(
             !WindowIdentity.ownedByAnotherSession(
-                windowTitle: "…/Documents/dev/Planner", session: session, exactTitle: nil,
-                among: [(session, nil), (other, "Initial setup and access granted")]))
+                windowTitle: "…/Documents/dev/Planner", ownCandidates: own,
+                rivalCandidates: [rival]))
         #expect(
             !WindowIdentity.ownedByAnotherSession(
-                windowTitle: "✳ Initial setup and access granted", session: session,
-                exactTitle: nil, among: []))
+                windowTitle: "✳ Initial setup and access granted", ownCandidates: own,
+                rivalCandidates: []))
     }
 
     @Test func siblingSessionsInOneRepoAllMatch() {

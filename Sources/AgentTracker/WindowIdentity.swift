@@ -91,28 +91,22 @@ enum WindowIdentity {
     /// session cannot claim the title too: siblings in one repo all answer to
     /// "Planner", and treating that as somebody else's would rule out every
     /// candidate. Those stay ambiguous, which the ranking already handles.
+    /// Takes prebuilt candidates rather than sessions: this runs once per
+    /// window per rival session on the click path, and deriving candidates
+    /// reads the session's transcript from disk. Callers build each side once.
     static func ownedByAnotherSession(
         windowTitle: String,
-        session: AgentSession,
-        exactTitle: String?,
-        among roster: [(session: AgentSession, exactTitle: String?)]
+        ownCandidates: [TerminalFocuser.TitleCandidate],
+        rivalCandidates: [[TerminalFocuser.TitleCandidate]]
     ) -> Bool {
-        guard claims(windowTitle: windowTitle, session: session, exactTitle: exactTitle) == false
-        else { return false }
-        return roster.contains { entry in
-            entry.session.id != session.id
-                && claims(
-                    windowTitle: windowTitle, session: entry.session, exactTitle: entry.exactTitle)
-        }
+        guard !claims(windowTitle, ownCandidates) else { return false }
+        return rivalCandidates.contains { claims(windowTitle, $0) }
     }
 
     private static func claims(
-        windowTitle: String, session: AgentSession, exactTitle: String?
+        _ windowTitle: String, _ candidates: [TerminalFocuser.TitleCandidate]
     ) -> Bool {
-        TerminalFocuser.exactScore(
-            windowTitle: windowTitle,
-            candidates: TerminalFocuser.titleCandidates(for: session, exactTitle: exactTitle)
-        ) > 0
+        TerminalFocuser.exactScore(windowTitle: windowTitle, candidates: candidates) > 0
     }
 
     /// Picks among windows that match equally well. Raising the window the
