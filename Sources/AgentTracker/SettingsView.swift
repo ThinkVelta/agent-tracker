@@ -11,6 +11,8 @@ struct SettingsView: View {
         TabView {
             GeneralSettingsTab()
                 .tabItem { Label("General", systemImage: "gearshape") }
+            MenuBarSettingsTab()
+                .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
             SessionsSettingsTab()
                 .tabItem { Label("Sessions", systemImage: "circle.grid.2x1") }
             AboutSettingsTab()
@@ -28,6 +30,8 @@ struct SettingsPreviewStack: View {
     var body: some View {
         VStack(spacing: 0) {
             GeneralSettingsTab()
+            Divider()
+            MenuBarSettingsTab()
             Divider()
             SessionsSettingsTab()
             Divider()
@@ -115,6 +119,69 @@ private struct GeneralSettingsTab: View {
                 // Reflect reality, not intent — never show "on" while unbound.
                 launchAtLogin = LoginItem.isEnabled
             })
+    }
+}
+
+// MARK: - Menu bar
+
+private struct MenuBarSettingsTab: View {
+    @ObservedObject private var preferences = Preferences.shared
+
+    /// Previews render the REAL StatusIconRenderer output, so they can never
+    /// drift from what the menu bar draws. One sample with a red group, a
+    /// green tally, and a dimmed zero — every visual treatment on display.
+    private static let sampleCounts: SessionCounts = {
+        var counts = SessionCounts()
+        counts.needsYou = 1
+        counts.running = 4
+        counts.idle = 0
+        return counts
+    }()
+
+    var body: some View {
+        VStack(spacing: 12) {
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Icon")
+                        .font(.system(size: 13))
+                    Text("How the menu bar item spends its space.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Picker("", selection: $preferences.iconMode) {
+                        ForEach(StatusIconRenderer.Mode.allCases, id: \.self) { mode in
+                            HStack(spacing: 8) {
+                                Image(
+                                    nsImage: StatusIconRenderer.render(
+                                        for: Self.sampleCounts, mode: mode
+                                    ).image)
+                                Text(mode.label)
+                                    .font(.system(size: 12))
+                            }
+                            .tag(mode)
+                        }
+                    }
+                    .pickerStyle(.radioGroup)
+                    .labelsHidden()
+                    .padding(.top, 4)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+            SettingsCard {
+                SettingsRow(
+                    title: "Pulse when a session needs you",
+                    detail: "One brief pulse of the red dot when a session flips to "
+                        + "needs-you. Never animates continuously; disabled automatically "
+                        + "when Reduce Motion is on."
+                ) {
+                    Toggle("", isOn: $preferences.attentionCue)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+        }
+        .padding(20)
     }
 }
 

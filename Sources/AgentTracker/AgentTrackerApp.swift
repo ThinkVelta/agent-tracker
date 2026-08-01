@@ -127,6 +127,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         updateIcon(for: store.counts)
 
+        // Re-render on anything that changes how the icon should draw without
+        // a session changing: the mode picker in Settings, a light/dark
+        // switch (drawing-handler images resolve dynamic colors per draw, but
+        // hit-region widths must follow a mode's layout), and display
+        // scale/arrangement changes.
+        preferencesSubscription = Preferences.shared.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in self?.redrawIcon() }
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.redrawIcon() }
+        }
+
         // Covers keyboard-driven context switches (Cmd+Tab, Spotlight launch)
         // that never produce an outside click.
         NotificationCenter.default.addObserver(
@@ -224,11 +239,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.deactivate()
     }
 
+    private var lastCounts = SessionCounts()
+    private var pulseTimer: Timer?
+    private var preferencesSubscription: AnyCancellable?
+
     private func updateIcon(for counts: SessionCounts) {
+        // A session flipping INTO needs-you is the app's whole reason to
+        // exist; give it one brief pulse. Never on the first render (launch
+        // with existing red sessions is not news).
+        if counts.needsYou > lastCounts.needsYou, lastCounts.total > 0 {
+            startAttentionPulse()
+        }
+        lastCounts = counts
+        redrawIcon()
+    }
+
+    private func redrawIcon(emphasis: CGFloat = 0) {
         guard let button = statusItem?.button else { return }
-        let rendering = StatusIconRenderer.render(for: counts)
+        let rendering = StatusIconRenderer.render(
+            for: lastCounts, mode: Preferences.shared.iconMode, emphasis: emphasis)
         button.image = rendering.image
         hitRegions = rendering.hitRegions
+    }
+
+    /// Two sine bumps over 1.4s, then done — the icon must never animate
+    /// continuously (battery, attention tax), and Reduce Motion means none
+    /// at all. Costs nothing outside the one-shot: no timer exists while idle.
+    private func startAttentionPulse() {
+        guard Preferences.shared.attentionCue,
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else { return }
+        pulseTimer?.invalidate()
+        let duration: TimeInterval = 1.4
+        let start = Date()
+        pulseTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) {
+            [weak self] timer in
+            let elapsed = Date().timeIntervalSince(start)
+            Task { @MainActor in
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+                if elapsed >= duration {
+                    timer.invalidate()
+                    self.pulseTimer = nil
+                    self.redrawIcon()
+                } else {
+                    self.redrawIcon(emphasis: abs(sin(.pi * elapsed / 0.7)))
+                }
+            }
+        }
     }
 
     @objc private func statusButtonClicked(_ sender: NSStatusBarButton) {
@@ -370,6 +430,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(OnboardingView())
             case "settings":
                 content = AnyView(SettingsPreviewStack())
+            case "icons":
+                content = AnyView(Image(nsImage: IconPreview.composite(darkMode: darkMode)))
             case "popover":
                 let store = SessionStore()
                 if let filterIndex = arguments.firstIndex(of: "--filter"),
@@ -388,7 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(MenuContentView(store: store))
             default:
                 FileHandle.standardError.write(
-                    Data("[preview] --view expects popover, onboarding or settings\n".utf8))
+                    Data("[preview] --view expects popover, onboarding, settings or icons\n".utf8))
                 exit(2)
             }
             let renderer = ImageRenderer(
