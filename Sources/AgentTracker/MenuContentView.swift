@@ -211,12 +211,11 @@ struct MenuContentView: View {
         .padding(.vertical, 24)
     }
 
+    // No Refresh button: reloads are event-driven (every hook write triggers
+    // one) with a 30s timer as safety net — a manual button implied staleness
+    // that doesn't exist, and it never covered the codex scanner anyway.
     private var footer: some View {
         HStack {
-            Button("Refresh") { store.reload() }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
             Spacer()
             Button("Quit") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)

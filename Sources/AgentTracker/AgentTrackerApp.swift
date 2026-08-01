@@ -83,14 +83,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func statusButtonClicked(_ sender: NSStatusBarButton) {
         guard let store else { return }
         let clicked = clickedState(in: sender)
+        // The `[ui]` trace mirrors `[focus]`: menu bar interaction is hard to
+        // test programmatically, so misbehavior must be diagnosable from a
+        // single paste of the app's output.
+        let dot = clicked?.rawValue ?? "none"
+        let filter = store.selectedFilter?.rawValue ?? "none"
         if popover.isShown {
             if let clicked, clicked != store.selectedFilter {
+                print("[ui] \(DebugLog.timestamp()) dot=\(dot) while open → switch filter")
                 store.selectedFilter = clicked
             } else {
-                // Same dot again, or a non-dot click: toggle closed.
+                print("[ui] \(DebugLog.timestamp()) dot=\(dot) filter=\(filter) → toggle close")
                 closePopover()
             }
         } else {
+            print("[ui] \(DebugLog.timestamp()) dot=\(dot) → open")
             store.selectedFilter = clicked
             showPopover(from: sender)
         }
@@ -99,12 +106,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Maps the click's x-position inside the status button back to the dot it
     /// hit; nil = outside every dot region → unfiltered.
     private func clickedState(in button: NSStatusBarButton) -> SessionState? {
-        guard let event = NSApp.currentEvent, let image = button.image else { return nil }
+        guard let event = NSApp.currentEvent, let image = button.image else {
+            print("[ui] click mapping failed: no current event or image")
+            return nil
+        }
         let point = button.convert(event.locationInWindow, from: nil)
         // The button centers its image; hit regions are in image coordinates.
         let originX = (button.bounds.width - image.size.width) / 2
         let imageX = point.x - originX
-        return hitRegions.first { $0.range.contains(imageX) }?.state
+        let hit = hitRegions.first { $0.range.contains(imageX) }?.state
+        let regions = hitRegions.map {
+            "\($0.state.rawValue):\(Int($0.range.lowerBound))-\(Int($0.range.upperBound))"
+        }
+        print(
+            "[ui] click x=\(String(format: "%.1f", imageX)) "
+                + "→ \(hit?.rawValue ?? "none") (regions \(regions.joined(separator: " ")))")
+        return hit
     }
 
     private func showPopover(from button: NSStatusBarButton) {
