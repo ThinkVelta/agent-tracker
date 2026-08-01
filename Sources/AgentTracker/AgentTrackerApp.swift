@@ -173,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             screen.frame.maxX - size.width - 8)
         let originY = anchor.minY - Theme.Metrics.panelTopGap - size.height
         let frame = NSRect(x: clampedX, y: originY, width: size.width, height: size.height)
-        print(
+        DebugLog.log(
             "[ui] \(DebugLog.timestamp()) panel frame=\(frame) anchor=\(anchor) "
                 + "screen=\(screen.frame)")
         panel.setFrame(frame, display: true)
@@ -258,14 +258,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let filter = store.selectedFilter?.rawValue ?? "none"
         if panel?.isVisible == true {
             if let clicked, clicked != store.selectedFilter {
-                print("[ui] \(DebugLog.timestamp()) dot=\(dot) while open → switch filter")
+                DebugLog.log("[ui] \(DebugLog.timestamp()) dot=\(dot) while open → switch filter")
                 store.selectedFilter = clicked
             } else {
-                print("[ui] \(DebugLog.timestamp()) dot=\(dot) filter=\(filter) → toggle close")
+                DebugLog.log(
+                    "[ui] \(DebugLog.timestamp()) dot=\(dot) filter=\(filter) → toggle close")
                 closePanel()
             }
         } else {
-            print("[ui] \(DebugLog.timestamp()) dot=\(dot) → open")
+            DebugLog.log("[ui] \(DebugLog.timestamp()) dot=\(dot) → open")
             store.selectedFilter = clicked
             showPanel(from: sender)
         }
@@ -276,7 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// of every dot → unfiltered.
     private func clickedState(in button: NSStatusBarButton) -> SessionState? {
         guard let event = NSApp.currentEvent, let image = button.image else {
-            print("[ui] click mapping failed: no current event or image")
+            DebugLog.log("[ui] click mapping failed: no current event or image")
             return nil
         }
         let point = button.convert(event.locationInWindow, from: nil)
@@ -289,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let regions = hitRegions.map {
             "\($0.state.rawValue):\(Int($0.range.lowerBound))-\(Int($0.range.upperBound))"
         }
-        print(
+        DebugLog.log(
             "[ui] click x=\(String(format: "%.1f", imageX)) "
                 + "→ \(label) (regions \(regions.joined(separator: " ")))")
         return hit
@@ -437,9 +438,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             if let rendered {
                 try? rendered.data.write(to: URL(fileURLWithPath: path))
                 let size = "\(Int(rendered.size.width))x\(Int(rendered.size.height))"
-                print("[preview] wrote \(path) (\(size) pt)")
+                DebugLog.log("[preview] wrote \(path) (\(size) pt)")
             } else {
-                print("[preview] render failed")
+                DebugLog.log("[preview] render failed")
             }
             NSApp.terminate(nil)
         }

@@ -155,7 +155,7 @@ final class CodexScanWorker: @unchecked Sendable {
 
     private func debugLog(_ message: String) {
         #if DEBUG
-            print("[codex-scan] \(DebugLog.timestamp()) \(message)")
+            DebugLog.log("[codex-scan] \(DebugLog.timestamp()) \(message)")
         #endif
     }
 

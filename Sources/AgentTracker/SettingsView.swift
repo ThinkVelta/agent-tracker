@@ -249,6 +249,21 @@ private struct AboutSettingsTab: View {
                     updateAccessory
                 }
                 SettingsRow(
+                    title: "Diagnostics",
+                    detail: "Click traces, focus decisions and state changes, for bug "
+                        + "reports. Plain text, local only, capped at 2 MB.",
+                    divided: true
+                ) {
+                    Button("Show Log") {
+                        let log = DebugLog.shared.fileURL
+                        if FileManager.default.fileExists(atPath: log.path) {
+                            NSWorkspace.shared.activateFileViewerSelecting([log])
+                        } else {
+                            NSWorkspace.shared.open(log.deletingLastPathComponent())
+                        }
+                    }
+                }
+                SettingsRow(
                     title: "Uninstall",
                     detail: "Removes the hooks, the app and its settings. From the repo:\n"
                         + "./integrations/uninstall.sh",
