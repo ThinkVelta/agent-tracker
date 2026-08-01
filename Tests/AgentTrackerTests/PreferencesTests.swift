@@ -59,6 +59,25 @@ final class PreferencesTests {
             Preferences(defaults: defaults).autoAckDwell == TerminalFocusObserver.defaultDwell)
     }
 
+    /// A wrong-TYPE stored value must fall back to the default, not coerce:
+    /// integer(forKey:) turns a stored "oops" into 0, and 0 is a real option
+    /// here (.always / Off) — silent coercion would apply a preference the
+    /// user never chose.
+    @Test func wrongTypeStoredValuesFallBackInsteadOfCoercing() {
+        let defaults = makeDefaults()
+        defaults.set("oops", forKey: "idleFoldingThreshold")
+        defaults.set("later", forKey: "autoAckDwellSeconds")
+        let preferences = Preferences(defaults: defaults)
+        #expect(preferences.idleFolding == .past(Theme.Metrics.idleAutoCollapseThreshold))
+        #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
+        // The genuine zero options still load as themselves.
+        defaults.set(0, forKey: "idleFoldingThreshold")
+        defaults.set(0.0, forKey: "autoAckDwellSeconds")
+        let zeros = Preferences(defaults: defaults)
+        #expect(zeros.idleFolding == .always)
+        #expect(zeros.autoAckDwell == 0)
+    }
+
     /// Numerically fine but not a selectable option: a picker with no matching
     /// tag renders blank, so these must snap to the default too.
     @Test func valuesOutsideTheOptionSetsSnapToDefaults() {

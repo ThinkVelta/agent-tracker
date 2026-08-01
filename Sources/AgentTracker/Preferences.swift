@@ -123,23 +123,22 @@ final class Preferences: ObservableObject {
         appearanceOverride =
             AppearanceOverride(rawValue: defaults.string(forKey: Keys.appearance) ?? "")
             ?? .system
-        // Loaded values snap to the option sets Settings offers, not just to
-        // sane ranges: a numerically-fine value with no matching picker tag
-        // (a defaults-write `7`, or a future build's option) renders as a
-        // BLANK picker, which is worse than losing the stored value.
+        // Loaded values are read type-checked (never via integer/double(forKey:),
+        // whose coercion turns a stored "oops" into 0 — which is a REAL option
+        // here) and then snapped to the option sets Settings offers: a value
+        // with no matching picker tag renders as a BLANK picker, which is
+        // worse than losing the stored value.
         let defaultFolding = IdleFolding.past(Theme.Metrics.idleAutoCollapseThreshold)
-        let loadedFolding =
-            defaults.object(forKey: Keys.idleFolding) == nil
-            ? defaultFolding
-            : IdleFolding(stored: defaults.integer(forKey: Keys.idleFolding))
-        idleFolding = IdleFolding.options.contains(loadedFolding) ? loadedFolding : defaultFolding
+        let loadedFolding = (defaults.object(forKey: Keys.idleFolding) as? Int)
+            .map(IdleFolding.init(stored:))
+        idleFolding =
+            loadedFolding.flatMap { IdleFolding.options.contains($0) ? $0 : nil }
+            ?? defaultFolding
 
-        let loadedDwell =
-            defaults.object(forKey: Keys.autoAckDwell) == nil
-            ? TerminalFocusObserver.defaultDwell
-            : defaults.double(forKey: Keys.autoAckDwell)
+        let loadedDwell = defaults.object(forKey: Keys.autoAckDwell) as? Double
         autoAckDwell =
-            Self.dwellOptions.contains { $0.seconds == loadedDwell }
-            ? loadedDwell : TerminalFocusObserver.defaultDwell
+            loadedDwell.flatMap { dwell in
+                Self.dwellOptions.contains { $0.seconds == dwell } ? dwell : nil
+            } ?? TerminalFocusObserver.defaultDwell
     }
 }
