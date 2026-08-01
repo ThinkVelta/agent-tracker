@@ -62,9 +62,10 @@ For multi-step tasks, state a brief plan with a verify check per step.
   confined to a private serial `DispatchQueue` (marked `@unchecked Sendable`, queue-confined
   methods carry a `…Locked` suffix — see `CodexScanWorker`), publishing back to the main actor
   via `Task { @MainActor in … }`. Don't introduce new concurrency patterns beside these.
-- **SwiftUI:** one `MenuBarExtra` scene; `@StateObject` at the app root, `@ObservedObject` passed
-  down. Build views from small `private var` computed subviews rather than nested closures or
-  per-view view-model classes.
+- **SwiftUI:** the menu bar is a raw `NSStatusItem` + `NSPopover` owned by the `AppDelegate`
+  (per-dot click zones — `MenuBarExtra`'s label is a single click target), hosting SwiftUI
+  content via `NSHostingController`; `@ObservedObject` passed down. Build views from small
+  `private var` computed subviews rather than nested closures or per-view view-model classes.
 - **Error handling:** degrade gracefully instead of throwing — `guard`/early-return with `try?`
   for I/O, and parsers that never throw (unknown input maps to an "insignificant"/nil case, see
   `CodexRolloutParser`). Malformed external input (state files, rollouts, tool output) must

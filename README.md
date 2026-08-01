@@ -16,7 +16,9 @@ The menu bar shows three dots with counts:
 - ⚪ **Idle** — session open, nothing pending
 
 Clicking the icon opens a dropdown listing every session (project, provider,
-status reason, time in state). Clicking a row jumps straight to that terminal
+status reason, time in state) — and clicking a specific dot opens it
+pre-filtered to that state (click the same dot again to close; the in-dropdown
+chips drive the same filter). Clicking a row jumps straight to that terminal
 window — across Spaces — and marks the session as acknowledged.
 
 ## How it works
@@ -45,9 +47,16 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
   crash) even without a clean `SessionEnd`. Codex sessions are pruned via an
   `lsof`-based liveness check when their `codex` process exits.
 - **Click-to-focus** uses the Accessibility API: it matches the session to a
-  terminal window by title (Claude Code titles windows "✳ &lt;task summary&gt;";
-  the summary is read from the session transcript) with the working directory as
-  fallback, then raises the window — macOS switches to its Space automatically.
+  terminal window by title, then raises the window — macOS switches to its
+  Space automatically. For Claude Code the exact window title is learned live
+  from `~/.claude/statusline-last.json`: it carries `session_id` +
+  `session_name`, and the terminal titles the window with that name behind a
+  status glyph, which the matcher strips before comparing. The file is not
+  produced by default — it appears when your Claude Code statusline script
+  dumps its stdin payload there (e.g. a `tee ~/.claude/statusline-last.json`
+  at the top of `statusline.sh`). Transcript task summaries
+  ("✳ &lt;task summary&gt;") and working-directory fragments remain as
+  fallbacks when it is absent.
 
 ## Getting started
 
@@ -93,16 +102,18 @@ exiting (`lsof`-based liveness check on the rollout file).
 
 - **Codex approval prompts don't surface as red yet** — rollouts don't record
   them; planned via Codex's new native hooks engine.
-- **Window matching is best-effort.** Multiple sessions in the same directory
-  without distinct window titles may focus the wrong window (the right app and
-  Space, though).
+- **Window matching is exact only when a title source exists.** Claude Code
+  sessions get exact titles when a statusline script dumps its payload to
+  `~/.claude/statusline-last.json`; without it, matching falls back to
+  transcript summaries and path fragments, and same-directory siblings may
+  collide. Multiple Codex sessions in one directory can still collide (bare
+  project-name tab titles).
 - Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
   kitty are wired up but untested.
 - The app runs via `swift run` for now — no .app bundle / login item yet.
 
 ## Roadmap
 
-- [ ] Filter dropdown by state when clicking a specific dot
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [ ] Migrate Codex integration to its native hooks engine (approval-request
       red states)

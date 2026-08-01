@@ -2,17 +2,33 @@ import SwiftUI
 
 struct MenuContentView: View {
     @ObservedObject var store: SessionStore
-    /// When set, the list shows only sessions in this state (dot-chip filter).
-    @State private var filter: SessionState?
+    /// Closes the hosting popover; row clicks invoke it after focusing the
+    /// terminal so the popover doesn't float over the window it just raised.
+    var dismiss: () -> Void = {}
+
+    @State private var searchText = ""
 
     private var filteredSessions: [AgentSession] {
-        guard let filter else { return store.sessions }
-        return store.sessions.filter { $0.state == filter }
+        var sessions = store.sessions
+        if let filter = store.selectedFilter {
+            sessions = sessions.filter { $0.state == filter }
+        }
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return sessions }
+        return sessions.filter { session in
+            session.projectName.localizedCaseInsensitiveContains(query)
+                || session.providerDisplayName.localizedCaseInsensitiveContains(query)
+                || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
+                || (session.cwd?.localizedCaseInsensitiveContains(query) ?? false)
+        }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
+            if store.sessions.count > Self.maxVisibleRows {
+                searchField
+            }
             Divider()
             if !TerminalFocuser.hasAccessibilityPermission {
                 permissionBanner
@@ -64,10 +80,11 @@ struct MenuContentView: View {
     }
 
     /// Clickable state filter: tap a dot to show only that state, tap again to
-    /// clear the filter.
+    /// clear the filter. Backed by the store so menu-bar dot clicks and chips
+    /// share one filter.
     private func chip(_ state: SessionState, _ count: Int) -> some View {
         Button {
-            filter = (filter == state) ? nil : state
+            store.selectedFilter = (store.selectedFilter == state) ? nil : state
         } label: {
             HStack(spacing: 3) {
                 Circle()
@@ -80,40 +97,81 @@ struct MenuContentView: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Capsule().fill(filter == state ? Color.primary.opacity(0.12) : .clear))
+            .background(
+                Capsule().fill(
+                    store.selectedFilter == state ? Color.primary.opacity(0.12) : .clear)
+            )
             .overlay(
                 Capsule().stroke(
-                    filter == state ? Color.primary.opacity(0.25) : .clear, lineWidth: 1
+                    store.selectedFilter == state ? Color.primary.opacity(0.25) : .clear,
+                    lineWidth: 1
                 ))
         }
         .buttonStyle(.plain)
         .help("Show only \"\(state.label)\" sessions")
     }
 
-    /// Deliberately NOT a ScrollView: content inside a ScrollView does not
-    /// reliably paint in a MenuBarExtra window (rows reserve space but render
-    /// blank once the session list updates while the popover is closed).
-    /// A plain VStack always paints; overflow is capped with a "+N more" hint
-    /// and the dot-chip filters narrow the list instead of scrolling.
+    /// Deliberately NOT a ScrollView: under the previous MenuBarExtra host,
+    /// rows inside a ScrollView reserved space but painted blank whenever the
+    /// list updated while the window was closed. The NSPopover host may not
+    /// share that bug, but the cap plus the dot filters and search field make
+    /// scrolling unnecessary, so the always-painting plain VStack stays.
     private static let maxVisibleRows = 14
+
+    /// Shown only when the list overflows: filters by project, provider,
+    /// status reason, or path, composing with the dot filter.
+    private var searchField: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            TextField("Filter sessions", text: $searchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.bottom, 6)
+    }
+
+    private var emptyFilterMessage: String {
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            return "No sessions match \"\(searchText)\""
+        }
+        if let filter = store.selectedFilter {
+            return "No \"\(filter.label)\" sessions"
+        }
+        return "No agent sessions"
+    }
 
     private var sessionList: some View {
         VStack(spacing: 1) {
-            if filteredSessions.isEmpty, let filter {
-                Text("No \"\(filter.label)\" sessions")
+            if filteredSessions.isEmpty {
+                Text(emptyFilterMessage)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 12)
             } else {
                 ForEach(filteredSessions.prefix(Self.maxVisibleRows)) { session in
                     SessionRow(session: session) {
-                        TerminalFocuser.focus(session)
+                        TerminalFocuser.focus(
+                            session, exactTitle: store.exactWindowTitle(for: session))
                         store.acknowledge(session)
+                        dismiss()
                     }
                 }
                 if filteredSessions.count > Self.maxVisibleRows {
                     let hidden = filteredSessions.count - Self.maxVisibleRows
-                    Text("+\(hidden) more — use the dot filters to narrow down")
+                    Text("+\(hidden) more — use the dot filters or search to narrow down")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
