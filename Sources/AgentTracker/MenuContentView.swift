@@ -145,10 +145,7 @@ struct MenuContentView: View {
     private var sessionList: some View {
         VStack(spacing: 1) {
             if filteredSessions.isEmpty {
-                Text(emptyFilterMessage)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 12)
+                noMatchesState
             } else {
                 let sections = sections
                 ForEach(sections) { section in
@@ -228,9 +225,33 @@ struct MenuContentView: View {
         }
     }
 
+    /// Sessions exist, but none survived the filter or the query. Centered and
+    /// given room like the true empty state — left-aligned in the list's own
+    /// padding, it read as a broken list. Offers the way back out, since the
+    /// user has narrowed themselves into a dead end.
+    private var noMatchesState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: query.isEmpty ? "circle.dotted" : "magnifyingglass")
+                .font(.system(size: 20, weight: .light))
+                .foregroundStyle(.tertiary)
+            Text(emptyFilterMessage)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Button("Show all \(store.sessions.count) sessions") {
+                store.selectedFilter = nil
+                searchText = ""
+            }
+            .buttonStyle(.link)
+            .font(.system(size: 11))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+    }
+
     private var emptyFilterMessage: String {
         if !query.isEmpty { return "No sessions match \"\(searchText)\"" }
-        if let filter = store.selectedFilter { return "No \"\(filter.label)\" sessions" }
+        if let filter = store.selectedFilter { return filter.emptyListMessage }
         return "No agent sessions"
     }
 
@@ -337,6 +358,7 @@ struct SessionRow: View {
     let onSelect: () -> Void
 
     @State private var hovering = false
+    @State private var showsPath = false
 
     var body: some View {
         Button(action: onSelect) {
@@ -381,8 +403,44 @@ struct SessionRow: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(session.cwd ?? "")
+        .onHover { hovering in
+            self.hovering = hovering
+            guard hovering else {
+                showsPath = false
+                return
+            }
+            // Our own delay rather than .help(): AppKit's tooltip timer is
+            // system-owned and takes over a second, which is far too slow for
+            // a list you are scanning.
+            Task {
+                try? await Task.sleep(for: .milliseconds(280))
+                if self.hovering { showsPath = true }
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if showsPath, let cwd = session.cwd {
+                Text(cwd)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.head)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5)
+                            .fill(.background)
+                            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+                    )
+                    .frame(maxWidth: Theme.Metrics.popoverWidth - 32, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .offset(x: 8, y: 18)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                    .zIndex(1)
+            }
+        }
+        .animation(Theme.Motion.quick, value: showsPath)
+        .accessibilityLabel("\(session.projectName), \(metadata), \(session.cwd ?? "")")
     }
 
     /// One dimmed line under the name: provider, where it lives, what it is

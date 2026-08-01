@@ -27,6 +27,22 @@ final class AgentSessionTests {
             session(cwd: "/Users/dev/Planner/repos/src/thing").locationContext == "Planner")
     }
 
+    /// The shape this repo's own worktrees actually take — reported ".claude"
+    /// before dot-directories were treated as scaffolding.
+    @Test func locationContextSkipsDotDirectories() {
+        let cwd = "/Users/dev/Planner/planner-backend/.claude/worktrees/pln-388-contracts"
+        #expect(session(cwd: cwd).locationContext == "planner-backend")
+        #expect(session(cwd: "/Users/dev/dotfiles/.config/nvim").locationContext == "dotfiles")
+        // Only contiguous trailing scaffolding is unwound: a real directory
+        // name stops the walk even when a dot-directory sits above it.
+        #expect(session(cwd: "/Users/dev/thing/.git/modules/x").locationContext == "modules")
+    }
+
+    /// A path that is nothing but scaffolding has no honest answer.
+    @Test func locationContextGivesUpWhenEverythingIsScaffolding() {
+        #expect(session(cwd: "/worktrees/pln-388").locationContext == nil)
+    }
+
     @Test func locationContextHandlesShallowAndMissingPaths() {
         #expect(session(cwd: nil).locationContext == nil)
         #expect(session(cwd: "/").locationContext == nil)

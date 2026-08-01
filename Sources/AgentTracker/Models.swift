@@ -29,6 +29,17 @@ enum SessionState: String, Codable, CaseIterable {
         case .idle: return "Idle"
         }
     }
+
+    /// Shown when this state is filtered to and nothing is in it. Written per
+    /// state because the labels do not survive a template — "Nothing is needs
+    /// you" — and because an empty needs-you list is good news, not an error.
+    var emptyListMessage: String {
+        switch self {
+        case .needsYou: return "Nothing needs you right now"
+        case .running: return "Nothing is running"
+        case .idle: return "No sessions are idle"
+        }
+    }
 }
 
 struct AgentSession: Codable, Identifiable, Equatable {
@@ -71,22 +82,28 @@ struct AgentSession: Codable, Identifiable, Equatable {
 
     /// Where this session lives, for the row's metadata line: the directory
     /// containing `projectName`. Container directories that name no project
-    /// are skipped — a worktree at `…/Planner/worktrees/pln-388` belongs to
-    /// "Planner", and answering "worktrees" would tell the user nothing.
+    /// are skipped — a worktree at `…/planner-backend/.claude/worktrees/pln-388`
+    /// belongs to "planner-backend", and answering "worktrees" or ".claude"
+    /// would tell the user nothing.
     var locationContext: String? {
         guard let cwd else { return nil }
         var parts = (cwd as NSString).pathComponents.filter { $0 != "/" }
         guard !parts.isEmpty else { return nil }
         parts.removeLast()
-        while let last = parts.last, Self.containerDirectoryNames.contains(last.lowercased()) {
+        while let last = parts.last, Self.namesNoProject(last) {
             parts.removeLast()
         }
         return parts.last
     }
 
-    private static let containerDirectoryNames: Set<String> = [
-        "worktrees", ".worktrees", "repos", "src",
-    ]
+    /// Tool scaffolding rather than a project: known container names, plus any
+    /// dot-directory (`.claude`, `.worktrees`, …), which by convention belongs
+    /// to whatever encloses it.
+    private static func namesNoProject(_ component: String) -> Bool {
+        component.hasPrefix(".") || containerDirectoryNames.contains(component.lowercased())
+    }
+
+    private static let containerDirectoryNames: Set<String> = ["worktrees", "repos", "src"]
 
     var providerDisplayName: String {
         switch provider {
