@@ -71,7 +71,7 @@ final class SessionStore: ObservableObject {
         let scanner = CodexSessionScanner()
         codexScanner = scanner
         scannerSubscription = scanner.$sessions
-            .combineLatest(scanner.$knownThreadIds)
+            .combineLatest(scanner.$threadIdToSession)
             .sink { [weak self] _, _ in
                 // Hop a tick so the scanner's published properties are set.
                 Task { @MainActor in self?.rebuild() }
@@ -106,26 +106,36 @@ final class SessionStore: ObservableObject {
         var merged = fileSessions
         if let scanner = codexScanner {
             let scanned = scanner.sessions
+            let threadMap = scanner.threadIdToSession
+            // The notify hook's sessionId may be a thread id rather than the
+            // stable session_id — the scanner's map resolves both. A matched
+            // notify row is superseded, but still carries enrichment rollouts
+            // can't provide (TERM_PROGRAM from the session's shell), so graft
+            // that onto the scanner row. Unmatched rows stay visible as
+            // fallback — deliberately no cwd-based matching, which could hide
+            // a distinct session sharing a working directory.
+            var termProgramBySession: [String: String] = [:]
             if !scanned.isEmpty {
-                let scannerSessionIds = Set(scanned.map(\.sessionId))
-                let scannerThreadIds = scanner.knownThreadIds
-                let scannerCwds = Set(scanned.compactMap(\.cwd))
-                // The notify hook's sessionId may be a thread id rather than the
-                // stable session_id, so match against both — plus cwd as a last
-                // resort. Unmatched codex file rows stay visible as fallback.
                 merged.removeAll { row in
-                    guard row.provider == "codex" else { return false }
-                    if scannerSessionIds.contains(row.sessionId) { return true }
-                    if scannerThreadIds.contains(row.sessionId) { return true }
-                    if let cwd = row.cwd, scannerCwds.contains(cwd) { return true }
-                    return false
+                    guard row.provider == "codex",
+                          let target = threadMap[row.sessionId] else { return false }
+                    if let termProgram = row.termProgram {
+                        termProgramBySession[target] = termProgram
+                    }
+                    return true
                 }
             }
             if !codexAcknowledgedAt.isEmpty {
                 let liveIds = Set(scanned.map(\.sessionId))
                 codexAcknowledgedAt = codexAcknowledgedAt.filter { liveIds.contains($0.key) }
             }
-            merged.append(contentsOf: scanned.map(applyAcknowledgement))
+            merged.append(contentsOf: scanned.map { session in
+                var session = session
+                if session.termProgram == nil {
+                    session.termProgram = termProgramBySession[session.sessionId]
+                }
+                return applyAcknowledgement(session)
+            })
         }
 
         sessions = merged.sorted { lhs, rhs in

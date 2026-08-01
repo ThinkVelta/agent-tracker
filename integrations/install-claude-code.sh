@@ -8,7 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BIN_DIR="$HOME/.agent-tracker/bin"
 SETTINGS="$HOME/.claude/settings.json"
 
-mkdir -p "$BIN_DIR" "$HOME/.agent-tracker/sessions"
+# ~/.claude may not exist yet (claude installed but never run) — the merge
+# below writes settings.json into it.
+mkdir -p "$BIN_DIR" "$HOME/.agent-tracker/sessions" "$HOME/.claude"
 cp "$SCRIPT_DIR/agent-tracker-hook.py" "$BIN_DIR/agent-tracker-hook.py"
 chmod +x "$BIN_DIR/agent-tracker-hook.py"
 
@@ -22,6 +24,7 @@ import json
 import os
 
 settings_path = os.path.expanduser("~/.claude/settings.json")
+os.makedirs(os.path.dirname(settings_path), exist_ok=True)
 settings = {}
 if os.path.exists(settings_path):
     with open(settings_path) as f:

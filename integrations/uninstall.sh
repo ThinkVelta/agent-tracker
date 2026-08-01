@@ -1,8 +1,11 @@
 #!/bin/bash
 # Removes the agent-tracker integrations: surgically strips agent-tracker hook
-# entries from ~/.claude/settings.json and the agent-tracker notify line from
-# ~/.codex/config.toml, backing each file up first and leaving everything else
-# intact. Idempotent. Session data in ~/.agent-tracker is kept unless --purge.
+# commands from ~/.claude/settings.json (hook-level, so third-party hooks
+# sharing an entry survive) and the agent-tracker notify setting from
+# ~/.codex/config.toml (single- or multi-line form), backing each file up first
+# and leaving everything else intact. The two sections are independent — a
+# broken config in one never blocks cleaning the other. Idempotent. Session
+# data in ~/.agent-tracker is kept unless --purge.
 set -euo pipefail
 
 PURGE=0
@@ -21,35 +24,50 @@ done
 SETTINGS="$HOME/.claude/settings.json"
 CONFIG="$HOME/.codex/config.toml"
 DATA_DIR="$HOME/.agent-tracker"
+FAILED=0
 
-# --- Claude Code: remove agent-tracker hook entries --------------------------
+# --- Claude Code: remove agent-tracker hook commands -------------------------
 if [ -f "$SETTINGS" ] && grep -q "agent-tracker-hook" "$SETTINGS"; then
   cp "$SETTINGS" "$SETTINGS.agent-tracker-uninstall-backup"
   echo "Backed up $SETTINGS to $SETTINGS.agent-tracker-uninstall-backup"
-  python3 - <<'PYEOF'
+  if ! python3 - <<'PYEOF'
 import json
 import os
+import sys
 
 settings_path = os.path.expanduser("~/.claude/settings.json")
-with open(settings_path) as f:
-    settings = json.load(f)
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (OSError, json.JSONDecodeError) as error:
+    print(f"Cannot parse {settings_path}: {error}", file=sys.stderr)
+    sys.exit(1)
 
+# Filter at the hook level, not the entry level: an entry whose hooks array
+# mixes agent-tracker with another tool's hook must keep the other tool's.
 removed = []
 hooks = settings.get("hooks", {})
 for event in list(hooks):
     entries = hooks[event]
-    kept = [
-        entry for entry in entries
-        if not any(
-            "agent-tracker-hook" in h.get("command", "")
-            for h in entry.get("hooks", [])
-        )
-    ]
-    if len(kept) == len(entries):
+    changed = False
+    kept_entries = []
+    for entry in entries:
+        inner = entry.get("hooks", [])
+        kept_inner = [h for h in inner if "agent-tracker-hook" not in h.get("command", "")]
+        if len(kept_inner) == len(inner):
+            kept_entries.append(entry)
+            continue
+        changed = True
+        if kept_inner:
+            entry = dict(entry)
+            entry["hooks"] = kept_inner
+            kept_entries.append(entry)
+        # else: entry only contained agent-tracker hooks — drop it entirely.
+    if not changed:
         continue
     removed.append(event)
-    if kept:
-        hooks[event] = kept
+    if kept_entries:
+        hooks[event] = kept_entries
     else:
         del hooks[event]
 if removed and not hooks and "hooks" in settings:
@@ -64,37 +82,76 @@ if removed:
 else:
     print("No agent-tracker hook entries found in settings.json")
 PYEOF
+  then
+    echo "WARNING: Claude Code cleanup failed — fix $SETTINGS and re-run. Continuing with Codex." >&2
+    FAILED=1
+  fi
 else
   echo "Claude Code: no agent-tracker hooks in $SETTINGS — nothing to do"
 fi
 
-# --- Codex: remove the agent-tracker notify line -----------------------------
+# --- Codex: remove the agent-tracker notify setting --------------------------
 if [ -f "$CONFIG" ] && grep -q "agent-tracker-hook" "$CONFIG"; then
   cp "$CONFIG" "$CONFIG.agent-tracker-uninstall-backup"
   echo "Backed up $CONFIG to $CONFIG.agent-tracker-uninstall-backup"
-  python3 - <<'PYEOF'
+  if ! python3 - <<'PYEOF'
 import os
+import sys
 
 config_path = os.path.expanduser("~/.codex/config.toml")
-with open(config_path) as f:
-    lines = f.readlines()
+try:
+    with open(config_path) as f:
+        lines = f.readlines()
+except OSError as error:
+    print(f"Cannot read {config_path}: {error}", file=sys.stderr)
+    sys.exit(1)
 
-kept = [
-    line for line in lines
-    if not (line.lstrip().startswith("notify") and "agent-tracker-hook" in line)
-]
+# The notify array may have been reformatted across multiple lines; consume the
+# whole `notify = [ ... ]` block (bracket-balanced) and drop it only when it
+# mentions the agent-tracker hook.
+kept = []
+removed = 0
+i = 0
+while i < len(lines):
+    line = lines[i]
+    if line.lstrip().startswith("notify") and "=" in line:
+        block = [line]
+        depth = line.count("[") - line.count("]")
+        j = i + 1
+        while depth > 0 and j < len(lines):
+            block.append(lines[j])
+            depth += lines[j].count("[") - lines[j].count("]")
+            j += 1
+        if any("agent-tracker-hook" in b for b in block):
+            removed += len(block)
+            i += len(block)
+            continue
+        kept.extend(block)
+        i += len(block)
+        continue
+    kept.append(line)
+    i += 1
 
 with open(config_path, "w") as f:
     f.writelines(kept)
 
-count = len(lines) - len(kept)
-if count:
-    print(f"Removed the agent-tracker notify line from {config_path}")
+if removed:
+    print(f"Removed the agent-tracker notify setting from {config_path}")
 else:
-    print("No agent-tracker notify line found in config.toml")
+    # grep matched but no removable block found — never claim success.
+    print(
+        f"Found 'agent-tracker-hook' in {config_path} but not as a notify "
+        "setting — please remove it manually.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 PYEOF
+  then
+    echo "WARNING: Codex cleanup failed — check $CONFIG manually." >&2
+    FAILED=1
+  fi
 else
-  echo "Codex: no agent-tracker notify line in $CONFIG — nothing to do"
+  echo "Codex: no agent-tracker notify setting in $CONFIG — nothing to do"
 fi
 
 # --- Data directory ----------------------------------------------------------
@@ -109,4 +166,8 @@ else
   echo "Kept $DATA_DIR (hook script + session data) — pass --purge to remove it"
 fi
 
+if [ "$FAILED" -eq 1 ]; then
+  echo "Done with warnings — one of the configs needs manual attention (see above)." >&2
+  exit 1
+fi
 echo "Done. Restart any running agent sessions to stop them reporting state."

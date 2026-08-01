@@ -102,6 +102,18 @@ enum CodexRolloutParser {
         }
     }
 
+    /// Cheap prefilter: a line can only parse to something state-relevant if it
+    /// mentions one of these markers somewhere in its bytes. False positives
+    /// just take the full-parse path; false negatives are impossible because
+    /// the type string always appears verbatim in the line. This is what keeps
+    /// a full-file bootstrap scan fast.
+    static func mightBeSignificant(_ line: String) -> Bool {
+        line.contains("session_meta")
+            || line.contains("task_started")
+            || line.contains("task_complete")
+            || line.contains("turn_aborted")
+    }
+
     /// Splits `data` into complete lines (up to and including the last newline)
     /// and reports how many bytes were consumed. Bytes after the last newline —
     /// a partially written trailing line — are NOT consumed, so callers can
@@ -129,6 +141,7 @@ struct CodexThreadAccumulator: Equatable {
     private(set) var lastAgentMessage: String?
 
     mutating func consume(line: String) {
+        guard CodexRolloutParser.mightBeSignificant(line) else { return }
         apply(CodexRolloutParser.parseLine(line))
     }
 
@@ -156,64 +169,38 @@ struct CodexThreadAccumulator: Equatable {
     }
 }
 
-// MARK: - Bootstrap (head + tail windows)
+// MARK: - Bootstrap (streaming scan)
 
 extension CodexThreadAccumulator {
-    static let defaultHeadWindow = 16 * 1024
-    static let defaultTailWindow = 128 * 1024
+    static let defaultChunkSize = 1 << 20 // 1 MB
 
-    /// Bootstraps an accumulator from an existing (possibly 10+ MB) rollout file
-    /// without reading it whole: the head window yields the first session_meta,
-    /// the tail window (aligned to its first newline) yields the last
-    /// significant event. Returns the accumulator plus the byte offset up to
-    /// which complete lines were consumed — incremental reads continue there.
+    /// Bootstraps an accumulator from an existing (possibly 10+ MB) rollout
+    /// file by streaming it whole in bounded chunks. The `mightBeSignificant`
+    /// prefilter skips JSON parsing for the overwhelmingly common insignificant
+    /// lines, so the full scan stays cheap while never missing a significant
+    /// event — a windowed scan can, whenever the last significant event is
+    /// buried under a long stretch of reasoning/tool output. Returns the
+    /// accumulator plus the byte offset up to which complete lines were
+    /// consumed — incremental reads continue there (a partially written
+    /// trailing line stays unconsumed until its newline arrives).
     static func bootstrap(
         url: URL,
-        headWindow: Int = defaultHeadWindow,
-        tailWindow: Int = defaultTailWindow
+        chunkSize: Int = defaultChunkSize
     ) -> (accumulator: CodexThreadAccumulator, offset: UInt64)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        guard let size = try? handle.seekToEnd() else { return nil }
 
         var accumulator = CodexThreadAccumulator()
-        guard size > 0 else { return (accumulator, 0) }
-
-        // Small file: read it whole.
-        if size <= UInt64(headWindow + tailWindow) {
-            guard (try? handle.seek(toOffset: 0)) != nil,
-                  let data = try? handle.readToEnd() else { return (accumulator, 0) }
-            let (lines, consumed) = CodexRolloutParser.completeLines(in: data)
+        var offset: UInt64 = 0
+        var pending = Data()
+        while let chunk = try? handle.read(upToCount: chunkSize), !chunk.isEmpty {
+            pending.append(chunk)
+            let (lines, consumed) = CodexRolloutParser.completeLines(in: pending)
             for line in lines { accumulator.consume(line: line) }
-            return (accumulator, UInt64(consumed))
+            offset += UInt64(consumed)
+            pending.removeFirst(consumed)
         }
-
-        // Head window: metadata only — any events here are stale by definition.
-        if (try? handle.seek(toOffset: 0)) != nil, let head = try? handle.read(upToCount: headWindow) {
-            let (lines, _) = CodexRolloutParser.completeLines(in: head)
-            for line in lines {
-                let parsed = CodexRolloutParser.parseLine(line)
-                if case .sessionMeta = parsed { accumulator.apply(parsed) }
-            }
-        }
-
-        // Tail window: skip the partial first line, then consume everything —
-        // later session_metas (resume) override the head's, and the last
-        // significant event determines state.
-        let tailStart = size - UInt64(tailWindow)
-        guard (try? handle.seek(toOffset: tailStart)) != nil,
-              let tail = try? handle.read(upToCount: tailWindow),
-              let firstNewline = tail.firstIndex(of: UInt8(ascii: "\n")) else {
-            // No line boundary inside the window (one giant line) — resume from
-            // the window start so incremental reads can complete it.
-            return (accumulator, tailStart)
-        }
-        let alignedStart = tail.index(after: firstNewline)
-        let aligned = tail[alignedStart...]
-        let (lines, consumed) = CodexRolloutParser.completeLines(in: aligned)
-        for line in lines { accumulator.consume(line: line) }
-        let alignedOffset = tailStart + UInt64(tail.distance(from: tail.startIndex, to: alignedStart))
-        return (accumulator, alignedOffset + UInt64(consumed))
+        return (accumulator, offset)
     }
 }
 

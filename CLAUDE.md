@@ -32,7 +32,9 @@ rollout files. See README for the full picture.
 ## Commands
 
 - Build: `swift build`
-- Test: `swift test`
+- Test: `./test.sh` — NOT plain `swift test`, which on a CLT-only machine (no
+  Xcode.app) builds but silently executes zero tests and exits 0 (see the
+  Package.swift header for why)
 - Run: `swift run AgentTracker` (menu bar only, no Dock icon)
 - Onboard: `./install.sh` (interactive picker; `--agents claude,codex --yes`
   for automation; `integrations/uninstall.sh` reverses it)

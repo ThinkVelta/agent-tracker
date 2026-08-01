@@ -8,10 +8,14 @@ import Foundation
 @MainActor
 final class CodexSessionScanner: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
-    /// Session ids AND per-file thread ids of every tracked thread. The notify
-    /// hook's "thread-id" may be a thread id rather than the stable session_id,
-    /// so SessionStore dedupes state-file rows against this whole set.
-    @Published private(set) var knownThreadIds: Set<String> = []
+    /// Maps session ids AND per-file thread ids to the stable session_id of the
+    /// published session they belong to. The notify hook's "thread-id" may be a
+    /// thread id rather than the stable session_id, so SessionStore resolves
+    /// state-file rows through this map — both to dedupe them and to graft
+    /// their enrichment (termProgram) onto the right scanner row. Only threads
+    /// of groups that actually produced a session are listed, so a notify
+    /// fallback row is never deduped without a replacement.
+    @Published private(set) var threadIdToSession: [String: String] = [:]
 
     static var defaultRootDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_CODEX_DIR"],
@@ -29,11 +33,11 @@ final class CodexSessionScanner: ObservableObject {
     init(rootDirectory: URL? = nil) {
         let worker = CodexScanWorker(root: rootDirectory ?? Self.defaultRootDirectory)
         self.worker = worker
-        worker.onUpdate = { [weak self] sessions, threadIds in
+        worker.onUpdate = { [weak self] sessions, threadMap in
             Task { @MainActor in
                 guard let self else { return }
                 if self.sessions != sessions { self.sessions = sessions }
-                if self.knownThreadIds != threadIds { self.knownThreadIds = threadIds }
+                if self.threadIdToSession != threadMap { self.threadIdToSession = threadMap }
             }
         }
         worker.start()
@@ -61,9 +65,11 @@ final class CodexScanWorker: @unchecked Sendable {
         var lastActivity: Date
     }
 
-    /// Grace period before an un-held, quiet file's thread is considered dead —
-    /// covers lsof staleness between 30s refreshes.
-    private static let deadFileGrace: TimeInterval = 5 * 60
+    /// Grace for files lsof has never reported as held, keyed on file mtime —
+    /// covers the create→open race where a just-written rollout races the lsof
+    /// pass. Old un-held rollouts (dead sessions from earlier scans) fall
+    /// outside it and are pruned on the first successful pass.
+    private static let newFileGrace: TimeInterval = 45
 
     private let root: URL
     private let queue = DispatchQueue(label: "agent-tracker.codex-scanner")
@@ -73,8 +79,8 @@ final class CodexScanWorker: @unchecked Sendable {
     /// rolloutPath -> pid of the codex process holding it open (last lsof pass).
     private var holders: [String: Int] = [:]
 
-    /// Called with fresh session rows + known thread ids after every change.
-    var onUpdate: (([AgentSession], Set<String>) -> Void)?
+    /// Called with fresh session rows + threadId→sessionId map after every change.
+    var onUpdate: (([AgentSession], [String: String]) -> Void)?
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -90,8 +96,11 @@ final class CodexScanWorker: @unchecked Sendable {
                 if self.stream == nil {
                     // FSEvents unavailable — degrade to rescanning on the timer.
                     self.scanDayDirectoriesLocked()
-                    for path in self.trackers.keys { self.processFileLocked(path) }
                 }
+                // Heal missed/coalesced FSEvents even with a live stream: stat
+                // every tracked file and read any growth (reads happen only
+                // when the size actually moved past our offset).
+                for path in self.trackers.keys { self.processFileLocked(path) }
                 self.refreshLivenessLocked()
                 self.publishLocked()
             } else {
@@ -164,8 +173,20 @@ final class CodexScanWorker: @unchecked Sendable {
     /// Called on `queue` (the stream's dispatch queue).
     fileprivate func handleEvents(paths: [String]) {
         var changed = false
-        for path in paths where path.hasSuffix(".jsonl") {
-            processFileLocked(path)
+        var sawNonRollout = false
+        for path in paths {
+            if path.hasSuffix(".jsonl") {
+                processFileLocked(path)
+                changed = true
+            } else {
+                // Directory paths arrive when the kernel coalesces events
+                // (kFSEventStreamEventFlagMustScanSubDirs) — rescan rather
+                // than drop them.
+                sawNonRollout = true
+            }
+        }
+        if sawNonRollout {
+            scanDayDirectoriesLocked()
             changed = true
         }
         if changed { publishLocked() }
@@ -246,13 +267,14 @@ final class CodexScanWorker: @unchecked Sendable {
         // lsof matches process names by prefix, so "-c codex" covers both the
         // "codex" vendor binary and "codex-code-mode-host".
         if let output = Self.runProcess("/usr/sbin/lsof", ["-c", "codex", "-F", "pn"], timeout: 5) {
+            let previouslyHeld = Set(holders.keys)
             holders = Self.parseLsofOutput(output, rootPath: root.path)
             // Held files we aren't tracking yet: live sessions whose rollout
             // lives in an older day-directory.
             for path in holders.keys where trackers[path] == nil {
                 bootstrapLocked(path: path)
             }
-            pruneDeadLocked()
+            pruneDeadLocked(previouslyHeld: previouslyHeld)
         } else {
             // lsof errored or timed out. Degraded mode: pgrep tells us whether
             // ANY codex process is alive — if none, drop all codex sessions;
@@ -266,16 +288,25 @@ final class CodexScanWorker: @unchecked Sendable {
         }
     }
 
-    private func pruneDeadLocked() {
+    /// Runs only after a successful lsof pass, which is authoritative: a
+    /// rollout that was held on the previous pass and is un-held now means its
+    /// codex process exited — drop it immediately (dead sessions disappear
+    /// within one 30s cycle). Files never yet seen as held get a short
+    /// mtime-keyed grace covering the create→open race; old un-held rollouts
+    /// (from day-directory scans of exited sessions) prune on the first pass.
+    private func pruneDeadLocked(previouslyHeld: Set<String>) {
         let now = Date()
-        for (path, tracker) in trackers where holders[path] == nil {
-            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path) else {
+        for (path, _) in trackers where holders[path] == nil {
+            if previouslyHeld.contains(path) {
+                trackers.removeValue(forKey: path)
+                continue
+            }
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
+                  let mtime = attributes[.modificationDate] as? Date else {
                 trackers.removeValue(forKey: path) // file gone
                 continue
             }
-            let mtime = attributes[.modificationDate] as? Date ?? tracker.lastActivity
-            let lastActivity = max(mtime, tracker.lastActivity)
-            if now.timeIntervalSince(lastActivity) > Self.deadFileGrace {
+            if now.timeIntervalSince(mtime) > Self.newFileGrace {
                 trackers.removeValue(forKey: path)
             }
         }
@@ -308,12 +339,7 @@ final class CodexScanWorker: @unchecked Sendable {
 
     private func publishLocked() {
         var snapshots: [CodexThreadSnapshot] = []
-        var threadIds = Set<String>()
         for (path, tracker) in trackers {
-            if let meta = tracker.accumulator.meta {
-                threadIds.insert(meta.sessionId)
-                if let threadId = meta.threadId { threadIds.insert(threadId) }
-            }
             snapshots.append(CodexThreadSnapshot(
                 accumulator: tracker.accumulator,
                 fileActivityAt: tracker.lastActivity,
@@ -321,7 +347,19 @@ final class CodexScanWorker: @unchecked Sendable {
             ))
         }
         let sessions = CodexSessionGrouper.sessions(from: snapshots)
-        onUpdate?(sessions, threadIds)
+
+        // Map thread ids only for groups that produced a session — a group
+        // that emitted nothing (e.g. subagent-only) must not cause dedupe of
+        // its notify fallback row.
+        let produced = Set(sessions.map(\.sessionId))
+        var threadIdToSession: [String: String] = [:]
+        for tracker in trackers.values {
+            guard let meta = tracker.accumulator.meta,
+                  produced.contains(meta.sessionId) else { continue }
+            threadIdToSession[meta.sessionId] = meta.sessionId
+            if let threadId = meta.threadId { threadIdToSession[threadId] = meta.sessionId }
+        }
+        onUpdate?(sessions, threadIdToSession)
     }
 
     // MARK: - Process helper

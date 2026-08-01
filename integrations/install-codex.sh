@@ -48,6 +48,6 @@ with open(config_path, "w") as f:
 print("Registered agent-tracker notify handler")
 PYEOF
 
-echo "Done. New Codex sessions will now report turn completions."
-echo "Note: Codex only notifies on turn completion, so Codex sessions appear"
-echo "as 'needs you' when done — live 'running' state is Claude Code only for now."
+echo "Done. New Codex sessions will now push turn-complete notifications."
+echo "Note: the app also tracks Codex live by watching ~/.codex/sessions"
+echo "(read-only), so running/needs-you states work even without this notify."

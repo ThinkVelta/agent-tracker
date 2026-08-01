@@ -263,7 +263,7 @@ final class CodexRolloutTests {
         #expect(result.offset == (try fileSize(of: url)))
     }
 
-    @Test func bootstrapLargeFileUsesHeadAndTailWindows() throws {
+    @Test func bootstrapLargeFileScansAcrossChunkBoundaries() throws {
         var lines = [metaLine(sessionId: "S-big", threadId: "T-big", cwd: "/big/project")]
         lines += (0..<200).map(fillerLine) // ~50 KB of insignificant middle
         lines.append(eventLine("task_started", timestamp: "2026-07-31T11:00:00.000Z"))
@@ -274,20 +274,55 @@ final class CodexRolloutTests {
         ))
         let url = try makeTempFile(lines: lines)
         let size = try fileSize(of: url)
-        let headWindow = 1024
-        let tailWindow = 2048
-        #expect(size > UInt64(headWindow + tailWindow), "fixture must exceed the windows")
+        let chunkSize = 2048
+        #expect(size > UInt64(chunkSize), "fixture must span many chunks")
 
-        let result = try #require(CodexThreadAccumulator.bootstrap(
-            url: url, headWindow: headWindow, tailWindow: tailWindow
-        ))
-        // Meta from the head window, last significant event from the tail.
+        let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: chunkSize))
         #expect(result.accumulator.meta?.sessionId == "S-big")
         #expect(result.accumulator.meta?.cwd == "/big/project")
         #expect(result.accumulator.derivedState.state == .needsYou)
         #expect(result.accumulator.lastAgentMessage == "Big file done")
         #expect(result.accumulator.lastSignificant?.timestamp == date("2026-07-31T11:05:00.000Z"))
         #expect(result.offset == size)
+    }
+
+    @Test func bootstrapFindsSignificantEventBuriedMidFile() throws {
+        // Regression: a windowed scan missed task_started when followed by a
+        // long stretch of insignificant output (mid-turn app launch showed the
+        // session as idle). The streaming scan must find it wherever it is.
+        var lines = [metaLine(sessionId: "S-mid", threadId: "T-mid")]
+        lines.append(eventLine("task_started", timestamp: "2026-07-31T11:00:00.000Z"))
+        lines += (0..<800).map(fillerLine) // ~200 KB of reasoning after the event
+        let url = try makeTempFile(lines: lines)
+
+        let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 4096))
+        #expect(result.accumulator.derivedState.state == .running)
+        #expect(result.accumulator.lastSignificant?.timestamp == date("2026-07-31T11:00:00.000Z"))
+    }
+
+    @Test func bootstrapParsesMetaLineLargerThanAChunk() throws {
+        // Regression: a fixed head window dropped session_meta lines longer
+        // than the window, making the thread invisible. Real metas can embed
+        // large instruction blobs; the line must parse regardless of length.
+        let payload: [String: Any] = [
+            "session_id": "S-huge",
+            "id": "T-huge",
+            "cwd": "/huge/project",
+            "instructions": String(repeating: "i", count: 20_000),
+        ]
+        let object: [String: Any] = [
+            "timestamp": "2026-07-31T10:00:00.000Z",
+            "type": "session_meta",
+            "payload": payload,
+        ]
+        let metaData = try JSONSerialization.data(withJSONObject: object)
+        let hugeMeta = try #require(String(data: metaData, encoding: .utf8))
+        let url = try makeTempFile(lines: [hugeMeta, eventLine("task_started")])
+
+        let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 4096))
+        #expect(result.accumulator.meta?.sessionId == "S-huge")
+        #expect(result.accumulator.meta?.cwd == "/huge/project")
+        #expect(result.accumulator.derivedState.state == .running)
     }
 
     @Test func bootstrapLargeFileStopsBeforePartialTrailingLine() throws {
@@ -298,9 +333,7 @@ final class CodexRolloutTests {
         let url = try makeTempFile(lines: lines, trailing: partial)
         let size = try fileSize(of: url)
 
-        let result = try #require(CodexThreadAccumulator.bootstrap(
-            url: url, headWindow: 1024, tailWindow: 2048
-        ))
+        let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 2048))
         #expect(result.accumulator.derivedState.state == .running)
         // The unfinished trailing line stays unconsumed for the incremental reader.
         #expect(result.offset == size - UInt64(partial.utf8.count))
@@ -314,9 +347,7 @@ final class CodexRolloutTests {
             timestamp: "2026-07-31T12:00:00.000Z"
         ))
         let url = try makeTempFile(lines: lines)
-        let result = try #require(CodexThreadAccumulator.bootstrap(
-            url: url, headWindow: 1024, tailWindow: 2048
-        ))
+        let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 2048))
         #expect(result.accumulator.meta?.cwd == "/resumed")
     }
 

@@ -29,10 +29,12 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
 ~/.codex/sessions ──▶  read-only rollout watch ──┴──▶ click row → focus terminal window
 ```
 
-- **No daemon, no polling loops.** Agent CLIs push events through their native
-  hook mechanisms; a tiny dependency-free Python script
+- **No daemon; event-driven at the core.** Agent CLIs push events through their
+  native hook mechanisms; a tiny dependency-free Python script
   (`integrations/agent-tracker-hook.py`) translates each event into a per-session
-  JSON state file. The app watches the directory with a dispatch source.
+  JSON state file. The app watches directories with dispatch sources/FSEvents —
+  the only periodic work is a lightweight 30-second `lsof` liveness check for
+  Codex processes.
 - **Codex is tracked live without any config change**: the app also watches
   Codex's own rollout files in `~/.codex/sessions` (read-only) for
   `task_started`/`task_complete`/`turn_aborted` events, so Codex sessions show
@@ -84,8 +86,8 @@ permission (System Settings → Privacy & Security → Accessibility).
 | Codex | `task_complete` (rollout), `agent-turn-complete` (notify) | needs you |
 | Codex | `turn_aborted` (rollout) | idle |
 
-Codex sessions are auto-pruned when their `codex` process exits (`lsof`-based
-liveness check on the rollout file).
+Codex sessions are auto-pruned within ~30 seconds of their `codex` process
+exiting (`lsof`-based liveness check on the rollout file).
 
 ## Current limitations
 
