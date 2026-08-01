@@ -156,16 +156,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.deactivate()
     }
 
-    /// Debug utility: `AgentTracker --render-preview out.png [--filter needsYou]`
+    /// Debug utility:
+    /// `AgentTracker --render-preview out.png [--filter needsYou] [--appearance dark]`
     /// renders the dropdown with live data to a PNG and exits — lets the
     /// popover be inspected/iterated without clicking the menu bar. Returns
     /// true when preview mode is active (the status item is skipped).
+    ///
+    /// Caveat worth knowing before trusting a preview: `ImageRenderer` does not
+    /// rasterize AppKit-backed views, so `TextField` renders as a coloured
+    /// placeholder bar and any `NSVisualEffectView` material is simply absent.
+    /// Those need a real popover screenshot.
     private func runRenderPreviewIfRequested() -> Bool {
         let arguments = CommandLine.arguments
         guard let flagIndex = arguments.firstIndex(of: "--render-preview"),
             arguments.count > flagIndex + 1
         else { return false }
         let path = arguments[flagIndex + 1]
+        var darkMode = false
+        if let appearanceIndex = arguments.firstIndex(of: "--appearance") {
+            // A typo silently rendering light mode would send someone hunting
+            // for a dark-mode bug in a light-mode screenshot.
+            let value =
+                arguments.count > appearanceIndex + 1
+                ? arguments[appearanceIndex + 1].lowercased() : ""
+            switch value {
+            case "dark": darkMode = true
+            case "light": darkMode = false
+            default:
+                FileHandle.standardError.write(
+                    Data("[preview] --appearance expects light or dark\n".utf8))
+                exit(2)
+            }
+        }
+        let appearance = NSAppearance(named: darkMode ? .darkAqua : .aqua)
+        NSApp.appearance = appearance
         Task {
             let store = SessionStore()
             if let filterIndex = arguments.firstIndex(of: "--filter"),
@@ -181,15 +205,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 try? await Task.sleep(nanoseconds: 500_000_000)
                 if store.sessions.contains(where: { $0.provider == "codex" }) { break }
             }
-            let renderer = ImageRenderer(content: MenuContentView(store: store))
+            let renderer = ImageRenderer(
+                content: MenuContentView(store: store)
+                    .environment(\.colorScheme, darkMode ? .dark : .light)
+                    // The real popover's background is the system's; here there
+                    // is none, so dark-mode text would render white on
+                    // transparency and flatten to white-on-white. Hard-coded
+                    // rather than semantic because dynamic NSColors do not
+                    // resolve to the dark variant inside ImageRenderer.
+                    .background(darkMode ? Color(white: 0.145) : Color(white: 0.98))
+            )
             renderer.scale = 2
-            if let image = renderer.nsImage,
-                let tiff = image.tiffRepresentation,
-                let rep = NSBitmapImageRep(data: tiff),
-                let png = rep.representation(using: .png, properties: [:])
-            {
-                try? png.write(to: URL(fileURLWithPath: path))
-                let size = "\(Int(image.size.width))x\(Int(image.size.height))"
+            var rendered: (data: Data, size: NSSize)?
+            // Dynamic colors resolve against the current *drawing* appearance,
+            // which ImageRenderer does not inherit from NSApp on its own.
+            appearance?.performAsCurrentDrawingAppearance {
+                if let image = renderer.nsImage,
+                    let tiff = image.tiffRepresentation,
+                    let rep = NSBitmapImageRep(data: tiff),
+                    let png = rep.representation(using: .png, properties: [:])
+                {
+                    rendered = (png, image.size)
+                }
+            }
+            if let rendered {
+                try? rendered.data.write(to: URL(fileURLWithPath: path))
+                let size = "\(Int(rendered.size.width))x\(Int(rendered.size.height))"
                 print("[preview] wrote \(path) (\(size) pt)")
             } else {
                 print("[preview] render failed")
