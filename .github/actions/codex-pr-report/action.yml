@@ -65,12 +65,18 @@ runs:
           // workflow happened to run on the PR); a commit status renders as a flat
           // `Codex review` with no misleading prefix. Non-blocking: `failure` shows
           // red, but the status is not a required check, so the human still merges.
-          // Unknown count is treated as green (review posted).
-          const m = raw.match(/<!--\s*codex-review:\s*unresolved=(\d+)/i);
-          const unresolved = m ? Number(m[1]) : null;
-          const state = unresolved && unresolved > 0 ? 'failure' : 'success';
-          const description = unresolved === null ? 'Review posted, see Feedback Summary'
-            : unresolved > 0 ? `${unresolved} unresolved finding(s)` : 'All findings resolved';
+          // A missing trailer fails the job (fail closed): a malformed review must
+          // not publish a green status that is indistinguishable from a clean one.
+          // The comment above is still posted, so the raw review stays inspectable.
+          const m = raw.match(/<!--\s*codex-review:\s*unresolved=(\d+),\s*high=(\d+)\s*-->/i);
+          if (!m) {
+            core.setFailed('Missing codex-review trailer; cannot determine unresolved findings.');
+            return;
+          }
+          const unresolved = Number(m[1]);
+          const state = unresolved > 0 ? 'failure' : 'success';
+          const description = unresolved > 0
+            ? `${unresolved} unresolved finding(s)` : 'All findings resolved';
           await withRetry(() => github.rest.repos.createCommitStatus({
             ...opts, sha: headSha, context: 'Codex review', state, description,
             target_url: posted?.data?.html_url,
