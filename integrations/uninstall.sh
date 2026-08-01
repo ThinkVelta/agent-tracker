@@ -169,8 +169,14 @@ for APP in "/Applications/AgentTracker.app" "$HOME/Applications/AgentTracker.app
       pkill -x AgentTracker || true
       sleep 1
     fi
-    rm -rf "$APP"
-    echo "Removed $APP"
+    # Tolerant like every other section: an unwritable /Applications must not
+    # abort the remaining cleanup under set -e.
+    if rm -rf "$APP" 2> /dev/null; then
+      echo "Removed $APP"
+    else
+      echo "WARNING: could not remove $APP (permissions?) — remove it manually." >&2
+      FAILED=1
+    fi
   fi
 done
 # The preferences domain (onboarding-completed flag, future settings). Guarded:

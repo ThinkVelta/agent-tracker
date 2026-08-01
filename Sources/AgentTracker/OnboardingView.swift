@@ -152,11 +152,18 @@ struct OnboardingView: View {
 
     private func hookFailure(_ output: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(output.trimmingCharacters(in: .whitespacesAndNewlines))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(6)
-                .textSelection(.enabled)
+            // Scrolls rather than truncates: the installers print precise,
+            // actionable errors (e.g. which notify setting they refused to
+            // clobber), and cutting them off would hide the one line that
+            // matters.
+            ScrollView {
+                Text(output.trimmingCharacters(in: .whitespacesAndNewlines))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 120)
             Text("Manual fallback: run ./install.sh from the repo.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
