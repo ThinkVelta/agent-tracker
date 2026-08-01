@@ -232,14 +232,6 @@ final class SessionStore: ObservableObject {
                 })
         }
 
-        // Last word on state: a needs-you row nothing has touched for long
-        // enough is no longer news. Applied after every other source so it
-        // ages the FINAL state, and derived per rebuild (never persisted), so
-        // a fresh event turns the row red again immediately.
-        let now = Date()
-        let fadeAfter = Preferences.shared.needsYouFadesAfter
-        merged = merged.map { NeedsYouAging.apply(to: $0, now: now, fadeAfter: fadeAfter) }
-
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
                 return lhs.state.sortRank < rhs.state.sortRank
