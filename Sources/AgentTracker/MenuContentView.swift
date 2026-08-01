@@ -477,6 +477,31 @@ struct SessionRow: View {
     @State private var showsPath = false
 
     var body: some View {
+        // The acknowledge control is a SIBLING of the row button, not nested
+        // inside it: a button within a button is unreliable in SwiftUI, and a
+        // click landing on the row action would focus the terminal and dismiss
+        // the panel — exactly what "acknowledge without jumping" must not do.
+        ZStack(alignment: .trailing) {
+            rowButton
+            if session.state == .needsYou {
+                Button(action: onAcknowledge) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(hovering ? 1 : 0)
+                // Never steals a click while invisible.
+                .allowsHitTesting(hovering)
+                .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
+                .help("Mark as seen (clears the red state)")
+            }
+        }
+    }
+
+    private var rowButton: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
                 RoundedRectangle(cornerRadius: Theme.Metrics.accentBarWidth / 2)
@@ -505,19 +530,10 @@ struct SessionRow: View {
                 Text(relativeTime)
                     .font(Theme.Typography.timestamp)
                     .foregroundStyle(.tertiary)
-                // Shown on hover for red rows only: auto-acknowledge refuses
-                // to fire when two same-repo sessions share a window title, so
-                // without this those rows can never be cleared by hand.
+                // Reserves the space the overlaid acknowledge button occupies,
+                // so the jump affordance never sits underneath it.
                 if session.state == .needsYou {
-                    Button(action: onAcknowledge) {
-                        Image(systemName: "checkmark.circle")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(hovering ? 1 : 0)
-                    .help("Mark as seen (clears the red state)")
+                    Color.clear.frame(width: 18, height: 18)
                 }
                 Image(systemName: "arrow.up.forward.app")
                     .font(.system(size: 10))
