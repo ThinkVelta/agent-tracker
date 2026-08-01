@@ -99,6 +99,27 @@ final class PreferencesTests {
         }
     }
 
+    @Test func iconPreferencesRoundTripAndSnapToDefaults() {
+        let defaults = makeDefaults()
+        let first = Preferences(defaults: defaults)
+        #expect(first.iconMode == .dotsAndCounts)
+        #expect(first.attentionCue)
+
+        first.iconMode = .monochrome
+        first.attentionCue = false
+        let second = Preferences(defaults: defaults)
+        #expect(second.iconMode == .monochrome)
+        #expect(!second.attentionCue)
+
+        // Unknown mode string (a future build's mode, a typo): default, never
+        // a blank picker.
+        defaults.set("neonDots", forKey: "iconMode")
+        defaults.set("maybe", forKey: "attentionCue")
+        let corrupt = Preferences(defaults: defaults)
+        #expect(corrupt.iconMode == .dotsAndCounts)
+        #expect(corrupt.attentionCue)
+    }
+
     // MARK: - Dwell decision (pure)
 
     @Test func dwellRequiresTheConfiguredStay() {

@@ -16,14 +16,6 @@ struct AgentTrackerApp: App {
     }
 }
 
-/// The dropdown's window. Borderless panels refuse key status by default, and
-/// the search field needs it; `.nonactivatingPanel` means typing works without
-/// activating the app (the Spotlight pattern), so opening the dropdown never
-/// steals focus from whatever the user was doing.
-private final class StatusPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: SessionStore?
@@ -127,6 +119,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         updateIcon(for: store.counts)
 
+        // Re-render on anything that changes how the icon should draw without
+        // a session changing: the mode picker in Settings, a light/dark
+        // switch (drawing-handler images resolve dynamic colors per draw, but
+        // hit-region widths must follow a mode's layout), and display
+        // scale/arrangement changes.
+        preferencesSubscription = Preferences.shared.objectWillChange.sink { [weak self] _ in
+            Task { @MainActor in self?.redrawIcon() }
+        }
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.redrawIcon() }
+        }
+
         // Covers keyboard-driven context switches (Cmd+Tab, Spotlight launch)
         // that never produce an outside click.
         NotificationCenter.default.addObserver(
@@ -151,46 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         host.sizingOptions = .preferredContentSize
         panelHost = host
-
-        let panel = StatusPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
-        panel.isReleasedWhenClosed = false
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.level = .popUpMenu
-        // Follows the user across Spaces, like the popover did; auxiliary so
-        // it can appear over full-screen apps.
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        panel.animationBehavior = .none
-        panel.hidesOnDeactivate = false
-
-        // The popover material the system dropdown had, behind our content,
-        // clipped to our own (tighter) radius.
-        let effect = NSVisualEffectView()
-        effect.material = .popover
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = Theme.Metrics.panelCornerRadius
-        effect.layer?.cornerCurve = .continuous
-        effect.layer?.masksToBounds = true
-
-        let hostView = host.view
-        hostView.translatesAutoresizingMaskIntoConstraints = false
-        effect.addSubview(hostView)
-        NSLayoutConstraint.activate([
-            hostView.topAnchor.constraint(equalTo: effect.topAnchor),
-            hostView.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
-            hostView.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            hostView.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-        ])
-        panel.contentView = effect
-        return panel
+        return StatusPanel(wrapping: host.view)
     }
 
     /// Hangs the panel from the menu bar, centered under the status item and
@@ -224,11 +192,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NSApp.deactivate()
     }
 
+    private var lastCounts = SessionCounts()
+    private var hasRenderedIconOnce = false
+    private var pulseTimer: Timer?
+    private var preferencesSubscription: AnyCancellable?
+
     private func updateIcon(for counts: SessionCounts) {
+        // A session flipping INTO needs-you is the app's whole reason to
+        // exist; give it one brief pulse. The first render is explicitly
+        // exempt — launching into existing red sessions is not news — but a
+        // red session arriving after a quiet zero-session spell IS, so the
+        // gate is "have we rendered before", not "were there sessions".
+        if hasRenderedIconOnce, counts.needsYou > lastCounts.needsYou {
+            startAttentionPulse()
+        }
+        lastCounts = counts
+        hasRenderedIconOnce = true
+        redrawIcon()
+    }
+
+    private func redrawIcon(emphasis: CGFloat = 0) {
         guard let button = statusItem?.button else { return }
-        let rendering = StatusIconRenderer.render(for: counts)
+        let rendering = StatusIconRenderer.render(
+            for: lastCounts, mode: Preferences.shared.iconMode, emphasis: emphasis)
         button.image = rendering.image
         hitRegions = rendering.hitRegions
+    }
+
+    /// Two sine bumps over 1.4s, then done — the icon must never animate
+    /// continuously (battery, attention tax), and Reduce Motion means none
+    /// at all. Costs nothing outside the one-shot: no timer exists while idle.
+    private func startAttentionPulse() {
+        guard Preferences.shared.attentionCue,
+            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        else { return }
+        pulseTimer?.invalidate()
+        let duration: TimeInterval = 1.4
+        let start = Date()
+        pulseTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) {
+            [weak self] timer in
+            let elapsed = Date().timeIntervalSince(start)
+            Task { @MainActor in
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+                if elapsed >= duration {
+                    timer.invalidate()
+                    self.pulseTimer = nil
+                    self.redrawIcon()
+                } else {
+                    self.redrawIcon(emphasis: abs(sin(.pi * elapsed / 0.7)))
+                }
+            }
+        }
     }
 
     @objc private func statusButtonClicked(_ sender: NSStatusBarButton) {
@@ -370,6 +387,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(OnboardingView())
             case "settings":
                 content = AnyView(SettingsPreviewStack())
+            case "icons":
+                content = AnyView(Image(nsImage: IconPreview.composite(darkMode: darkMode)))
             case "popover":
                 let store = SessionStore()
                 if let filterIndex = arguments.firstIndex(of: "--filter"),
@@ -388,7 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(MenuContentView(store: store))
             default:
                 FileHandle.standardError.write(
-                    Data("[preview] --view expects popover, onboarding or settings\n".utf8))
+                    Data("[preview] --view expects popover, onboarding, settings or icons\n".utf8))
                 exit(2)
             }
             let renderer = ImageRenderer(

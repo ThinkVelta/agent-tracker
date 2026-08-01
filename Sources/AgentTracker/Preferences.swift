@@ -106,6 +106,18 @@ final class Preferences: ObservableObject {
         ("Off", 0), ("1 second", 1), ("3 seconds", 3), ("10 seconds", 10),
     ]
 
+    // MARK: - Menu bar icon
+
+    /// How the menu bar icon draws (see `StatusIconRenderer.Mode`).
+    @Published var iconMode: StatusIconRenderer.Mode {
+        didSet { defaults.set(iconMode.rawValue, forKey: Keys.iconMode) }
+    }
+
+    /// The brief one-shot pulse when a session flips to needs-you.
+    @Published var attentionCue: Bool {
+        didSet { defaults.set(attentionCue, forKey: Keys.attentionCue) }
+    }
+
     // MARK: - Quit confirmation
 
     /// Ask before quitting from the panel's power button. Turned off by the
@@ -121,6 +133,8 @@ final class Preferences: ObservableObject {
         static let idleFolding = "idleFoldingThreshold"
         static let autoAckDwell = "autoAckDwellSeconds"
         static let confirmQuit = "confirmQuit"
+        static let iconMode = "iconMode"
+        static let attentionCue = "attentionCue"
     }
 
     private let defaults: UserDefaults
@@ -151,5 +165,9 @@ final class Preferences: ObservableObject {
             } ?? TerminalFocusObserver.defaultDwell
 
         confirmQuit = defaults.object(forKey: Keys.confirmQuit) as? Bool ?? true
+        iconMode =
+            (defaults.string(forKey: Keys.iconMode))
+            .flatMap(StatusIconRenderer.Mode.init(rawValue:)) ?? .dotsAndCounts
+        attentionCue = defaults.object(forKey: Keys.attentionCue) as? Bool ?? true
     }
 }
