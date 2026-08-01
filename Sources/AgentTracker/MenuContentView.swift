@@ -26,7 +26,10 @@ struct MenuContentView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            if store.sessions.count > Self.maxVisibleRows {
+            // Stays visible while a query is active even if the list shrinks
+            // below the cap — otherwise a non-empty filter would keep applying
+            // with no visible way to clear it.
+            if store.sessions.count > Self.maxVisibleRows || !searchText.isEmpty {
                 searchField
             }
             Divider()
