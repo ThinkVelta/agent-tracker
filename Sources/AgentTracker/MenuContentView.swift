@@ -588,7 +588,8 @@ struct SessionRow: View {
             }
         }
         .animation(Theme.Motion.quick, value: showsPath)
-        .accessibilityLabel("\(session.displayName), \(metadata), \(session.cwd ?? "")")
+        .accessibilityLabel(
+            "\(session.displayName), \(metadata), \(session.primaryDirectory ?? "")")
     }
 
     /// One dimmed line under the name: provider, where it lives, what it is
