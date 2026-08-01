@@ -19,12 +19,15 @@ enum UpdateCheck {
         case failed(String)
     }
 
-    /// Strictly numeric dotted version; a leading "v" is cosmetic. nil for
-    /// anything else — coercing bad segments to 0 would let a malformed tag
-    /// like "0.1.alpha.1" read as [0,1,0,1] and outrank a real 0.1.0.
+    /// Strictly numeric dotted version; one leading "v" is cosmetic — only
+    /// leading, and only one, because trimming both ends would launder
+    /// malformed tags like "1.2.3v" into valid ones. nil for anything else:
+    /// coercing bad segments to 0 would let "0.1.alpha.1" read as [0,1,0,1]
+    /// and outrank a real 0.1.0.
     static func numericVersion(_ raw: String) -> [Int]? {
-        let segments = raw.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
-            .split(separator: ".")
+        let normalized =
+            raw.hasPrefix("v") || raw.hasPrefix("V") ? String(raw.dropFirst()) : raw
+        let segments = normalized.split(separator: ".")
         guard !segments.isEmpty else { return nil }
         var values: [Int] = []
         for segment in segments {

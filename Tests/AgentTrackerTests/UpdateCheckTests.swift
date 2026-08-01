@@ -33,6 +33,11 @@ final class UpdateCheckTests {
         #expect(UpdateCheck.isNewer("0.0.1", than: "dev"))
         #expect(UpdateCheck.numericVersion("0.1.alpha.1") == nil)
         #expect(UpdateCheck.numericVersion("v1.2.3") == [1, 2, 3])
+        // Only a single LEADING v is cosmetic — a suffix or doubled prefix is
+        // a malformed tag, not a version.
+        #expect(UpdateCheck.numericVersion("1.2.3v") == nil)
+        #expect(UpdateCheck.numericVersion("vv1.2.3") == nil)
+        #expect(!UpdateCheck.isNewer("1.2.3v", than: "1.2.2"))
     }
 
     @Test func releasePayloadParses() {
