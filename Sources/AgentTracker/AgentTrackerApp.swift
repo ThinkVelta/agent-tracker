@@ -16,14 +16,6 @@ struct AgentTrackerApp: App {
     }
 }
 
-/// The dropdown's window. Borderless panels refuse key status by default, and
-/// the search field needs it; `.nonactivatingPanel` means typing works without
-/// activating the app (the Spotlight pattern), so opening the dropdown never
-/// steals focus from whatever the user was doing.
-private final class StatusPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-}
-
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: SessionStore?
@@ -166,46 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
         host.sizingOptions = .preferredContentSize
         panelHost = host
-
-        let panel = StatusPanel(
-            contentRect: .zero,
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
-        panel.isReleasedWhenClosed = false
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.level = .popUpMenu
-        // Follows the user across Spaces, like the popover did; auxiliary so
-        // it can appear over full-screen apps.
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
-        panel.animationBehavior = .none
-        panel.hidesOnDeactivate = false
-
-        // The popover material the system dropdown had, behind our content,
-        // clipped to our own (tighter) radius.
-        let effect = NSVisualEffectView()
-        effect.material = .popover
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = Theme.Metrics.panelCornerRadius
-        effect.layer?.cornerCurve = .continuous
-        effect.layer?.masksToBounds = true
-
-        let hostView = host.view
-        hostView.translatesAutoresizingMaskIntoConstraints = false
-        effect.addSubview(hostView)
-        NSLayoutConstraint.activate([
-            hostView.topAnchor.constraint(equalTo: effect.topAnchor),
-            hostView.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
-            hostView.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            hostView.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-        ])
-        panel.contentView = effect
-        return panel
+        return StatusPanel(wrapping: host.view)
     }
 
     /// Hangs the panel from the menu bar, centered under the status item and
@@ -240,17 +193,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var lastCounts = SessionCounts()
+    private var hasRenderedIconOnce = false
     private var pulseTimer: Timer?
     private var preferencesSubscription: AnyCancellable?
 
     private func updateIcon(for counts: SessionCounts) {
         // A session flipping INTO needs-you is the app's whole reason to
-        // exist; give it one brief pulse. Never on the first render (launch
-        // with existing red sessions is not news).
-        if counts.needsYou > lastCounts.needsYou, lastCounts.total > 0 {
+        // exist; give it one brief pulse. The first render is explicitly
+        // exempt — launching into existing red sessions is not news — but a
+        // red session arriving after a quiet zero-session spell IS, so the
+        // gate is "have we rendered before", not "were there sessions".
+        if hasRenderedIconOnce, counts.needsYou > lastCounts.needsYou {
             startAttentionPulse()
         }
         lastCounts = counts
+        hasRenderedIconOnce = true
         redrawIcon()
     }
 

@@ -71,7 +71,9 @@ enum StatusIconRenderer {
     private static let dotTextGap: CGFloat = 2.5
     private static let itemGap: CGFloat = 7
     private static let height: CGFloat = 18
-    private static let edgePad: CGFloat = 1
+    /// Wide enough for the pulse: at peak emphasis the needs-you dot grows
+    /// 1.4pt per side, and the first dot must not clip the image's left edge.
+    private static let edgePad: CGFloat = 2
 
     /// Half the inter-item gap: snapping by this much lets neighboring regions
     /// claim the whole gap between them, and forgives edge misses by the same

@@ -137,6 +137,11 @@ final class StatusIconRendererTests {
         let pulsing = StatusIconRenderer.render(for: counts(), mode: .dotsAndCounts, emphasis: 1)
         #expect(calm.hitRegions == pulsing.hitRegions)
         #expect(calm.image.size == pulsing.image.size)
+        // The peak-emphasis dot (dotSize * 1.4, i.e. +1.4pt per side) must
+        // fit inside the edge padding, or the first dot clips the image edge.
+        if let first = calm.hitRegions.first {
+            #expect(first.range.lowerBound >= 7 * 0.4 / 2)
+        }
     }
 
     @Test func sessionCountsTallyByState() {
