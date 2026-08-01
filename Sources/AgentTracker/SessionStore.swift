@@ -276,7 +276,7 @@ final class SessionStore: ObservableObject {
         else { return session }
         var acknowledged = session
         acknowledged.state = .idle
-        acknowledged.reason = "Acknowledged"
+        acknowledged.reason = "Seen"
         return acknowledged
     }
 
@@ -289,7 +289,7 @@ final class SessionStore: ObservableObject {
                 var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
             else { return }
             object["state"] = SessionState.idle.rawValue
-            object["reason"] = "Acknowledged"
+            object["reason"] = "Seen"
             object["stateChangedAt"] = ISO8601DateFormatter().string(from: Date())
             if let updated = try? JSONSerialization.data(
                 withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
