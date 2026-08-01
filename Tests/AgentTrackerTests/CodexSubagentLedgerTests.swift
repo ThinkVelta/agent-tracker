@@ -157,6 +157,23 @@ final class CodexSubagentLedgerTests {
         #expect(accumulator.meta?.threadId == "ancestor")
     }
 
+    @Test func dayDirectoriesWalkBackAcrossMonthBoundaries() throws {
+        let root = URL(fileURLWithPath: "/tmp/codex-sessions")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let march2 = try #require(
+            calendar.date(from: DateComponents(year: 2026, month: 3, day: 2)))
+        let directories = CodexScanWorker.dayDirectories(
+            under: root, endingAt: march2, count: 4, calendar: calendar)
+        #expect(
+            directories.map(\.path) == [
+                "/tmp/codex-sessions/2026/03/02",
+                "/tmp/codex-sessions/2026/03/01",
+                "/tmp/codex-sessions/2026/02/28",
+                "/tmp/codex-sessions/2026/02/27",
+            ])
+    }
+
     @Test func threadIdFromRolloutFilename() {
         let path =
             "/x/2026/08/01/rollout-2026-08-01T13-20-44-"

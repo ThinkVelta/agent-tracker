@@ -69,21 +69,24 @@ final class TerminalFocusObserver {
         guard let since = stableSince, Date().timeIntervalSince(since) >= Self.dwell,
             let store
         else { return }
-        let sessions = store.sessions
+        // Match against ALL sessions: a running sibling whose window could
+        // equally bear this title must count as a tie, not be invisible.
+        let matchable = store.sessions.map { ($0, store.exactWindowTitle(for: $0)) }
+        // The key covers every matching input — including the statusline
+        // title, which can arrive while states are unchanged and turn an
+        // ambiguous dwell into a decidable one.
         let key =
             title + "|"
-            + sessions.map { "\($0.id)=\($0.state.rawValue)" }.sorted().joined(separator: ",")
+            + matchable.map { "\($0.0.id)=\($0.0.state.rawValue)=\($0.1 ?? "")" }
+            .sorted().joined(separator: ",")
         guard key != lastAttemptKey else { return }
         lastAttemptKey = key
-        attemptAcknowledge(windowTitle: title, sessions: sessions, store: store)
+        attemptAcknowledge(windowTitle: title, matchable: matchable, store: store)
     }
 
     private func attemptAcknowledge(
-        windowTitle: String, sessions: [AgentSession], store: SessionStore
+        windowTitle: String, matchable: [(AgentSession, String?)], store: SessionStore
     ) {
-        // Match against ALL sessions: a running sibling whose window could
-        // equally bear this title must count as a tie, not be invisible.
-        let matchable = sessions.map { ($0, store.exactWindowTitle(for: $0)) }
         guard
             let winner = TerminalFocuser.unambiguousMatch(
                 windowTitle: windowTitle, among: matchable),

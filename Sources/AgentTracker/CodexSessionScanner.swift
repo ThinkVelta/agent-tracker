@@ -141,6 +141,10 @@ final class CodexScanWorker: @unchecked Sendable {
         scanDayDirectoriesLocked()
         debugLog(
             "day scan done: \(trackers.count) tracker(s) after \(Self.elapsed(since: startedAt))")
+        harvestHistoryLocked()
+        debugLog(
+            "history harvest done: \(subagentLedger.threadIds.count) subagent id(s) "
+                + "after \(Self.elapsed(since: startedAt))")
         startStreamLocked()
         publishLocked()
     }
@@ -230,16 +234,8 @@ final class CodexScanWorker: @unchecked Sendable {
     /// dead (would be bootstrapped then immediately pruned; a busy day leaves
     /// hundreds of those, and parsing them cost ~8s of startup).
     private func scanDayDirectoriesLocked() {
-        let calendar = Calendar.current
         let now = Date()
-        let days = [now, calendar.date(byAdding: .day, value: -1, to: now) ?? now]
-        for day in days {
-            let components = calendar.dateComponents([.year, .month, .day], from: day)
-            let directory =
-                root
-                .appendingPathComponent(String(format: "%04d", components.year ?? 0))
-                .appendingPathComponent(String(format: "%02d", components.month ?? 0))
-                .appendingPathComponent(String(format: "%02d", components.day ?? 0))
+        for directory in Self.dayDirectories(under: root, endingAt: now, count: 2) {
             guard
                 let files = try? FileManager.default.contentsOfDirectory(
                     at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
@@ -259,6 +255,47 @@ final class CodexScanWorker: @unchecked Sendable {
                     subagentLedger.harvest(path: path)
                 }
             }
+        }
+    }
+
+    /// One-time first-line harvest of subagent ids from day-directories older
+    /// than the two the regular scan covers: a notify state file survives as
+    /// long as its ROOT codex process, and root sessions live for days — after
+    /// an app restart, their older subagents' phantom rows would otherwise be
+    /// unidentifiable. Harvest-only (no bootstrap), bounded by the day window;
+    /// the ledger memoizes per-path so this cannot re-read.
+    private static let historicalHarvestDays = 7
+
+    private func harvestHistoryLocked() {
+        let older = Self.dayDirectories(
+            under: root, endingAt: Date(), count: Self.historicalHarvestDays + 2
+        ).dropFirst(2)
+        for directory in older {
+            guard
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: nil)
+            else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                subagentLedger.harvest(path: file.standardizedFileURL.path)
+            }
+        }
+    }
+
+    /// The `root/YYYY/MM/DD` directories for `count` days, newest first.
+    /// Internal for tests.
+    static func dayDirectories(
+        under root: URL, endingAt end: Date, count: Int, calendar: Calendar = .current
+    ) -> [URL] {
+        (0..<count).compactMap { back in
+            guard let day = calendar.date(byAdding: .day, value: -back, to: end) else {
+                return nil
+            }
+            let components = calendar.dateComponents([.year, .month, .day], from: day)
+            return
+                root
+                .appendingPathComponent(String(format: "%04d", components.year ?? 0))
+                .appendingPathComponent(String(format: "%02d", components.month ?? 0))
+                .appendingPathComponent(String(format: "%02d", components.day ?? 0))
         }
     }
 
