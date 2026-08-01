@@ -66,6 +66,25 @@ final class WindowIdentityTests {
                 windowDirectories: directories, sessionCwd: "/Users/dev/elsewhere") == [])
     }
 
+    /// The reported bug: sitting in one Planner terminal and clicking another
+    /// Planner session did nothing, because the first candidate WAS the window
+    /// already focused. Skipping it makes the click do something, and makes
+    /// repeated clicks cycle through the candidates.
+    @Test func ambiguousChoiceSkipsTheWindowAlreadyFocused() {
+        let hits = [1, 3, 5]
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 1) == 3)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 3) == 5)
+        // Wraps, so a third click returns to the start rather than sticking.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 5) == 1)
+        // Focused window isn't a candidate, or nothing is focused: first wins.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 9) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil) == 1)
+        // One candidate is still returned even when it is the focused one —
+        // there is nowhere else to go.
+        #expect(WindowIdentity.chooseAmbiguous(hits: [4], focused: 4) == 4)
+        #expect(WindowIdentity.chooseAmbiguous(hits: [], focused: nil) == nil)
+    }
+
     @Test func siblingSessionsInOneRepoAllMatch() {
         let directories: [String?] = Array(repeating: "/Users/dev/Planner", count: 3)
         #expect(

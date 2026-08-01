@@ -78,6 +78,18 @@ enum WindowIdentity {
             .map(\.offset)
     }
 
+    /// Picks among windows that match equally well. Raising the window the
+    /// user is already looking at does nothing visible — it reads as "the app
+    /// ignored my click" — so when the focused window is one of the
+    /// candidates, step past it. Repeated clicks then cycle through the
+    /// candidates, which is the only sane behaviour when nothing can tell
+    /// them apart. Pure so the wrap-around is testable.
+    static func chooseAmbiguous(hits: [Int], focused: Int?) -> Int? {
+        guard let first = hits.first else { return nil }
+        guard let focused, let position = hits.firstIndex(of: focused) else { return first }
+        return hits[(position + 1) % hits.count]
+    }
+
     struct TitleRanking: Equatable {
         let index: Int
         let score: Int

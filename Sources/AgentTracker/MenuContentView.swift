@@ -34,7 +34,7 @@ struct MenuContentView: View {
                 || (session.registryName?.localizedCaseInsensitiveContains(query) ?? false)
                 || session.providerDisplayName.localizedCaseInsensitiveContains(query)
                 || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
-                || (session.cwd?.localizedCaseInsensitiveContains(query) ?? false)
+                || (session.primaryDirectory?.localizedCaseInsensitiveContains(query) ?? false)
         }
     }
 
@@ -566,7 +566,7 @@ struct SessionRow: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if showsPath, let cwd = session.cwd {
+            if showsPath, let cwd = session.primaryDirectory {
                 Text(cwd)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)

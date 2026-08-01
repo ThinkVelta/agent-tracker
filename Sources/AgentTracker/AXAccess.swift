@@ -72,6 +72,17 @@ enum AXAccess {
         return .items(items)
     }
 
+    /// Index of the app's focused window within `windows`, when it is one of
+    /// them. Used to avoid "raising" the window the user is already in.
+    static func focusedWindowIndex(
+        in windows: [AXUIElement], of app: NSRunningApplication
+    ) -> Int? {
+        let axApp = AXUIElementCreateApplication(app.processIdentifier)
+        guard let focused = element(attribute(axApp, kAXFocusedWindowAttribute as String))
+        else { return nil }
+        return windows.firstIndex { CFEqual($0, focused) }
+    }
+
     static func raise(_ window: AXUIElement) {
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)

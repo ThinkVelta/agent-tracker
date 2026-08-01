@@ -91,12 +91,19 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// terminal), and long worktree directories truncate in the middle with
     /// the full path on hover.
     var displayName: String {
-        // A row can arrive without a hook cwd but with the registry's — use
-        // that rather than degrade to the generic "Session" placeholder.
-        if let name = Self.lastComponent(of: cwd) ?? Self.lastComponent(of: registryCwd) {
-            return name
-        }
-        return projectName
+        guard let name = Self.lastComponent(of: primaryDirectory) else { return "Session" }
+        return name
+    }
+
+    /// The directory this session is presented as living in: the hook's, or
+    /// the registry's when no hook event has carried one. Everything the user
+    /// reads — title, location, tooltip, accessibility label, path search —
+    /// resolves through here, so a row with only one of the two never loses
+    /// half its context.
+    var primaryDirectory: String? {
+        if let cwd, !cwd.isEmpty { return cwd }
+        guard let registryCwd, !registryCwd.isEmpty else { return nil }
+        return registryCwd
     }
 
     private static func lastComponent(of path: String?) -> String? {
@@ -132,8 +139,8 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// belongs to "planner-backend", and answering "worktrees" or ".claude"
     /// would tell the user nothing.
     var locationContext: String? {
-        guard let cwd else { return nil }
-        var parts = (cwd as NSString).pathComponents.filter { $0 != "/" }
+        guard let directory = primaryDirectory else { return nil }
+        var parts = (directory as NSString).pathComponents.filter { $0 != "/" }
         guard !parts.isEmpty else { return nil }
         parts.removeLast()
         while let last = parts.last, Self.namesNoProject(last) {
