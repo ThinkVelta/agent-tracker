@@ -1,0 +1,37 @@
+# Markdown lint configuration for agent-tracker. Read by pre-commit's
+# markdownlint hook and by editor extensions alike, so the same rules squiggle
+# in the editor and gate the commit.
+
+# Disable line length limit: prose doesn't wrap at fixed widths
+MD013: false
+
+# Allow duplicate headings in different sections
+MD024:
+  siblings_only: true
+
+# Allow trailing punctuation in headings (e.g., "What is X?")
+MD026: false
+
+# Allow blank lines inside blockquotes
+MD028: false
+
+# Allow emphasis used instead of a heading
+MD036: false
+
+# Don't require the first line to be a top-level heading (agent playbooks often
+# carry YAML frontmatter ahead of the H1)
+MD041: false
+
+# Unordered list style
+MD004:
+  style: "dash"
+
+# Ordered list style: items increment (`1.` `2.` `3.`). The numbering in
+# step-by-step docs is load-bearing (steps get cited by number), and `one`
+# would force renumbering prose that already increments.
+MD029:
+  style: "ordered"
+
+# Allow bare URLs: angle-bracket wrapping is visual noise in table cells and
+# every renderer in use autolinks them anyway.
+MD034: false

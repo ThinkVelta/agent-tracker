@@ -1,0 +1,26 @@
+{
+  "editor.rulers": [100],
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+  "files.autoSave": "onFocusChange",
+  "[markdown]": {
+    "editor.formatOnSave": false,
+    "editor.wordWrap": "on",
+    "editor.quickSuggestions": {
+      "other": false,
+      "comments": false,
+      "strings": false
+    }
+  },
+  // Keep the watcher out of SwiftPM build output and agent worktrees (no
+  // Python venv or report dirs to exclude in this repo).
+  "files.watcherExclude": {
+    "**/.build/**": true,
+    "**/.claude/worktrees/**": true
+  },
+  "[swift]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "swiftlang.swift-vscode",
+    "editor.tabSize": 4
+  }
+}

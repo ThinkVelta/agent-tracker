@@ -1,0 +1,9 @@
+{
+  "recommendations": [
+    "swiftlang.swift-vscode",
+    "davidanson.vscode-markdownlint",
+    "github.vscode-github-actions",
+    "ms-python.python",
+    "timonwong.shellcheck"
+  ]
+}

@@ -1,0 +1,103 @@
+# https://pre-commit.com
+#
+# What the harness covers for this repo: Swift style (swiftlint +
+# swift-format), the Python agent hook script (ruff), the shell installers
+# (shellcheck + shfmt), markdown style, workflow correctness (actionlint),
+# file hygiene, and Conventional Commits (commitizen). Every linter is pinned
+# by its rev below; run it via `make lint` / `make prepare` (see Makefile).
+
+default_install_hook_types: [pre-commit, commit-msg]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        # Keep markdown hard line breaks (two trailing spaces) intact, matching
+        # the `[*.md]` stanza in .editorconfig.
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+        # .vscode/ files are JSONC (comments allowed), which strict JSON
+        # parsing rejects.
+        exclude: ^\.vscode/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: detect-private-key
+
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+      - id: markdownlint
+        args: [--fix]
+        # Skip agent-authored playbooks: agents maintain those files to their
+        # own formatting, and a `--fix` rewrite would churn them on every run
+        # (lesson learned: fence agent-maintained markdown off from every
+        # rewriting hook).
+        exclude: ^\.claude/(agents|skills)/
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      # shellcheck via a prebuilt wheel: no Haskell toolchain and no Docker
+      # daemon needed, unlike koalaman/shellcheck-precommit.
+      - id: shellcheck
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
+    hooks:
+      - id: shfmt
+        args: [--write, --indent, "2", --case-indent, --space-redirects]
+        # .claude/hooks/ scripts are ported verbatim from their upstream source;
+        # a rewrite here would break the near-byte diffability that keeps future
+        # syncs reviewable (same fencing rule as the markdownlint exclude above).
+        # shellcheck still checks them — only the rewriting hook is fenced off.
+        exclude: ^\.claude/hooks/
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      # Covers the single Python file in the repo (the agent hook script under
+      # integrations/). ruff's defaults are broad enough for one script, so
+      # there is deliberately no ruff.toml. Note: ruff 0.16 renamed the lint
+      # hook id from `ruff` to `ruff-check`.
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v4.4.1
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  - repo: local
+    hooks:
+      # Why local + `language: system`: the official SwiftLint / SwiftFormat
+      # pre-commit hooks declare `language: swift` and compile the tool from
+      # source on first install (minutes per fresh clone). These system-language
+      # hooks use the mise-provisioned binary (see .mise.toml) and the Xcode
+      # toolchain's `swift format` instead. Both hooks are skipped automatically
+      # when a commit touches no tracked .swift files.
+      - id: swiftlint
+        name: swiftlint
+        entry: swiftlint --quiet
+        language: system
+        types: [swift]
+        pass_filenames: false
+        files: ^Sources/|^Tests/
+      # Sources only for now: Tests/ does not exist on main yet. Add Tests to
+      # the entry (and to `included` in .swiftlint.yml) when it appears.
+      - id: swift-format-lint
+        name: swift format lint
+        entry: swift format lint --strict --recursive Sources
+        language: system
+        types: [swift]
+        pass_filenames: false
+        files: ^Sources/

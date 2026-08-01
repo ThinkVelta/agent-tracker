@@ -1,0 +1,125 @@
+name: CI
+
+# Human-readable run names in the Actions list: PRs show their number, pushes
+# show the branch that triggered them.
+run-name: >-
+  CI -
+  ${{
+    github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number) ||
+    github.ref_name
+  }}
+
+# Feature branches PR straight into `main` here: this repo has no `dev`, so
+# `main` is an ordinary integration branch rather than a prod-deploy branch.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Lint runs on Linux, not macOS: a Linux runner is ~10x cheaper, and every
+  # hook except swift-format-lint works there. Pinned to ubuntu-24.04 because
+  # SwiftLint's prebuilt Linux binary needs GLIBC >= 2.38, so ubuntu-22.04
+  # fails to run it.
+  lint:
+    name: Lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # Provisions uv and swiftlint from .mise.toml, so CI runs the exact tool
+      # versions pinned for dev machines.
+      - name: Install pinned tools
+        uses: jdx/mise-action@v4.2.1
+        with:
+          install: true
+          cache: true
+
+      # `make lint` drives pre-commit, which builds every hook environment from
+      # scratch on a cold runner. Keyed on the config that pins the hooks so a
+      # hook or rev change misses the cache by construction; a partial
+      # `restore-keys` hit is safe because pre-commit installs only what the
+      # store is missing.
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pre-commit-
+
+      - name: Cache uv download cache
+        uses: actions/cache@v6.1.0
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      # `swift format` needs a Swift toolchain, absent on this Linux runner, so
+      # that one hook runs in the macOS build-test job instead. SKIP is
+      # pre-commit's standard env var; the value must match the local hook id.
+      - name: Lint
+        run: SKIP=swift-format-lint make lint
+
+  build-test:
+    name: Build and test
+    # Pinned instead of macos-latest: the macos-15 -> macos-26 alias rollover
+    # started 2026-06-15 and is still account-dependent, so `latest` could mean
+    # either image. The default Xcode 26.4 covers a macOS 14+ target.
+    runs-on: macos-26
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # The SwiftPM scaffolding lands via the menu-bar-mvp feature branch.
+      # Until it merges to main, the steps below self-skip and the job stays
+      # green; once Package.swift exists they activate automatically.
+      - name: Detect SwiftPM package
+        id: package
+        run: |
+          if test -f Package.swift; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Community-standard SwiftPM cache — GitHub's Swift guide documents no
+      # official pattern. `.build` is toolchain-specific, so a runner-image
+      # bump invalidates it via `runner.os` only imperfectly; acceptable at
+      # this repo's size.
+      - name: Cache SwiftPM build directory
+        if: steps.package.outputs.present == 'true'
+        uses: actions/cache@v6.1.0
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Build
+        if: steps.package.outputs.present == 'true'
+        run: swift build --build-tests
+
+      - name: Test
+        if: steps.package.outputs.present == 'true'
+        run: swift test
+
+      # The hook the lint job skips (`SKIP=swift-format-lint`): `swift format`
+      # ships with the Xcode toolchain, so it runs here on macOS.
+      - name: Swift format lint
+        if: steps.package.outputs.present == 'true'
+        run: swift format lint --strict --recursive Sources
