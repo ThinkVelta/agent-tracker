@@ -48,6 +48,21 @@ final class DebugLogTests {
         #expect(!contents.contains("line 0 "))
     }
 
+    /// A single line longer than the whole retention window is pathological
+    /// input, not a reason to break the line-boundary contract: the trim
+    /// drops it entirely and the next append starts the file clean.
+    @Test func anOversizedSingleLineIsDroppedWholesale() throws {
+        let (sink, directory) = makeSink(maxBytes: 1024)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        sink.append("[store] " + String(repeating: "x", count: 4096))
+        sink.append("[ui] after the monster")
+        sink.flush()
+        let contents = try String(contentsOf: sink.fileURL, encoding: .utf8)
+        #expect(!contents.contains("xxxx"))
+        #expect(contents.contains("after the monster"))
+        #expect(contents.hasPrefix("20"))
+    }
+
     @Test func concurrentAppendsAllLand() throws {
         let (sink, directory) = makeSink()
         defer { try? FileManager.default.removeItem(at: directory) }

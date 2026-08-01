@@ -94,9 +94,14 @@ enum DebugLog {
                 let data = try? Data(contentsOf: fileURL)
             else { return }
             var kept = data.suffix(keepBytes)
-            // Cut on a line boundary so the file never opens mid-line.
+            // Cut on a line boundary so the file never opens mid-line. A
+            // window with no newline at all is one pathological oversized
+            // line — drop it entirely rather than keep a fragment; the next
+            // append starts the file clean.
             if let newline = kept.firstIndex(of: UInt8(ascii: "\n")) {
                 kept = kept[kept.index(after: newline)...]
+            } else {
+                kept = Data()
             }
             try? kept.write(to: fileURL, options: .atomic)
         }

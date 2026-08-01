@@ -256,6 +256,11 @@ private struct AboutSettingsTab: View {
                 ) {
                     Button("Show Log") {
                         let log = DebugLog.shared.fileURL
+                        // The directory may not exist before the first trace
+                        // lands; opening a missing folder is a silent no-op.
+                        try? FileManager.default.createDirectory(
+                            at: log.deletingLastPathComponent(),
+                            withIntermediateDirectories: true)
                         if FileManager.default.fileExists(atPath: log.path) {
                             NSWorkspace.shared.activateFileViewerSelecting([log])
                         } else {
