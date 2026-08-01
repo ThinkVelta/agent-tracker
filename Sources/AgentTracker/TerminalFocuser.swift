@@ -28,6 +28,7 @@ enum TerminalFocuser {
         let element: AXUIElement
         let title: String
         let score: Int
+        let activityAgrees: Bool
     }
 
     /// A window-title probe derived from a session, ordered by weight.
@@ -100,10 +101,11 @@ enum TerminalFocuser {
         }
         log("title candidates: \(described.joined(separator: ", "))")
 
-        if let outcome = pressWindowMenuItem(in: app, candidates: candidates) {
+        if let outcome = pressWindowMenuItem(in: app, candidates: candidates, state: session.state)
+        {
             return outcome
         }
-        if let outcome = raiseAXWindow(in: app, candidates: candidates) {
+        if let outcome = raiseAXWindow(in: app, candidates: candidates, state: session.state) {
             return outcome
         }
         log("no title matched — activating \(app.localizedName ?? "the app") only")
@@ -118,11 +120,14 @@ enum TerminalFocuser {
     /// pressing an entry performs the exact jump the user would.
     private static func pressWindowMenuItem(
         in app: NSRunningApplication,
-        candidates: [TitleCandidate]
+        candidates: [TitleCandidate],
+        state: SessionState
     ) -> Outcome? {
         guard let menu = windowMenu(of: app), let items = children(of: menu) else { return nil }
         log("\(items.count) Window-menu item(s):")
-        guard let hit = bestTitleMatch(in: items, candidates: candidates, logZeroScores: false)
+        guard
+            let hit = bestTitleMatch(
+                in: items, candidates: candidates, state: state, logZeroScores: false)
         else { return nil }
         log("pressing Window-menu item \"\(hit.title)\" (score \(hit.score))")
         let result = AXUIElementPerformAction(hit.element, kAXPressAction as CFString)
@@ -138,7 +143,8 @@ enum TerminalFocuser {
     /// current Space).
     private static func raiseAXWindow(
         in app: NSRunningApplication,
-        candidates: [TitleCandidate]
+        candidates: [TitleCandidate],
+        state: SessionState
     ) -> Outcome? {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         guard let windows = copyAttribute(axApp, kAXWindowsAttribute as String) as? [AXUIElement]
@@ -150,7 +156,9 @@ enum TerminalFocuser {
             return nil
         }
         log("\(windows.count) window(s) visible via Accessibility (current Space only):")
-        guard let best = bestTitleMatch(in: windows, candidates: candidates, logZeroScores: true)
+        guard
+            let best = bestTitleMatch(
+                in: windows, candidates: candidates, state: state, logZeroScores: true)
         else { return nil }
         log("raising window \"\(best.title)\" (score \(best.score))")
         AXUIElementPerformAction(best.element, kAXRaiseAction as CFString)
@@ -181,15 +189,75 @@ enum TerminalFocuser {
     private static func bestTitleMatch(
         in elements: [AXUIElement],
         candidates: [TitleCandidate],
+        state: SessionState,
         logZeroScores: Bool
     ) -> AXMatch? {
-        var best: AXMatch?
-        for element in elements {
-            guard let title = title(of: element), !title.isEmpty else { continue }
+        let titled = elements.compactMap { element -> (element: AXUIElement, title: String)? in
+            guard let title = title(of: element), !title.isEmpty else { return nil }
+            return (element, title)
+        }
+        for entry in titled {
+            let score = matchScore(windowTitle: entry.title, candidates: candidates)
+            guard score > 0 || logZeroScores else { continue }
+            let agrees = activityAgrees(windowTitle: entry.title, state: state)
+            log("  \"\(entry.title)\" -> score \(score)\(agrees ? "" : ", activity mismatch")")
+        }
+        guard
+            let ranking = rankTitles(
+                titled.map(\.title), candidates: candidates, state: state)
+        else { return nil }
+        let winner = titled[ranking.index]
+        if ranking.tiedWithWinner > 0 {
+            // Sibling sessions in one repo title their windows identically;
+            // nothing left distinguishes them, so the raise is a coin flip.
+            // Say so — the acknowledge gate (isPreferredMatch) already
+            // declines to silence a session on this evidence.
+            log(
+                "ambiguous: \(ranking.tiedWithWinner + 1) window(s) tie at score \(ranking.score) "
+                    + "— raising \"\(winner.title)\", which may not be this session's window")
+        }
+        return AXMatch(
+            element: winner.element, title: winner.title, score: ranking.score,
+            activityAgrees: ranking.activityAgrees)
+    }
+
+    struct TitleRanking: Equatable {
+        let index: Int
+        let score: Int
+        let activityAgrees: Bool
+        /// How many other titles are indistinguishable from the winner (same
+        /// score, same activity agreement) — a raise that could equally have
+        /// landed on any of them.
+        let tiedWithWinner: Int
+    }
+
+    /// Picks the window title a session should jump to, in menu order. Highest
+    /// title score wins; equal scores are broken by whether the window's busy
+    /// spinner agrees with the session's state. Pure, so the ranking (not just
+    /// the scoring) is testable. Internal for tests.
+    static func rankTitles(
+        _ titles: [String],
+        candidates: [TitleCandidate],
+        state: SessionState
+    ) -> TitleRanking? {
+        var best: TitleRanking?
+        for (index, title) in titles.enumerated() {
             let score = matchScore(windowTitle: title, candidates: candidates)
-            if score > 0 || logZeroScores { log("  \"\(title)\" -> score \(score)") }
-            if score > (best?.score ?? 0) {
-                best = AXMatch(element: element, title: title, score: score)
+            guard score > 0 else { continue }
+            let agrees = activityAgrees(windowTitle: title, state: state)
+            guard let current = best else {
+                best = TitleRanking(
+                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
+                continue
+            }
+            if (score, agrees ? 1 : 0) > (current.score, current.activityAgrees ? 1 : 0) {
+                best = TitleRanking(
+                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
+            } else if score == current.score && agrees == current.activityAgrees {
+                best = TitleRanking(
+                    index: current.index, score: current.score,
+                    activityAgrees: current.activityAgrees,
+                    tiedWithWinner: current.tiedWithWinner + 1)
             }
         }
         return best
@@ -323,6 +391,26 @@ enum TerminalFocuser {
             if other >= own { return false }
         }
         return true
+    }
+
+    /// True when the title carries a braille spinner frame (U+2800–U+28FF) —
+    /// the animation agent TUIs paint into the title while a turn is in
+    /// flight. Deliberately narrow: braille frames mean "working right now" in
+    /// every CLI we track, whereas Claude Code's constant "✳" prefix says
+    /// nothing about activity. `normalize` strips these before scoring, so the
+    /// signal has to be read from the raw title.
+    static func showsBusySpinner(_ windowTitle: String) -> Bool {
+        windowTitle.unicodeScalars.contains { (0x2800...0x28FF).contains($0.value) }
+    }
+
+    /// Whether the window's live busy indicator agrees with the session's
+    /// state. Used only to break ties between equally-titled windows: two
+    /// Codex sessions in one repo both title their window "Planner", and the
+    /// spinner is the only thing separating the one still working from the one
+    /// waiting at its prompt (user-reported: clicking a needs-you row raised
+    /// the sibling that was still running).
+    static func activityAgrees(windowTitle: String, state: SessionState) -> Bool {
+        showsBusySpinner(windowTitle) == (state == .running)
     }
 
     /// Internal for tests.

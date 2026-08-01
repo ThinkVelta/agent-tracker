@@ -175,4 +175,84 @@ final class TerminalFocuserTests {
             #expect(best == sessionIndex, "session \(sessionIndex) matched window \(best ?? -1)")
         }
     }
+
+    // MARK: - Activity tie-break
+
+    @Test func braillleSpinnersAreTheOnlyBusySignal() {
+        #expect(TerminalFocuser.showsBusySpinner("⠋ Planner"))
+        #expect(TerminalFocuser.showsBusySpinner("⠸ Planner"))
+        #expect(!TerminalFocuser.showsBusySpinner("Planner"))
+        // Claude Code's "✳" prefix is permanent, not an activity indicator.
+        #expect(!TerminalFocuser.showsBusySpinner("✳ Port planner tooling"))
+        #expect(!TerminalFocuser.showsBusySpinner(""))
+    }
+
+    @Test func activityAgreementFollowsSessionState() {
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .running))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .needsYou))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .idle))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "Planner", state: .needsYou))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "Planner", state: .idle))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: "Planner", state: .running))
+    }
+
+    /// The user-reported repro, straight from a `[focus]` trace: two Codex
+    /// sessions in one repo, both windows titled "Planner" and both scoring
+    /// 80. The spinner is all that separates the session still working from
+    /// the one waiting at its prompt, and the menu lists the busy one first.
+    @Test func needsYouSessionSkipsTheStillSpinningSiblingWindow() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c1",
+            cwd: "/Users/rubenbroekx/Documents/ProjectsVelta/Planner", state: .needsYou
+        )
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let titles = ["…/Documents/ProjectsVelta/Planner", "⠋ Planner", "Planner"]
+        let ranking = TerminalFocuser.rankTitles(titles, candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 2)
+        #expect(ranking?.score == 80)
+        #expect(ranking?.tiedWithWinner == 0)
+    }
+
+    @Test func runningSessionPrefersTheSpinningWindow() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c2", cwd: "/Users/dev/planner", state: .running)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let ranking = TerminalFocuser.rankTitles(
+            ["planner", "⠸ planner"], candidates: candidates, state: .running)
+        #expect(ranking?.index == 1)
+        #expect(ranking?.tiedWithWinner == 0)
+    }
+
+    @Test func activityNeverOutranksAStrongerTitleMatch() {
+        let session = AgentSession(
+            provider: "claude-code", sessionId: "c3", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(
+            for: session, exactTitle: "Fix the flaky scanner test")
+        // The exact-title window is spinning (stale title paint) and the bare
+        // project window is not: the far stronger title match must still win.
+        let ranking = TerminalFocuser.rankTitles(
+            ["planner", "⠋ Fix the flaky scanner test"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 1)
+        #expect(ranking?.activityAgrees == false)
+    }
+
+    @Test func trulyIdenticalWindowsReportTheTie() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c4", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let ranking = TerminalFocuser.rankTitles(
+            ["planner", "planner"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 0)
+        #expect(ranking?.tiedWithWinner == 1)
+    }
+
+    @Test func rankingIgnoresNonMatchingTitlesEntirely() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c5", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        #expect(
+            TerminalFocuser.rankTitles(["Mail", "Slack"], candidates: candidates, state: .needsYou)
+                == nil)
+        #expect(TerminalFocuser.rankTitles([], candidates: candidates, state: .needsYou) == nil)
+    }
 }
