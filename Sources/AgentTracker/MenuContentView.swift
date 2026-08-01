@@ -20,7 +20,8 @@ struct MenuContentView: View {
         }
         guard !query.isEmpty else { return sessions }
         return sessions.filter { session in
-            session.projectName.localizedCaseInsensitiveContains(query)
+            session.displayName.localizedCaseInsensitiveContains(query)
+                || session.projectName.localizedCaseInsensitiveContains(query)
                 || session.providerDisplayName.localizedCaseInsensitiveContains(query)
                 || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
                 || (session.cwd?.localizedCaseInsensitiveContains(query) ?? false)
@@ -373,7 +374,7 @@ struct SessionRow: View {
                     .frame(width: Theme.Metrics.accentBarWidth)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(session.projectName)
+                    Text(session.displayName)
                         .font(Theme.Typography.sessionName)
                         .lineLimit(1)
                         .truncationMode(.middle)

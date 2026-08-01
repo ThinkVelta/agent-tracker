@@ -140,16 +140,18 @@ enum TerminalFocuser {
         session: AgentSession,
         candidates: [TitleCandidate]
     ) -> Outcome? {
-        guard let cwd = session.cwd, !cwd.isEmpty else { return nil }
+        let wanted = session.windowDirectories
+        guard !wanted.isEmpty else { return nil }
         guard let windows = AXAccess.windows(of: app) else { return nil }
 
         let directories = windows.map { AXAccess.documentPath(of: $0) }
         let hits = WindowIdentity.matchingIndices(
-            windowDirectories: directories, sessionCwd: cwd)
+            windowDirectories: directories, sessionDirectories: wanted)
         guard !hits.isEmpty else {
             let known = directories.compactMap { $0 }.count
+            let described = wanted.map(WindowIdentity.normalize).joined(separator: " or ")
             log(
-                "no window on this Space reports cwd \(WindowIdentity.normalize(cwd)) "
+                "no window on this Space reports cwd \(described) "
                     + "(\(known)/\(windows.count) window(s) reported one) — falling back to titles")
             return nil
         }
@@ -167,7 +169,7 @@ enum TerminalFocuser {
             chosen = hits[ranking.index]
         } else {
             log(
-                "ambiguous: \(hits.count) window(s) share cwd \(WindowIdentity.normalize(cwd)) "
+                "ambiguous: \(hits.count) window(s) share this session's directory "
                     + "and nothing distinguishes them — raising the first")
             chosen = hits[0]
         }

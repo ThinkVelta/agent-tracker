@@ -55,8 +55,26 @@ enum WindowIdentity {
 
     /// Indices of the windows whose directory is the session's, in input order.
     static func matchingIndices(windowDirectories: [String?], sessionCwd: String?) -> [Int] {
-        windowDirectories.enumerated()
-            .filter { matches(windowDirectory: $0.element, sessionCwd: sessionCwd) }
+        matchingIndices(
+            windowDirectories: windowDirectories, sessionDirectories: [sessionCwd].compactMap { $0 }
+        )
+    }
+
+    /// A session can legitimately answer to more than one directory: the hook
+    /// records where the agent works, the registry where its terminal sits, and
+    /// for a worktree session those differ. Matching any of them is correct —
+    /// they all belong to the same session.
+    static func matchingIndices(
+        windowDirectories: [String?],
+        sessionDirectories: [String]
+    ) -> [Int] {
+        let wanted = Set(sessionDirectories.filter { !$0.isEmpty }.map(normalize))
+        guard !wanted.isEmpty else { return [] }
+        return windowDirectories.enumerated()
+            .filter { entry in
+                guard let directory = entry.element else { return false }
+                return wanted.contains(directory)
+            }
             .map(\.offset)
     }
 

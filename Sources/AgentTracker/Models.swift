@@ -59,6 +59,12 @@ struct AgentSession: Codable, Identifiable, Equatable {
 
     // Set by the store when loading; not part of the on-disk schema.
     var fileURL: URL?
+    /// Claude Code's own name for this session ("planner-e8") — the slug the
+    /// user sees in their own terminal. Joined in from the session registry.
+    var registryName: String?
+    /// Where the session's terminal is, per the registry. Differs from `cwd`
+    /// when the agent works in a subdirectory such as a worktree.
+    var registryCwd: String?
 
     private enum CodingKeys: String, CodingKey {
         case schema, provider, sessionId, pid, cwd, state, reason, lastEvent
@@ -70,6 +76,26 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var projectName: String {
         guard let cwd, !cwd.isEmpty else { return "Session" }
         return (cwd as NSString).lastPathComponent
+    }
+
+    /// What the row is titled. Prefers the name Claude Code gave the session,
+    /// because that is what the user sees in their own terminal and how they
+    /// think about it — a row reading "planner-e8" is recognizable where
+    /// "ruben-pln-388-389-time-entries-registry-and-contracts-5af9e63b" is not.
+    /// Falls back to the directory name when no registry entry exists (Codex
+    /// sessions, or Claude versions that don't keep a registry).
+    var displayName: String {
+        if let registryName, !registryName.isEmpty { return registryName }
+        return projectName
+    }
+
+    /// Directories any of this session's terminal windows might report, most
+    /// specific first. Both are needed: the hook records where the *agent* is
+    /// working, the registry where its *terminal* is, and for a session driving
+    /// a worktree those are different paths — matching only the first would
+    /// miss the window entirely.
+    var windowDirectories: [String] {
+        [cwd, registryCwd].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
     /// Short path context shown alongside the project name, e.g. "ProjectsVelta/Planner".

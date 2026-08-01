@@ -1,14 +1,28 @@
 import Foundation
 
-/// Extracts the task summary from a Claude Code transcript (JSONL). Claude Code
-/// uses this summary as the terminal window title ("✳ <summary>"), which makes
-/// it the strongest signal for window matching.
+/// Extracts the task title from a Claude Code transcript (JSONL). Claude Code
+/// paints this string into the terminal window title, which makes it the
+/// strongest per-session signal for window matching — and unlike the statusline
+/// payload it is available for every session, including idle ones.
+///
+/// Two line shapes are recognized, because the format changed and old
+/// transcripts are still on disk:
+///
+///     {"type":"ai-title","aiTitle":"Continue tool development…"}   // current
+///     {"type":"summary","summary":"…"}                             // older
+///
+/// The older shape produced nothing on any live transcript when this was last
+/// checked (2026-08-01, Claude Code 2.1.210) — every session had switched to
+/// `ai-title` — so reading only it silently disabled window matching.
 enum TranscriptTitle {
     /// Bounded window read: transcripts grow to many MB and this runs on the
     /// click path, so scan only the head (summaries cluster at the start of
     /// resumed transcripts) and the tail (for late additions), never the whole
     /// file. The last summary seen wins, preferring tail hits.
     static let defaultWindow = 256 * 1024
+
+    /// Transcript line `type` → the field carrying the title.
+    static let titleKeys: [String: String] = ["ai-title": "aiTitle", "summary": "summary"]
 
     static func latestSummary(atPath path: String?, window: Int = defaultWindow) -> String? {
         guard let path, let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)),
@@ -43,13 +57,18 @@ enum TranscriptTitle {
                 bytes = bytes[..<last]
             }
             for raw in bytes.split(separator: newline, omittingEmptySubsequences: true) {
+                // Cheap substring reject before paying for a JSON parse: these
+                // transcripts run to thousands of lines and only a handful
+                // carry a title.
                 guard let line = String(data: Data(raw), encoding: .utf8),
-                    line.contains("\"type\":\"summary\""),
+                    Self.titleKeys.keys.contains(where: { line.contains("\"type\":\"\($0)\"") }),
                     let object = try? JSONSerialization.jsonObject(with: Data(raw))
                         as? [String: Any],
-                    let summary = object["summary"] as? String, !summary.isEmpty
+                    let type = object["type"] as? String,
+                    let key = Self.titleKeys[type],
+                    let title = object[key] as? String, !title.isEmpty
                 else { continue }
-                latest = summary
+                latest = title
             }
         }
         return latest
