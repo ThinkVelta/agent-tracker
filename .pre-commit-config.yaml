@@ -87,7 +87,9 @@ repos:
       # when a commit touches no tracked .swift files.
       - id: swiftlint
         name: swiftlint
-        entry: swiftlint --quiet
+        # Via the wrapper so CLT-only machines (no Xcode.app) can load
+        # SourceKit — see scripts/swiftlint.sh; a passthrough everywhere else.
+        entry: scripts/swiftlint.sh --quiet
         language: system
         types: [swift]
         pass_filenames: false

@@ -43,7 +43,7 @@ format: ## Rewrite Swift sources (swift-format, then swiftlint autocorrect)
 	  { echo "error: swift not found — install Xcode or the Command Line Tools"; exit 1; }
 	swift format format --in-place --recursive Sources
 	@if command -v swiftlint >/dev/null; then \
-	  swiftlint --fix --quiet; \
+	  scripts/swiftlint.sh --fix --quiet; \
 	else \
 	  echo "note: swiftlint not found (run 'mise install') — autocorrect skipped"; \
 	fi
