@@ -82,12 +82,14 @@ enum DebugLog {
                 let line = "\(dateStamp.string(from: Date())) \(message)\n"
                 if !fileManager.fileExists(atPath: fileURL.path) {
                     try Data(line.utf8).write(to: fileURL)
-                    return
+                } else {
+                    let handle = try FileHandle(forWritingTo: fileURL)
+                    defer { try? handle.close() }
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: Data(line.utf8))
                 }
-                let handle = try FileHandle(forWritingTo: fileURL)
-                defer { try? handle.close() }
-                try handle.seekToEnd()
-                try handle.write(contentsOf: Data(line.utf8))
+                // Both paths trim: the first-ever write can itself be the
+                // oversized one, and the cap is a promise, not a tendency.
                 trimLocked(fileManager: fileManager)
             } catch {
                 // Tracing must never break the app; stdout still has the line.
