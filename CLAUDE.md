@@ -79,6 +79,9 @@ into it.
   commits arrive, so an explanation posted after the push is invisible to the round that push
   triggers. Post the reply comment (fix rationale or reasoned decline) first, then push —
   otherwise every round burns a CI cycle re-litigating what was already answered
+- **Write PR bodies and commit messages to a file, then `--body-file` / `-F`**: passing prose
+  containing backticks or `$` inline to `gh`/`git` through a shell lets it substitute or execute
+  them, silently gutting the text (this has eaten a commit message and a PR body already)
 
 ## Before finishing any task
 
