@@ -467,6 +467,6 @@ enum TerminalFocuser {
     }
 
     private static func log(_ message: String) {
-        print("[focus] \(message)")
+        DebugLog.log("[focus] \(message)")
     }
 }

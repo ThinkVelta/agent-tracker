@@ -37,7 +37,7 @@ final class SessionStore: ObservableObject {
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
 
-    static let sessionsDirectory: URL = {
+    nonisolated static let sessionsDirectory: URL = {
         let base: URL
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_DIR"],
             !override.isEmpty
@@ -233,7 +233,7 @@ final class SessionStore: ObservableObject {
                 "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
             if summary != lastLoggedSummary {
                 lastLoggedSummary = summary
-                print("[store] \(DebugLog.timestamp()) \(summary)")
+                DebugLog.log("[store] \(DebugLog.timestamp()) \(summary)")
             }
         #endif
     }

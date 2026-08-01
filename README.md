@@ -137,7 +137,6 @@ exiting (`lsof`-based liveness check on the rollout file).
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [ ] Migrate Codex integration to its native hooks engine (approval-request
       red states)
-- [ ] LLM-generated one-line summaries of where each session is at
 - [ ] More providers (Kimi, GLM, …) — the state file schema is provider-agnostic
 - [x] Onboarding: install as .app + login item
 
