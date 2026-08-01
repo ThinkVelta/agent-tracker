@@ -175,4 +175,104 @@ final class TerminalFocuserTests {
             #expect(best == sessionIndex, "session \(sessionIndex) matched window \(best ?? -1)")
         }
     }
+
+    // MARK: - Activity tie-break
+
+    @Test func braillleSpinnersAreTheOnlyBusySignal() {
+        #expect(TerminalFocuser.showsBusySpinner("⠋ Planner"))
+        #expect(TerminalFocuser.showsBusySpinner("⠸ Planner"))
+        #expect(!TerminalFocuser.showsBusySpinner("Planner"))
+        // Claude Code's "✳" prefix is permanent, not an activity indicator.
+        #expect(!TerminalFocuser.showsBusySpinner("✳ Port planner tooling"))
+        #expect(!TerminalFocuser.showsBusySpinner(""))
+    }
+
+    /// Claude Code spins too — verified against a live window titled
+    /// "⠂ Generate alternative LinkedIn post options" belonging to a running
+    /// claude-code session. This locks in why the tie-break is not gated to
+    /// Codex: gating it would blind the more common provider.
+    @Test func claudeSessionsAlsoSpinWhileWorking() {
+        let claudeBusy = "⠂ Generate alternative LinkedIn post options"
+        #expect(TerminalFocuser.showsBusySpinner(claudeBusy))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: claudeBusy, state: .running))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: claudeBusy, state: .needsYou))
+
+        // Two Claude sessions in one repo, one working and one waiting: the
+        // tie-break has to separate them exactly as it does for Codex.
+        let session = AgentSession(
+            provider: "claude-code", sessionId: "c1", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let ranking = WindowIdentity.rankTitles(
+            ["⠂ planner", "planner"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 1)
+    }
+
+    @Test func activityAgreementFollowsSessionState() {
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .running))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .needsYou))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: "⠋ Planner", state: .idle))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "Planner", state: .needsYou))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "Planner", state: .idle))
+        #expect(!TerminalFocuser.activityAgrees(windowTitle: "Planner", state: .running))
+    }
+
+    /// The user-reported repro, straight from a `[focus]` trace: two Codex
+    /// sessions in one repo, both windows titled "Planner" and both scoring
+    /// 80. The spinner is all that separates the session still working from
+    /// the one waiting at its prompt, and the menu lists the busy one first.
+    @Test func needsYouSessionSkipsTheStillSpinningSiblingWindow() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c1",
+            cwd: "/Users/rubenbroekx/Documents/ProjectsVelta/Planner", state: .needsYou
+        )
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let titles = ["…/Documents/ProjectsVelta/Planner", "⠋ Planner", "Planner"]
+        let ranking = WindowIdentity.rankTitles(titles, candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 2)
+        #expect(ranking?.score == 80)
+        #expect(ranking?.tiedWithWinner == 0)
+    }
+
+    @Test func runningSessionPrefersTheSpinningWindow() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c2", cwd: "/Users/dev/planner", state: .running)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let ranking = WindowIdentity.rankTitles(
+            ["planner", "⠸ planner"], candidates: candidates, state: .running)
+        #expect(ranking?.index == 1)
+        #expect(ranking?.tiedWithWinner == 0)
+    }
+
+    @Test func activityNeverOutranksAStrongerTitleMatch() {
+        let session = AgentSession(
+            provider: "claude-code", sessionId: "c3", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(
+            for: session, exactTitle: "Fix the flaky scanner test")
+        // The exact-title window is spinning (stale title paint) and the bare
+        // project window is not: the far stronger title match must still win.
+        let ranking = WindowIdentity.rankTitles(
+            ["planner", "⠋ Fix the flaky scanner test"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 1)
+        #expect(ranking?.activityAgrees == false)
+    }
+
+    @Test func trulyIdenticalWindowsReportTheTie() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c4", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        let ranking = WindowIdentity.rankTitles(
+            ["planner", "planner"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.index == 0)
+        #expect(ranking?.tiedWithWinner == 1)
+    }
+
+    @Test func rankingIgnoresNonMatchingTitlesEntirely() {
+        let session = AgentSession(
+            provider: "codex", sessionId: "c5", cwd: "/Users/dev/planner", state: .needsYou)
+        let candidates = TerminalFocuser.titleCandidates(for: session)
+        #expect(
+            WindowIdentity.rankTitles(["Mail", "Slack"], candidates: candidates, state: .needsYou)
+                == nil)
+        #expect(WindowIdentity.rankTitles([], candidates: candidates, state: .needsYou) == nil)
+    }
 }

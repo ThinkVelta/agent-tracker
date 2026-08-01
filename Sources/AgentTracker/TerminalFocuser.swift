@@ -28,6 +28,7 @@ enum TerminalFocuser {
         let element: AXUIElement
         let title: String
         let score: Int
+        let activityAgrees: Bool
     }
 
     /// A window-title probe derived from a session, ordered by weight.
@@ -100,10 +101,27 @@ enum TerminalFocuser {
         }
         log("title candidates: \(described.joined(separator: ", "))")
 
-        if let outcome = pressWindowMenuItem(in: app, candidates: candidates) {
+        // Strongest identity first. An exact-only candidate is a name for
+        // THIS session (statusline-sourced), so the Window menu — which sees
+        // every Space — gets first refusal. Everything else is per-project at
+        // best, so the structural cwd match goes ahead of it: a title tie can
+        // otherwise land on a different agent's session in another project.
+        let hasSessionIdentity = candidates.contains(where: \.exactOnly)
+        if hasSessionIdentity,
+            let outcome = pressWindowMenuItem(
+                in: app, candidates: candidates, state: session.state, exactOnly: true)
+        {
             return outcome
         }
-        if let outcome = raiseAXWindow(in: app, candidates: candidates) {
+        if let outcome = raiseByWorkingDirectory(in: app, session: session, candidates: candidates)
+        {
+            return outcome
+        }
+        if let outcome = pressWindowMenuItem(in: app, candidates: candidates, state: session.state)
+        {
+            return outcome
+        }
+        if let outcome = raiseAXWindow(in: app, candidates: candidates, state: session.state) {
             return outcome
         }
         log("no title matched — activating \(app.localizedName ?? "the app") only")
@@ -113,16 +131,78 @@ enum TerminalFocuser {
 
     // MARK: - Focus strategies
 
+    /// Primary: the window whose live working directory is the session's, read
+    /// from the Accessibility `AXDocument` attribute. Only sees the current
+    /// Space, like every AX window query, so a miss falls through to the
+    /// title-based paths rather than being treated as "no such window".
+    private static func raiseByWorkingDirectory(
+        in app: NSRunningApplication,
+        session: AgentSession,
+        candidates: [TitleCandidate]
+    ) -> Outcome? {
+        guard let cwd = session.cwd, !cwd.isEmpty else { return nil }
+        guard let windows = AXAccess.windows(of: app) else { return nil }
+
+        let directories = windows.map { AXAccess.documentPath(of: $0) }
+        let hits = WindowIdentity.matchingIndices(
+            windowDirectories: directories, sessionCwd: cwd)
+        guard !hits.isEmpty else {
+            let known = directories.compactMap { $0 }.count
+            log(
+                "no window on this Space reports cwd \(WindowIdentity.normalize(cwd)) "
+                    + "(\(known)/\(windows.count) window(s) reported one) — falling back to titles")
+            return nil
+        }
+
+        // Several windows in one directory: sibling sessions in the same repo.
+        // Their titles and activity are all that is left to separate them.
+        let titles = hits.map { AXAccess.title(of: windows[$0]) ?? "" }
+        let chosen: Int
+        if hits.count == 1 {
+            chosen = hits[0]
+        } else if let ranking = WindowIdentity.rankTitles(
+            titles, candidates: candidates, state: session.state),
+            ranking.tiedWithWinner == 0
+        {
+            chosen = hits[ranking.index]
+        } else {
+            log(
+                "ambiguous: \(hits.count) window(s) share cwd \(WindowIdentity.normalize(cwd)) "
+                    + "and nothing distinguishes them — raising the first")
+            chosen = hits[0]
+        }
+
+        let windowTitle = AXAccess.title(of: windows[chosen]) ?? ""
+        log("raising window \"\(windowTitle)\" by working directory (exact)")
+        AXAccess.raise(windows[chosen])
+        app.activate()
+        return .focusedWindow(title: windowTitle)
+    }
+
     /// Primary: the app's Window menu. Unlike the AX window list (current Space
     /// only), it enumerates every window AND tab across all Spaces, and
     /// pressing an entry performs the exact jump the user would.
+    /// - Parameter exactOnly: restrict to the session's own name, ignoring the
+    ///   path fallbacks that several sessions can share.
     private static func pressWindowMenuItem(
         in app: NSRunningApplication,
-        candidates: [TitleCandidate]
+        candidates: [TitleCandidate],
+        state: SessionState,
+        exactOnly: Bool = false
     ) -> Outcome? {
-        guard let menu = windowMenu(of: app), let items = children(of: menu) else { return nil }
-        log("\(items.count) Window-menu item(s):")
-        guard let hit = bestTitleMatch(in: items, candidates: candidates, logZeroScores: false)
+        let candidates = exactOnly ? candidates.filter(\.exactOnly) : candidates
+        guard !candidates.isEmpty else { return nil }
+        let lookup = AXAccess.windowMenuItems(of: app)
+        guard case .items(let items) = lookup else {
+            log(
+                "\(lookup.describedFailure ?? "Window menu unavailable") — trying the AX window list"
+            )
+            return nil
+        }
+        log("\(items.count) Window-menu item(s)\(exactOnly ? " (session name only)" : ""):")
+        guard
+            let hit = bestTitleMatch(
+                in: items, candidates: candidates, state: state, logZeroScores: false)
         else { return nil }
         log("pressing Window-menu item \"\(hit.title)\" (score \(hit.score))")
         let result = AXUIElementPerformAction(hit.element, kAXPressAction as CFString)
@@ -138,11 +218,10 @@ enum TerminalFocuser {
     /// current Space).
     private static func raiseAXWindow(
         in app: NSRunningApplication,
-        candidates: [TitleCandidate]
+        candidates: [TitleCandidate],
+        state: SessionState
     ) -> Outcome? {
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        guard let windows = copyAttribute(axApp, kAXWindowsAttribute as String) as? [AXUIElement]
-        else {
+        guard let windows = AXAccess.windows(of: app) else {
             log(
                 "AXWindows query failed — permission granted but not yet effective? "
                     + "Try restarting AgentTracker."
@@ -150,70 +229,51 @@ enum TerminalFocuser {
             return nil
         }
         log("\(windows.count) window(s) visible via Accessibility (current Space only):")
-        guard let best = bestTitleMatch(in: windows, candidates: candidates, logZeroScores: true)
+        guard
+            let best = bestTitleMatch(
+                in: windows, candidates: candidates, state: state, logZeroScores: true)
         else { return nil }
         log("raising window \"\(best.title)\" (score \(best.score))")
-        AXUIElementPerformAction(best.element, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(best.element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXAccess.raise(best.element)
         app.activate()
         return .focusedWindow(title: best.title)
     }
 
     // MARK: - AX plumbing
 
-    /// Finds the app's "Window" menu. Matching the English title is a
-    /// documented limitation; localized menu bars fall back to the AX window
-    /// list.
-    private static func windowMenu(of app: NSRunningApplication) -> AXUIElement? {
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        guard let menuBar = axElement(copyAttribute(axApp, kAXMenuBarAttribute as String)) else {
-            log("no AX menu bar exposed")
-            return nil
-        }
-        guard let topItems = children(of: menuBar) else { return nil }
-        guard let windowItem = topItems.first(where: { title(of: $0) == "Window" }) else {
-            log("no menu titled \"Window\" found")
-            return nil
-        }
-        return children(of: windowItem)?.first
-    }
-
     private static func bestTitleMatch(
         in elements: [AXUIElement],
         candidates: [TitleCandidate],
+        state: SessionState,
         logZeroScores: Bool
     ) -> AXMatch? {
-        var best: AXMatch?
-        for element in elements {
-            guard let title = title(of: element), !title.isEmpty else { continue }
-            let score = matchScore(windowTitle: title, candidates: candidates)
-            if score > 0 || logZeroScores { log("  \"\(title)\" -> score \(score)") }
-            if score > (best?.score ?? 0) {
-                best = AXMatch(element: element, title: title, score: score)
-            }
+        let titled = elements.compactMap { element -> (element: AXUIElement, title: String)? in
+            guard let title = AXAccess.title(of: element), !title.isEmpty else { return nil }
+            return (element, title)
         }
-        return best
-    }
-
-    private static func copyAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
-            return nil
+        for entry in titled {
+            let score = matchScore(windowTitle: entry.title, candidates: candidates)
+            guard score > 0 || logZeroScores else { continue }
+            let agrees = activityAgrees(windowTitle: entry.title, state: state)
+            log("  \"\(entry.title)\" -> score \(score)\(agrees ? "" : ", activity mismatch")")
         }
-        return value
-    }
-
-    private static func axElement(_ value: CFTypeRef?) -> AXUIElement? {
-        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeDowncast(value, to: AXUIElement.self)
-    }
-
-    private static func children(of element: AXUIElement) -> [AXUIElement]? {
-        copyAttribute(element, kAXChildrenAttribute as String) as? [AXUIElement]
-    }
-
-    private static func title(of element: AXUIElement) -> String? {
-        copyAttribute(element, kAXTitleAttribute as String) as? String
+        guard
+            let ranking = WindowIdentity.rankTitles(
+                titled.map(\.title), candidates: candidates, state: state)
+        else { return nil }
+        let winner = titled[ranking.index]
+        if ranking.tiedWithWinner > 0 {
+            // Sibling sessions in one repo title their windows identically;
+            // nothing left distinguishes them, so the raise is a coin flip.
+            // Say so — the acknowledge gate (isPreferredMatch) already
+            // declines to silence a session on this evidence.
+            log(
+                "ambiguous: \(ranking.tiedWithWinner + 1) window(s) tie at score \(ranking.score) "
+                    + "— raising \"\(winner.title)\", which may not be this session's window")
+        }
+        return AXMatch(
+            element: winner.element, title: winner.title, score: ranking.score,
+            activityAgrees: ranking.activityAgrees)
     }
 
     // MARK: - Matching
@@ -323,6 +383,33 @@ enum TerminalFocuser {
             if other >= own { return false }
         }
         return true
+    }
+
+    /// True when the title carries a braille spinner frame (U+2800–U+28FF) —
+    /// the animation agent TUIs paint into the title while a turn is in
+    /// flight. Deliberately narrow: braille frames mean "working right now" in
+    /// every CLI we track, whereas Claude Code's constant "✳" prefix says
+    /// nothing about activity. `normalize` strips these before scoring, so the
+    /// signal has to be read from the raw title.
+    static func showsBusySpinner(_ windowTitle: String) -> Bool {
+        windowTitle.unicodeScalars.contains { (0x2800...0x28FF).contains($0.value) }
+    }
+
+    /// Whether the window's live busy indicator agrees with the session's
+    /// state. Used only to break ties between equally-titled windows: two
+    /// Codex sessions in one repo both title their window "Planner", and the
+    /// spinner is the only thing separating the one still working from the one
+    /// waiting at its prompt (user-reported: clicking a needs-you row raised
+    /// the sibling that was still running).
+    ///
+    /// Deliberately provider-agnostic. Review suggested gating this to Codex,
+    /// but both tracked CLIs paint braille frames while a turn is in flight —
+    /// verified against live windows, e.g. a running `claude-code` session
+    /// titled "⠂ Generate alternative LinkedIn post options". Gating it would
+    /// disable a working signal for the more common provider. Add a gate only
+    /// for a provider actually observed not to spin.
+    static func activityAgrees(windowTitle: String, state: SessionState) -> Bool {
+        showsBusySpinner(windowTitle) == (state == .running)
     }
 
     /// Internal for tests.

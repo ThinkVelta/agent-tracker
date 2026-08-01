@@ -1,0 +1,104 @@
+import Foundation
+
+/// Structural identity for terminal windows.
+///
+/// Window titles are not identities. Claude Code titles its window with a task
+/// summary, Codex with a bare project name, and plain shells with a path — so
+/// several sessions in one repo produce several identical titles, and matching
+/// on them is a coin flip between unrelated agents. macOS terminals expose the
+/// window's live working directory through the Accessibility `AXDocument`
+/// attribute, which is a fact rather than a label: comparing it to a session's
+/// cwd rules out every window belonging to a different project outright.
+///
+/// It is not a complete identity — two sessions in one directory still share
+/// one answer — so it narrows the field and the title/activity ranking picks
+/// within it.
+enum WindowIdentity {
+    /// Extracts a filesystem path from an `AXDocument` value, which terminals
+    /// report as a `file://` URL. Returns nil for anything that isn't a local
+    /// path (some apps report a document name, or nothing at all).
+    static func directory(fromDocumentAttribute value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        let path: String
+        if value.hasPrefix("file://") {
+            guard let url = URL(string: value), url.isFileURL else { return nil }
+            path = url.path
+        } else if value.hasPrefix("/") {
+            path = value
+        } else {
+            return nil
+        }
+        return normalize(path)
+    }
+
+    /// Trailing separators and `/private` prefixes vary by reporter; compare
+    /// the normalized forms so equal directories test equal.
+    static func normalize(_ path: String) -> String {
+        var normalized = (path as NSString).standardizingPath
+        // macOS reports /tmp and /var under their real /private root in some
+        // APIs and not others.
+        if normalized.hasPrefix("/private/") {
+            normalized = String(normalized.dropFirst("/private".count))
+        }
+        while normalized.count > 1, normalized.hasSuffix("/") {
+            normalized.removeLast()
+        }
+        return normalized
+    }
+
+    /// Whether a window's reported directory is the session's own. Unknown
+    /// directories never match: absence of evidence must not raise a window.
+    static func matches(windowDirectory: String?, sessionCwd: String?) -> Bool {
+        guard let windowDirectory, let sessionCwd, !sessionCwd.isEmpty else { return false }
+        return windowDirectory == normalize(sessionCwd)
+    }
+
+    /// Indices of the windows whose directory is the session's, in input order.
+    static func matchingIndices(windowDirectories: [String?], sessionCwd: String?) -> [Int] {
+        windowDirectories.enumerated()
+            .filter { matches(windowDirectory: $0.element, sessionCwd: sessionCwd) }
+            .map(\.offset)
+    }
+
+    struct TitleRanking: Equatable {
+        let index: Int
+        let score: Int
+        let activityAgrees: Bool
+        /// How many other titles are indistinguishable from the winner (same
+        /// score, same activity agreement) — a raise that could equally have
+        /// landed on any of them.
+        let tiedWithWinner: Int
+    }
+
+    /// Picks the window title a session should jump to, in menu order. Highest
+    /// title score wins; equal scores are broken by whether the window's busy
+    /// spinner agrees with the session's state. Pure, so the ranking (not just
+    /// the scoring) is testable. Internal for tests.
+    static func rankTitles(
+        _ titles: [String],
+        candidates: [TerminalFocuser.TitleCandidate],
+        state: SessionState
+    ) -> TitleRanking? {
+        var best: TitleRanking?
+        for (index, title) in titles.enumerated() {
+            let score = TerminalFocuser.matchScore(windowTitle: title, candidates: candidates)
+            guard score > 0 else { continue }
+            let agrees = TerminalFocuser.activityAgrees(windowTitle: title, state: state)
+            guard let current = best else {
+                best = TitleRanking(
+                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
+                continue
+            }
+            if (score, agrees ? 1 : 0) > (current.score, current.activityAgrees ? 1 : 0) {
+                best = TitleRanking(
+                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
+            } else if score == current.score && agrees == current.activityAgrees {
+                best = TitleRanking(
+                    index: current.index, score: current.score,
+                    activityAgrees: current.activityAgrees,
+                    tiedWithWinner: current.tiedWithWinner + 1)
+            }
+        }
+        return best
+    }
+}
