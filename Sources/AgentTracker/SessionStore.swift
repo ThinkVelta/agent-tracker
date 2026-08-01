@@ -63,6 +63,7 @@ final class SessionStore: ObservableObject {
     private var lastClockBucket = 0
     private var codexScanner: CodexSessionScanner?
     private let titleDirectory: TitleDirectory
+    private let claudeRegistry: ClaudeSessionRegistry
     private var scannerSubscription: AnyCancellable?
     /// Sessions loaded from ~/.agent-tracker state files (hook-written).
     private var fileSessions: [AgentSession] = []
@@ -88,6 +89,7 @@ final class SessionStore: ObservableObject {
 
     init() {
         titleDirectory = TitleDirectory()
+        claudeRegistry = ClaudeSessionRegistry()
         try? FileManager.default.createDirectory(
             at: Self.sessionsDirectory, withIntermediateDirectories: true
         )
@@ -125,6 +127,7 @@ final class SessionStore: ObservableObject {
         // statusline scripts that rewrite the file in place (no rename, so no
         // directory event).
         titleDirectory.refresh()
+        claudeRegistry.refresh()
         let fileManager = FileManager.default
         var loaded: [AgentSession] = []
         if let files = try? fileManager.contentsOfDirectory(
@@ -150,7 +153,10 @@ final class SessionStore: ObservableObject {
     /// Merges hook-written state-file sessions with scanner-derived codex
     /// sessions, deduping the codex state-file rows the scanner supersedes.
     private func rebuild() {
-        var merged = fileSessions
+        var merged = fileSessions.map {
+            RegistryEnrichment.apply(
+                to: $0, entry: claudeRegistry.entry(forSessionId: $0.sessionId))
+        }
         if let scanner = codexScanner {
             let scanned = scanner.sessions
             let threadMap = scanner.threadIdToSession

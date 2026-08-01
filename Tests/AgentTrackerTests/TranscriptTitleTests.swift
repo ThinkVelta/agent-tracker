@@ -26,6 +26,53 @@ final class TranscriptTitleTests {
         return "{\"type\":\"filler\",\"pad\":\"\(padding)\"}\n"
     }
 
+    /// The format Claude Code writes today. Reading only the older `summary`
+    /// shape returned nil for every live transcript, silently disabling
+    /// per-session window matching.
+    @Test func readsTheCurrentAiTitleLineShape() throws {
+        let url = try makeTranscript(
+            """
+            {"type":"user","message":"hi"}
+            {"type":"ai-title","aiTitle":"Continue tool development"}
+            {"type":"assistant","message":"ok"}
+
+            """)
+        #expect(TranscriptTitle.latestSummary(atPath: url.path) == "Continue tool development")
+    }
+
+    @Test func stillReadsOlderSummaryTranscripts() throws {
+        let url = try makeTranscript(
+            """
+            {"type":"summary","summary":"An older transcript"}
+
+            """)
+        #expect(TranscriptTitle.latestSummary(atPath: url.path) == "An older transcript")
+    }
+
+    /// Claude rewrites the title as the task evolves; the last one is current.
+    @Test func theLastTitleWins() throws {
+        let url = try makeTranscript(
+            """
+            {"type":"ai-title","aiTitle":"First guess"}
+            {"type":"ai-title","aiTitle":"Refined title"}
+
+            """)
+        #expect(TranscriptTitle.latestSummary(atPath: url.path) == "Refined title")
+    }
+
+    @Test func unrelatedOrEmptyTitlesAreIgnored() throws {
+        let url = try makeTranscript(
+            """
+            {"type":"ai-title","aiTitle":""}
+            {"type":"pr-link","aiTitle":"not a title line"}
+            {"type":"assistant","message":"no title here"}
+
+            """)
+        #expect(TranscriptTitle.latestSummary(atPath: url.path) == nil)
+        #expect(TranscriptTitle.latestSummary(atPath: nil) == nil)
+        #expect(TranscriptTitle.latestSummary(atPath: "/nope/missing.jsonl") == nil)
+    }
+
     @Test func tailWindowKeepsBoundaryAlignedFirstLine() throws {
         // Regression: a tail window whose offset lands exactly on a line start
         // must keep that first line — it used to be dropped as a "fragment".

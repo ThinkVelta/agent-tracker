@@ -140,16 +140,18 @@ enum TerminalFocuser {
         session: AgentSession,
         candidates: [TitleCandidate]
     ) -> Outcome? {
-        guard let cwd = session.cwd, !cwd.isEmpty else { return nil }
+        let wanted = session.windowDirectories
+        guard !wanted.isEmpty else { return nil }
         guard let windows = AXAccess.windows(of: app) else { return nil }
 
         let directories = windows.map { AXAccess.documentPath(of: $0) }
         let hits = WindowIdentity.matchingIndices(
-            windowDirectories: directories, sessionCwd: cwd)
+            windowDirectories: directories, sessionDirectories: wanted)
         guard !hits.isEmpty else {
             let known = directories.compactMap { $0 }.count
+            let described = wanted.map(WindowIdentity.normalize).joined(separator: " or ")
             log(
-                "no window on this Space reports cwd \(WindowIdentity.normalize(cwd)) "
+                "no window on this Space reports cwd \(described) "
                     + "(\(known)/\(windows.count) window(s) reported one) — falling back to titles")
             return nil
         }
@@ -167,7 +169,7 @@ enum TerminalFocuser {
             chosen = hits[ranking.index]
         } else {
             log(
-                "ambiguous: \(hits.count) window(s) share cwd \(WindowIdentity.normalize(cwd)) "
+                "ambiguous: \(hits.count) window(s) share this session's directory "
                     + "and nothing distinguishes them — raising the first")
             chosen = hits[0]
         }
@@ -309,12 +311,25 @@ enum TerminalFocuser {
         if let summary = TranscriptTitle.latestSummary(atPath: session.transcriptPath) {
             candidates.append(TitleCandidate(summary, weight: 100))
         }
-        if let cwd = session.cwd {
+        // Both of the session's directories, not just the hook's: a worktree
+        // session's terminal sits at the repo root, so a title showing the
+        // root is still this session's window. Needed whenever AXDocument
+        // matching is unavailable — another Space, or a terminal that doesn't
+        // report a directory.
+        //
+        // Deliberately no second bare project name at the w40 tier: that tier
+        // is the widest and most collision-prone, and adding "Planner" for a
+        // worktree session would let it claim any Planner window — the exact
+        // class of misfocus PR #6 fixed.
+        var seen: Set<String> = []
+        for directory in session.windowDirectories where seen.insert(directory).inserted {
             // Full path — some terminals title with it.
-            candidates.append(TitleCandidate(cwd, weight: 60))
-        }
-        if let context = session.pathContext {
-            candidates.append(TitleCandidate(context, weight: 50))
+            candidates.append(TitleCandidate(directory, weight: 60))
+            if let context = AgentSession.pathContext(of: directory),
+                seen.insert(context).inserted
+            {
+                candidates.append(TitleCandidate(context, weight: 50))
+            }
         }
         if session.projectName != "Session" {
             candidates.append(TitleCandidate(session.projectName, weight: 40))
