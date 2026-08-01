@@ -99,6 +99,30 @@ final class PreferencesTests {
         }
     }
 
+    @Test func refreshIntervalRoundTripsAndSnapsToOptions() {
+        let defaults = makeDefaults()
+        #expect(
+            Preferences(defaults: defaults).refreshInterval
+                == SessionStore.defaultRefreshInterval)
+
+        let first = Preferences(defaults: defaults)
+        first.refreshInterval = 30
+        #expect(Preferences(defaults: defaults).refreshInterval == 30)
+
+        // Unofferable or corrupt values snap to the default — a 0 or negative
+        // interval would break the timer, a "fast" string would coerce.
+        for bad: Any in [0.0, -5.0, 2.0, "fast"] {
+            defaults.set(bad, forKey: "refreshIntervalSeconds")
+            #expect(
+                Preferences(defaults: defaults).refreshInterval
+                    == SessionStore.defaultRefreshInterval)
+        }
+        for option in Preferences.refreshOptions {
+            defaults.set(option.seconds, forKey: "refreshIntervalSeconds")
+            #expect(Preferences(defaults: defaults).refreshInterval == option.seconds)
+        }
+    }
+
     @Test func iconPreferencesRoundTripAndSnapToDefaults() {
         let defaults = makeDefaults()
         let first = Preferences(defaults: defaults)

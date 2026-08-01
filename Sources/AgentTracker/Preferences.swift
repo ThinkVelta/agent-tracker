@@ -94,6 +94,21 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(idleFolding.stored, forKey: Keys.idleFolding) }
     }
 
+    // MARK: - Refresh cadence
+
+    /// How often the safety-net reload runs. Session *events* arrive by
+    /// watcher instantly regardless — this only paces the janitor pass that
+    /// prunes dead sessions and refreshes relative timestamps, which is why
+    /// there is no sub-second option: it would burn cycles buying nothing.
+    @Published var refreshInterval: TimeInterval {
+        didSet { defaults.set(refreshInterval, forKey: Keys.refreshInterval) }
+    }
+
+    static let refreshOptions: [(label: String, seconds: TimeInterval)] = [
+        ("1 second", 1), ("5 seconds", 5), ("10 seconds", 10),
+        ("30 seconds", 30), ("60 seconds", 60),
+    ]
+
     // MARK: - Auto-acknowledge dwell
 
     /// Seconds a terminal window must stay focused before its needs-you
@@ -132,6 +147,7 @@ final class Preferences: ObservableObject {
         static let appearance = "appearanceOverride"
         static let idleFolding = "idleFoldingThreshold"
         static let autoAckDwell = "autoAckDwellSeconds"
+        static let refreshInterval = "refreshIntervalSeconds"
         static let confirmQuit = "confirmQuit"
         static let iconMode = "iconMode"
         static let attentionCue = "attentionCue"
@@ -163,6 +179,12 @@ final class Preferences: ObservableObject {
             loadedDwell.flatMap { dwell in
                 Self.dwellOptions.contains { $0.seconds == dwell } ? dwell : nil
             } ?? TerminalFocusObserver.defaultDwell
+
+        let loadedInterval = defaults.object(forKey: Keys.refreshInterval) as? Double
+        refreshInterval =
+            loadedInterval.flatMap { interval in
+                Self.refreshOptions.contains { $0.seconds == interval } ? interval : nil
+            } ?? SessionStore.defaultRefreshInterval
 
         confirmQuit = defaults.object(forKey: Keys.confirmQuit) as? Bool ?? true
         iconMode =
