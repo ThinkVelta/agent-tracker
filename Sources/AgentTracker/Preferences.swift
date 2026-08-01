@@ -106,12 +106,21 @@ final class Preferences: ObservableObject {
         ("Off", 0), ("1 second", 1), ("3 seconds", 3), ("10 seconds", 10),
     ]
 
+    // MARK: - Quit confirmation
+
+    /// Ask before quitting from the panel's power button. Turned off by the
+    /// alert's own "don't ask again" checkbox; Settings › General re-enables.
+    @Published var confirmQuit: Bool {
+        didSet { defaults.set(confirmQuit, forKey: Keys.confirmQuit) }
+    }
+
     // MARK: - Storage
 
     private enum Keys {
         static let appearance = "appearanceOverride"
         static let idleFolding = "idleFoldingThreshold"
         static let autoAckDwell = "autoAckDwellSeconds"
+        static let confirmQuit = "confirmQuit"
     }
 
     private let defaults: UserDefaults
@@ -140,5 +149,7 @@ final class Preferences: ObservableObject {
             loadedDwell.flatMap { dwell in
                 Self.dwellOptions.contains { $0.seconds == dwell } ? dwell : nil
             } ?? TerminalFocusObserver.defaultDwell
+
+        confirmQuit = defaults.object(forKey: Keys.confirmQuit) as? Bool ?? true
     }
 }

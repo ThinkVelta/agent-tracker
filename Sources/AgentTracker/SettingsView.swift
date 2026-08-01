@@ -61,6 +61,16 @@ private struct GeneralSettingsTab: View {
                         .labelsHidden()
                         .disabled(!LoginItem.isSupported)
                 }
+                SettingsRow(
+                    title: "Confirm before quitting",
+                    detail: "The panel's power button asks first. The alert's "
+                        + "\u{201C}don't ask again\u{201D} turns this off; re-enable it here.",
+                    divided: true
+                ) {
+                    Toggle("", isOn: $preferences.confirmQuit)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
             }
             SettingsCard {
                 SettingsRow(
