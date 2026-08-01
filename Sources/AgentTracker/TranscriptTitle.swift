@@ -4,21 +4,41 @@ import Foundation
 /// uses this summary as the terminal window title ("✳ <summary>"), which makes
 /// it the strongest signal for window matching.
 enum TranscriptTitle {
+    /// Bounded window read: transcripts grow to many MB and this runs on the
+    /// click path, so scan only the head (summaries cluster at the start of
+    /// resumed transcripts) and the tail (for late additions), never the whole
+    /// file. The last summary seen wins, preferring tail hits.
+    private static let window = 256 * 1024
+
     static func latestSummary(atPath path: String?) -> String? {
-        guard let path,
-            let data = FileManager.default.contents(atPath: path),
-            let text = String(data: data, encoding: .utf8)
+        guard let path, let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)),
+            let size = try? handle.seekToEnd()
         else { return nil }
+        defer { try? handle.close() }
 
         var latest: String?
-        for line in text.split(separator: "\n") {
-            guard line.contains("\"type\":\"summary\"") else { continue }
-            guard let lineData = line.data(using: .utf8),
-                let object = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                let summary = object["summary"] as? String, !summary.isEmpty
+        for chunk in windowRanges(fileSize: size) {
+            guard (try? handle.seek(toOffset: chunk.offset)) != nil,
+                let data = try? handle.read(upToCount: chunk.length),
+                let text = String(data: data, encoding: .utf8)
             else { continue }
-            latest = summary
+            for line in text.split(separator: "\n") {
+                guard line.contains("\"type\":\"summary\"") else { continue }
+                guard let lineData = line.data(using: .utf8),
+                    let object = try? JSONSerialization.jsonObject(with: lineData)
+                        as? [String: Any],
+                    let summary = object["summary"] as? String, !summary.isEmpty
+                else { continue }
+                latest = summary
+            }
         }
         return latest
+    }
+
+    private static func windowRanges(fileSize: UInt64) -> [(offset: UInt64, length: Int)] {
+        if fileSize <= UInt64(window * 2) {
+            return [(0, Int(fileSize))]
+        }
+        return [(0, window), (fileSize - UInt64(window), window)]
     }
 }
