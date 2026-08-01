@@ -16,11 +16,20 @@ struct AgentTrackerApp: App {
     }
 }
 
+/// The dropdown's window. Borderless panels refuse key status by default, and
+/// the search field needs it; `.nonactivatingPanel` means typing works without
+/// activating the app (the Spotlight pattern), so opening the dropdown never
+/// steals focus from whatever the user was doing.
+private final class StatusPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var store: SessionStore?
     private var statusItem: NSStatusItem?
-    private let popover = NSPopover()
+    private var panel: NSPanel?
+    private var panelHost: NSHostingController<MenuContentView>?
     private var hitRegions: [StatusIconRenderer.HitRegion] = []
     private var storeSubscription: AnyCancellable?
     private var dismissMonitor: Any?
@@ -41,6 +50,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setUpStatusItem(for: store)
         focusObserver = TerminalFocusObserver(store: store)
         showOnboardingIfNeeded()
+
+        // Debug utility: `--show-panel` opens the dropdown at launch, so
+        // panel chrome (radius, material, position) can be screenshotted
+        // without a scripted menu-bar click. Delayed a beat: at
+        // didFinishLaunching the status button's window has no menu bar
+        // position yet (anchor reads as x=0,y=-11) and the panel would land
+        // off-screen. Real clicks never hit this — a clickable button is a
+        // positioned one.
+        if CommandLine.arguments.contains("--show-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let button = self?.statusItem?.button else { return }
+                self?.showPanel(from: button)
+            }
+        }
     }
 
     /// First-run only: a menu bar app that silently appears and does nothing
@@ -82,21 +105,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             button.action = #selector(statusButtonClicked(_:))
         }
 
-        // .transient would also dismiss on the status-item click itself (its
-        // mouse-down close fires before our button action, so every toggle
-        // click would close-then-reopen). applicationDefined keeps the button
-        // click fully ours; a per-show global monitor plus the resign-active
-        // observer below cover every other dismissal path.
-        popover.behavior = .applicationDefined
-        popover.animates = false
-        let host = NSHostingController(
-            rootView: MenuContentView(store: store) { [weak self] in self?.closePopover() }
-        )
-        host.sizingOptions = .preferredContentSize
-        popover.contentViewController = host
+        // A hand-built panel rather than NSPopover: the popover's corner
+        // radius is system chrome and not configurable (user feedback: too
+        // round), and its arrow nub adds height. The panel also never
+        // activates the app, so opening it doesn't steal focus. Dismissal is
+        // the same recipe the popover used: a per-show global monitor for
+        // outside clicks plus the resign-active observer below.
+        panel = makePanel(for: store)
 
         storeSubscription = store.$sessions.sink { [weak self] sessions in
-            Task { @MainActor in self?.updateIcon(for: SessionCounts(of: sessions)) }
+            Task { @MainActor in
+                guard let self else { return }
+                self.updateIcon(for: SessionCounts(of: sessions))
+                // A live update can change the list's height while the panel
+                // is open; re-anchor so it stays hung from the menu bar.
+                if self.panel?.isVisible == true, let button = self.statusItem?.button {
+                    self.layoutPanel(relativeTo: button)
+                }
+            }
         }
         updateIcon(for: store.counts)
 
@@ -105,8 +131,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         NotificationCenter.default.addObserver(
             forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            Task { @MainActor in self?.closePopover() }
+            Task { @MainActor in self?.closePanel() }
         }
+    }
+
+    private func makePanel(for store: SessionStore) -> NSPanel {
+        let host = NSHostingController(
+            rootView: MenuContentView(store: store) { [weak self] in self?.closePanel() }
+        )
+        host.sizingOptions = .preferredContentSize
+        panelHost = host
+
+        let panel = StatusPanel(
+            contentRect: .zero,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: true
+        )
+        panel.isReleasedWhenClosed = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.level = .popUpMenu
+        // Follows the user across Spaces, like the popover did; auxiliary so
+        // it can appear over full-screen apps.
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.animationBehavior = .none
+        panel.hidesOnDeactivate = false
+
+        // The popover material the system dropdown had, behind our content,
+        // clipped to our own (tighter) radius.
+        let effect = NSVisualEffectView()
+        effect.material = .popover
+        effect.blendingMode = .behindWindow
+        effect.state = .active
+        effect.wantsLayer = true
+        effect.layer?.cornerRadius = Theme.Metrics.panelCornerRadius
+        effect.layer?.cornerCurve = .continuous
+        effect.layer?.masksToBounds = true
+
+        let hostView = host.view
+        hostView.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(hostView)
+        NSLayoutConstraint.activate([
+            hostView.topAnchor.constraint(equalTo: effect.topAnchor),
+            hostView.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+            hostView.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
+            hostView.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
+        ])
+        panel.contentView = effect
+        return panel
+    }
+
+    /// Hangs the panel from the menu bar, centered under the status item and
+    /// clamped to the screen edges.
+    private func layoutPanel(relativeTo button: NSStatusBarButton) {
+        guard let panel, let buttonWindow = button.window, let screen = buttonWindow.screen,
+            let size = panelHost?.view.fittingSize, size.width > 0
+        else { return }
+        let anchor = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+        let clampedX = min(
+            max(anchor.midX - size.width / 2, screen.frame.minX + 8),
+            screen.frame.maxX - size.width - 8)
+        let originY = anchor.minY - Theme.Metrics.panelTopGap - size.height
+        let frame = NSRect(x: clampedX, y: originY, width: size.width, height: size.height)
+        print(
+            "[ui] \(DebugLog.timestamp()) panel frame=\(frame) anchor=\(anchor) "
+                + "screen=\(screen.frame)")
+        panel.setFrame(frame, display: true)
     }
 
     /// Any dismissal of the onboarding window — Done, Skip, the close button,
@@ -137,18 +229,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // single paste of the app's output.
         let dot = clicked?.rawValue ?? "none"
         let filter = store.selectedFilter?.rawValue ?? "none"
-        if popover.isShown {
+        if panel?.isVisible == true {
             if let clicked, clicked != store.selectedFilter {
                 print("[ui] \(DebugLog.timestamp()) dot=\(dot) while open → switch filter")
                 store.selectedFilter = clicked
             } else {
                 print("[ui] \(DebugLog.timestamp()) dot=\(dot) filter=\(filter) → toggle close")
-                closePopover()
+                closePanel()
             }
         } else {
             print("[ui] \(DebugLog.timestamp()) dot=\(dot) → open")
             store.selectedFilter = clicked
-            showPopover(from: sender)
+            showPanel(from: sender)
         }
     }
 
@@ -176,33 +268,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return hit
     }
 
-    private func showPopover(from button: NSStatusBarButton) {
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        NSApp.activate(ignoringOtherApps: true)
-        popover.contentViewController?.view.window?.makeKey()
+    private func showPanel(from button: NSStatusBarButton) {
+        guard let panel else { return }
+        layoutPanel(relativeTo: button)
+        // Key so the search field types; the app itself stays inactive
+        // (.nonactivatingPanel), so no focus is stolen and none needs
+        // handing back on close.
+        panel.makeKeyAndOrderFront(nil)
         // Global monitors never see this app's own events (so clicks inside
-        // the popover or on the status button stay ours); installed only
-        // while the popover is shown to catch clicks anywhere else — other
-        // apps, other status items, the desktop.
+        // the panel or on the status button stay ours); installed only while
+        // the panel is shown to catch clicks anywhere else — other apps,
+        // other status items, the desktop.
         dismissMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown]
         ) { [weak self] _ in
-            Task { @MainActor in self?.closePopover() }
+            Task { @MainActor in self?.closePanel() }
         }
     }
 
-    private func closePopover() {
+    private func closePanel() {
         if let dismissMonitor {
             NSEvent.removeMonitor(dismissMonitor)
             self.dismissMonitor = nil
         }
-        guard popover.isShown else { return }
-        popover.performClose(nil)
-        // Opening activated this accessory app so the popover could take
-        // keyboard focus; hand activation back, or a toggle-close strands the
-        // user on an active app with no key window (their typing goes
-        // nowhere).
-        NSApp.deactivate()
+        guard let panel, panel.isVisible else { return }
+        panel.orderOut(nil)
     }
 
     /// Debug utility:

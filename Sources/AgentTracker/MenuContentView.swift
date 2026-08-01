@@ -2,8 +2,8 @@ import SwiftUI
 
 struct MenuContentView: View {
     @ObservedObject var store: SessionStore
-    /// Closes the hosting popover; row clicks invoke it after focusing the
-    /// terminal so the popover doesn't float over the window it just raised.
+    /// Closes the hosting panel; row clicks invoke it after focusing the
+    /// terminal so the panel doesn't float over the window it just raised.
     var dismiss: () -> Void = {}
 
     @ObservedObject private var preferences = Preferences.shared
@@ -304,37 +304,51 @@ struct MenuContentView: View {
                 .font(Theme.Typography.footer)
                 .foregroundStyle(.tertiary)
             Spacer()
-            Button {
-                // Close the popover first or the settings window opens behind
+            FooterIconButton(systemName: "gearshape", help: "Settings (⌘,)") {
+                // Close the panel first or the settings window opens behind
                 // it; activate because an accessory app's windows otherwise
                 // appear without focus.
                 dismiss()
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 18)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .help("Settings (⌘,)")
-            Button {
-                NSApp.terminate(nil)
-            } label: {
-                Image(systemName: "power")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, height: 18)
-                    .contentShape(Rectangle())
+            FooterIconButton(systemName: "power", help: "Quit AgentTracker") {
+                requestQuit()
             }
-            .buttonStyle(.plain)
-            .help("Quit AgentTracker")
         }
         .padding(.leading, Theme.Metrics.gutter)
         .padding(.trailing, Theme.Metrics.gutter - 4)
         .padding(.vertical, 5)
+    }
+
+    /// Quit guards against the misclick next to the gear: a confirmation with
+    /// a native "don't ask again" suppression checkbox. The checkbox is
+    /// honored even on Cancel — it answers "should I ask?", not "do you mean
+    /// it this time?" — and Settings › General can re-enable the warning.
+    private func requestQuit() {
+        guard Preferences.shared.confirmQuit else {
+            NSApp.terminate(nil)
+            return
+        }
+        // The alert needs the app frontmost, and the panel floating over a
+        // modal looks broken.
+        dismiss()
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Quit AgentTracker?"
+        alert.informativeText =
+            "The menu bar dots disappear and session tracking stops until you launch it again."
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.showsSuppressionButton = true
+        alert.suppressionButton?.title = "Don't ask again"
+        let response = alert.runModal()
+        if alert.suppressionButton?.state == .on {
+            Preferences.shared.confirmQuit = false
+        }
+        if response == .alertFirstButtonReturn {
+            NSApp.terminate(nil)
+        }
     }
 
     private var sessionSummary: String {
@@ -342,6 +356,33 @@ struct MenuContentView: View {
         let noun = total == 1 ? "session" : "sessions"
         guard store.selectedFilter != nil || !query.isEmpty else { return "\(total) \(noun)" }
         return "\(filteredSessions.count) of \(total) \(noun)"
+    }
+}
+
+/// Footer icon buttons hover-highlight like the rows do — a click target
+/// that doesn't react reads as disabled (user feedback: the Quit button).
+private struct FooterIconButton: View {
+    let systemName: String
+    let help: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: 22, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(hovering ? Theme.Palette.rowHover : Color.clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
     }
 }
 

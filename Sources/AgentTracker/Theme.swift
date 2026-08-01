@@ -6,6 +6,13 @@ import SwiftUI
 enum Theme {
     enum Metrics {
         static let popoverWidth: CGFloat = 360
+        /// The dropdown panel's frame radius. Ours to choose because the
+        /// dropdown is a borderless panel, not an NSPopover — the system
+        /// popover's much rounder chrome is not configurable (user feedback:
+        /// too round).
+        static let panelCornerRadius: CGFloat = 10
+        /// Gap between the menu bar's bottom edge and the panel.
+        static let panelTopGap: CGFloat = 5
         /// Outer horizontal inset for chrome (header, search, footer).
         static let gutter: CGFloat = 10
         static let rowHorizontalPadding: CGFloat = 8

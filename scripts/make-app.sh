@@ -28,7 +28,17 @@ BUNDLE_ID="com.thinkvelta.agent-tracker"
 VERSION="$(tr -d '[:space:]' < VERSION)"
 BUILD_NUMBER="$(git rev-list --count HEAD 2> /dev/null || echo 1)"
 MIN_OS="14.0"
-IDENTITY="${CODESIGN_IDENTITY:--}"
+# Signing identity resolution: explicit CODESIGN_IDENTITY wins; otherwise the
+# conventional local certificate is picked up automatically when it exists, so
+# TCC grants survive rebuilds without remembering an env var; ad-hoc last.
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [ -z "$IDENTITY" ]; then
+  if security find-identity -v -p codesigning 2> /dev/null | grep -q '"AgentTracker Local"'; then
+    IDENTITY="AgentTracker Local"
+  else
+    IDENTITY="-"
+  fi
+fi
 
 DIST="$REPO/dist"
 APP="$DIST/$APP_NAME.app"
