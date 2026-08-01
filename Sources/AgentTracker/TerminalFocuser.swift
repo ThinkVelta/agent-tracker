@@ -39,22 +39,32 @@ enum TerminalFocuser {
 
     @discardableResult
     static func focus(_ session: AgentSession) -> Outcome {
-        log("focusing \(session.providerDisplayName) session \(session.sessionId) (cwd: \(session.cwd ?? "?"))")
+        log(
+            "focusing \(session.providerDisplayName) session \(session.sessionId) (cwd: \(session.cwd ?? "?"))"
+        )
 
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         guard AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary) else {
-            log("no Accessibility permission — system prompt triggered. NOTE: when run via `swift run` from a terminal, macOS attributes the permission to that terminal (the responsible process). After granting, QUIT AND RE-RUN AgentTracker for it to take effect.")
+            log(
+                "no Accessibility permission — system prompt triggered. NOTE: when run via `swift run` from a terminal, macOS attributes the permission to that terminal (the responsible process). After granting, QUIT AND RE-RUN AgentTracker for it to take effect."
+            )
             return .needsPermission
         }
 
         guard let app = terminalApp(for: session) else {
-            log("no known terminal app is running (looked for: \(bundleIdentifiers.values.sorted().joined(separator: ", ")))")
+            log(
+                "no known terminal app is running (looked for: \(bundleIdentifiers.values.sorted().joined(separator: ", ")))"
+            )
             return .noTerminalFound
         }
-        log("terminal app: \(app.localizedName ?? "?") (\(app.bundleIdentifier ?? "?"), pid \(app.processIdentifier))")
+        log(
+            "terminal app: \(app.localizedName ?? "?") (\(app.bundleIdentifier ?? "?"), pid \(app.processIdentifier))"
+        )
 
         let candidates = titleCandidates(for: session)
-        log("title candidates: \(candidates.map { "\"\($0.text)\" (w\($0.weight))" }.joined(separator: ", "))")
+        log(
+            "title candidates: \(candidates.map { "\"\($0.text)\" (w\($0.weight))" }.joined(separator: ", "))"
+        )
 
         // Primary: the app's Window menu. Unlike the AX window list (current
         // Space only), it enumerates every window AND tab across all Spaces,
@@ -79,7 +89,9 @@ enum TerminalFocuser {
             return .focusedWindow(title: best.title)
         }
 
-        log("no title matched — activating \(app.localizedName ?? "the app") without raising a specific window")
+        log(
+            "no title matched — activating \(app.localizedName ?? "the app") without raising a specific window"
+        )
         app.activate()
         return .activatedAppOnly
     }
@@ -93,33 +105,51 @@ enum TerminalFocuser {
     ) -> (item: AXUIElement, title: String, score: Int)? {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var menuBarValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue) == .success,
-              let menuBarRef = menuBarValue else {
+        guard
+            AXUIElementCopyAttributeValue(axApp, kAXMenuBarAttribute as CFString, &menuBarValue)
+                == .success,
+            let menuBarRef = menuBarValue
+        else {
             log("no AX menu bar exposed")
             return nil
         }
         let menuBar = menuBarRef as! AXUIElement
         var topValue: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(menuBar, kAXChildrenAttribute as CFString, &topValue) == .success,
-              let topItems = topValue as? [AXUIElement] else { return nil }
+        guard
+            AXUIElementCopyAttributeValue(menuBar, kAXChildrenAttribute as CFString, &topValue)
+                == .success,
+            let topItems = topValue as? [AXUIElement]
+        else { return nil }
 
         for top in topItems {
             var titleValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(top, kAXTitleAttribute as CFString, &titleValue) == .success,
-                  (titleValue as? String) == "Window" else { continue }
+            guard
+                AXUIElementCopyAttributeValue(top, kAXTitleAttribute as CFString, &titleValue)
+                    == .success,
+                (titleValue as? String) == "Window"
+            else { continue }
             var menusValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(top, kAXChildrenAttribute as CFString, &menusValue) == .success,
-                  let menus = menusValue as? [AXUIElement], let menu = menus.first else { return nil }
+            guard
+                AXUIElementCopyAttributeValue(top, kAXChildrenAttribute as CFString, &menusValue)
+                    == .success,
+                let menus = menusValue as? [AXUIElement], let menu = menus.first
+            else { return nil }
             var itemsValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(menu, kAXChildrenAttribute as CFString, &itemsValue) == .success,
-                  let items = itemsValue as? [AXUIElement] else { return nil }
+            guard
+                AXUIElementCopyAttributeValue(menu, kAXChildrenAttribute as CFString, &itemsValue)
+                    == .success,
+                let items = itemsValue as? [AXUIElement]
+            else { return nil }
             log("\(items.count) Window-menu item(s):")
 
             var best: (item: AXUIElement, title: String, score: Int)?
             for item in items {
                 var itemTitleValue: CFTypeRef?
-                guard AXUIElementCopyAttributeValue(item, kAXTitleAttribute as CFString, &itemTitleValue) == .success,
-                      let title = itemTitleValue as? String, !title.isEmpty else { continue }
+                guard
+                    AXUIElementCopyAttributeValue(
+                        item, kAXTitleAttribute as CFString, &itemTitleValue) == .success,
+                    let title = itemTitleValue as? String, !title.isEmpty
+                else { continue }
                 let score = matchScore(windowTitle: title, candidates: candidates)
                 if score > 0 { log("  \"\(title)\" -> score \(score)") }
                 if score > (best?.score ?? 0) {
@@ -134,12 +164,15 @@ enum TerminalFocuser {
 
     private static func terminalApp(for session: AgentSession) -> NSRunningApplication? {
         if let termProgram = session.termProgram?.lowercased(),
-           let bundleID = bundleIdentifiers[termProgram],
-           let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            let bundleID = bundleIdentifiers[termProgram],
+            let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+        {
             return app
         }
         for bundleID in bundleIdentifiers.values.sorted() {
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .first
+            {
                 return app
             }
         }
@@ -154,7 +187,9 @@ enum TerminalFocuser {
         var value: CFTypeRef?
         let axResult = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value)
         guard axResult == .success, let windows = value as? [AXUIElement] else {
-            log("AXWindows query failed (\(axResult.rawValue)) — permission granted but not yet effective? Try restarting AgentTracker.")
+            log(
+                "AXWindows query failed (\(axResult.rawValue)) — permission granted but not yet effective? Try restarting AgentTracker."
+            )
             return nil
         }
         log("\(windows.count) window(s) visible via Accessibility:")
@@ -162,8 +197,11 @@ enum TerminalFocuser {
         var best: (window: AXUIElement, title: String, score: Int)?
         for window in windows {
             var titleValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
-                  let title = titleValue as? String else { continue }
+            guard
+                AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue)
+                    == .success,
+                let title = titleValue as? String
+            else { continue }
             let score = matchScore(windowTitle: title, candidates: candidates)
             log("  \"\(title)\" -> score \(score)")
             if score > (best?.score ?? 0) {
@@ -175,13 +213,14 @@ enum TerminalFocuser {
 
     /// Ordered by reliability: the Claude task summary is near-unique per session,
     /// path fragments can collide across sessions in the same repo.
-    private static func titleCandidates(for session: AgentSession) -> [(text: String, weight: Int)] {
+    private static func titleCandidates(for session: AgentSession) -> [(text: String, weight: Int)]
+    {
         var candidates: [(String, Int)] = []
         if let summary = TranscriptTitle.latestSummary(atPath: session.transcriptPath) {
             candidates.append((summary, 100))
         }
         if let cwd = session.cwd {
-            candidates.append((cwd, 60)) // full path — some terminals title with it
+            candidates.append((cwd, 60))  // full path — some terminals title with it
         }
         if let context = session.pathContext {
             candidates.append((context, 50))
@@ -192,7 +231,9 @@ enum TerminalFocuser {
         return candidates
     }
 
-    private static func matchScore(windowTitle: String, candidates: [(text: String, weight: Int)]) -> Int {
+    private static func matchScore(windowTitle: String, candidates: [(text: String, weight: Int)])
+        -> Int
+    {
         let title = normalize(windowTitle)
         guard !title.isEmpty else { return 0 }
         var score = 0
@@ -213,7 +254,8 @@ enum TerminalFocuser {
         // bullets, ellipsis — that terminals/CLIs prefix onto titles.
         var stripped = Substring(text.lowercased())
         while let first = stripped.first,
-              !(first.isLetter || first.isNumber || first == "/" || first == "~" || first == ".") {
+            !(first.isLetter || first.isNumber || first == "/" || first == "~" || first == ".")
+        {
             stripped = stripped.dropFirst()
         }
         return stripped.trimmingCharacters(in: .whitespaces)

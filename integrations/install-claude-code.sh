@@ -19,7 +19,7 @@ if [ -f "$SETTINGS" ]; then
   echo "Backed up $SETTINGS to $SETTINGS.agent-tracker-backup"
 fi
 
-python3 - <<'PYEOF'
+python3 - << 'PYEOF'
 import json
 import os
 

@@ -25,7 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // dropdown with live data to a PNG and exits — lets the popover be
         // inspected/iterated without clicking the menu bar.
         if let flagIndex = CommandLine.arguments.firstIndex(of: "--render-preview"),
-           CommandLine.arguments.count > flagIndex + 1 {
+            CommandLine.arguments.count > flagIndex + 1
+        {
             let path = CommandLine.arguments[flagIndex + 1]
             Task { @MainActor in
                 let store = SessionStore()
@@ -39,11 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let renderer = ImageRenderer(content: MenuContentView(store: store))
                 renderer.scale = 2
                 if let image = renderer.nsImage,
-                   let tiff = image.tiffRepresentation,
-                   let rep = NSBitmapImageRep(data: tiff),
-                   let png = rep.representation(using: .png, properties: [:]) {
+                    let tiff = image.tiffRepresentation,
+                    let rep = NSBitmapImageRep(data: tiff),
+                    let png = rep.representation(using: .png, properties: [:])
+                {
                     try? png.write(to: URL(fileURLWithPath: path))
-                    print("[preview] wrote \(path) (\(Int(image.size.width))x\(Int(image.size.height)) pt)")
+                    print(
+                        "[preview] wrote \(path) (\(Int(image.size.width))x\(Int(image.size.height)) pt)"
+                    )
                 } else {
                     print("[preview] render failed")
                 }

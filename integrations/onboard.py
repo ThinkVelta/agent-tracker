@@ -59,29 +59,37 @@ AGENTS = [
         "key": "claude",
         "name": "Claude Code",
         "script": "install-claude-code.sh",
-        "detect": lambda: bool(shutil.which("claude"))
-        or os.path.exists(os.path.expanduser("~/.claude")),
+        "detect": lambda: (
+            bool(shutil.which("claude"))
+            or os.path.exists(os.path.expanduser("~/.claude"))
+        ),
         "plan": [
             "copy the hook script to ~/.agent-tracker/bin/",
             "back up ~/.claude/settings.json to settings.json.agent-tracker-backup",
-            "register agent-tracker hooks in settings.json — merge-only, your "
-            "existing settings are untouched; the hooks always exit 0 and can "
-            "never block or modify a session",
+            (
+                "register agent-tracker hooks in settings.json — merge-only, your "
+                "existing settings are untouched; the hooks always exit 0 and can "
+                "never block or modify a session"
+            ),
         ],
     },
     {
         "key": "codex",
         "name": "Codex CLI",
         "script": "install-codex.sh",
-        "detect": lambda: bool(shutil.which("codex"))
-        or os.path.exists(os.path.expanduser("~/.codex")),
+        "detect": lambda: (
+            bool(shutil.which("codex"))
+            or os.path.exists(os.path.expanduser("~/.codex"))
+        ),
         "plan": [
             "copy the hook script to ~/.agent-tracker/bin/",
             "back up ~/.codex/config.toml to config.toml.agent-tracker-backup",
-            "prepend one 'notify = [...]' line to config.toml — note: live "
-            "running/turn-complete tracking works even without this (the app "
-            "watches ~/.codex/sessions read-only); notify just adds an extra "
-            "push signal",
+            (
+                "prepend one 'notify = [...]' line to config.toml — note: live "
+                "running/turn-complete tracking works even without this (the app "
+                "watches ~/.codex/sessions read-only); notify just adds an extra "
+                "push signal"
+            ),
         ],
     },
 ]
@@ -173,8 +181,11 @@ def show_plan(selected):
     for agent in selected:
         print(f"\n  {agent['name']}:")
         for item in agent["plan"]:
-            print(textwrap.fill(item, width=78, initial_indent="    • ",
-                                subsequent_indent="      "))
+            print(
+                textwrap.fill(
+                    item, width=78, initial_indent="    • ", subsequent_indent="      "
+                )
+            )
     print()
     print("  Nothing else on the system is touched.")
     print("  Uninstall any time with integrations/uninstall.sh.")
@@ -198,25 +209,30 @@ def run_installer(agent):
     """
     print(f"\n{bold(agent['name'])}")
     script = os.path.join(SCRIPT_DIR, agent["script"])
-    proc = subprocess.run(["bash", script], capture_output=True, text=True)
+    proc = subprocess.run(["bash", script], capture_output=True, text=True, check=False)
     if proc.returncode == 0:
         for line in proc.stdout.strip().splitlines():
             print(f"  {green('✓')} {line}")
         return True
-    if (agent["key"] == "codex" and proc.returncode == 1
-            and "already sets 'notify'" in proc.stderr):
-        print(f"  {yellow('!')} Skipped the notify line — ~/.codex/config.toml "
-              "already sets 'notify'")
-        print("    to something else (merge it manually if you want the extra "
-              "push signal).")
-        print("    Codex tracking still fully works: the app watches "
-              "~/.codex/sessions")
+    if (
+        agent["key"] == "codex"
+        and proc.returncode == 1
+        and "already sets 'notify'" in proc.stderr
+    ):
+        print(
+            f"  {yellow('!')} Skipped the notify line — ~/.codex/config.toml "
+            "already sets 'notify'"
+        )
+        print(
+            "    to something else (merge it manually if you want the extra "
+            "push signal)."
+        )
+        print("    Codex tracking still fully works: the app watches ~/.codex/sessions")
         print("    (read-only) for live session state.")
         return True
     for line in (proc.stdout + proc.stderr).strip().splitlines():
         print(f"  {red('✗')} {line}")
-    print(f"  {red('✗')} {agent['name']} installer failed "
-          f"(exit {proc.returncode})")
+    print(f"  {red('✗')} {agent['name']} installer failed (exit {proc.returncode})")
     return False
 
 
@@ -226,11 +242,16 @@ def print_outro():
     print(f"  1. {bold('swift run AgentTracker')} — starts the menu bar app.")
     print("  2. On your first click-to-focus, macOS asks you to grant the app")
     print("     Accessibility permission.")
-    print("  3. Only NEW agent sessions are tracked — restart any that are "
-          "already running.")
+    print(
+        "  3. Only NEW agent sessions are tracked — restart any that are "
+        "already running."
+    )
     print(dim("     (Codex sessions are also tracked automatically by watching"))
-    print(dim("     ~/.codex/sessions read-only — no Codex restart needed for "
-              "that part.)"))
+    print(
+        dim(
+            "     ~/.codex/sessions read-only — no Codex restart needed for that part.)"
+        )
+    )
     print()
 
 
@@ -241,12 +262,15 @@ def main():
         "register the integrations (idempotent, configs backed up first).",
     )
     parser.add_argument(
-        "--agents", metavar="LIST",
+        "--agents",
+        metavar="LIST",
         help="comma-separated agents to set up (claude,codex); "
         "skips the interactive picker",
     )
     parser.add_argument(
-        "--yes", "-y", action="store_true",
+        "--yes",
+        "-y",
+        action="store_true",
         help="skip the confirmation prompt",
     )
     args = parser.parse_args()
@@ -260,8 +284,12 @@ def main():
         selected = pick_agents()
         print()
     else:
-        print(dim("stdin is not a TTY — running non-interactively with the "
-                  "agents detected on this system."))
+        print(
+            dim(
+                "stdin is not a TTY — running non-interactively with the "
+                "agents detected on this system."
+            )
+        )
         selected = [agent for agent in AGENTS if agent["detect"]()]
         names = ", ".join(agent["name"] for agent in selected) or "none"
         print(f"Detected: {names}")

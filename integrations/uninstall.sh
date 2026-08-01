@@ -12,12 +12,15 @@ PURGE=0
 for arg in "$@"; do
   case "$arg" in
     --purge) PURGE=1 ;;
-    -h|--help)
+    -h | --help)
       echo "Usage: uninstall.sh [--purge]"
       echo "  --purge  also remove ~/.agent-tracker (hook script + session data)"
       exit 0
       ;;
-    *) echo "Unknown option: $arg (try --help)" >&2; exit 2 ;;
+    *)
+      echo "Unknown option: $arg (try --help)" >&2
+      exit 2
+      ;;
   esac
 done
 
@@ -30,7 +33,7 @@ FAILED=0
 if [ -f "$SETTINGS" ] && grep -q "agent-tracker-hook" "$SETTINGS"; then
   cp "$SETTINGS" "$SETTINGS.agent-tracker-uninstall-backup"
   echo "Backed up $SETTINGS to $SETTINGS.agent-tracker-uninstall-backup"
-  if ! python3 - <<'PYEOF'
+  if ! python3 - << 'PYEOF'; then
 import json
 import os
 import sys
@@ -82,7 +85,6 @@ if removed:
 else:
     print("No agent-tracker hook entries found in settings.json")
 PYEOF
-  then
     echo "WARNING: Claude Code cleanup failed — fix $SETTINGS and re-run. Continuing with Codex." >&2
     FAILED=1
   fi
@@ -94,7 +96,7 @@ fi
 if [ -f "$CONFIG" ] && grep -q "agent-tracker-hook" "$CONFIG"; then
   cp "$CONFIG" "$CONFIG.agent-tracker-uninstall-backup"
   echo "Backed up $CONFIG to $CONFIG.agent-tracker-uninstall-backup"
-  if ! python3 - <<'PYEOF'
+  if ! python3 - << 'PYEOF'; then
 import os
 import sys
 
@@ -146,7 +148,6 @@ else:
     )
     sys.exit(1)
 PYEOF
-  then
     echo "WARNING: Codex cleanup failed — check $CONFIG manually." >&2
     FAILED=1
   fi

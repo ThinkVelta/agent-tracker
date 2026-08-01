@@ -19,7 +19,8 @@ final class CodexSessionScanner: ObservableObject {
 
     static var defaultRootDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_CODEX_DIR"],
-           !override.isEmpty {
+            !override.isEmpty
+        {
             return URL(fileURLWithPath: override)
         }
         return FileManager.default.homeDirectoryForCurrentUser
@@ -104,7 +105,7 @@ final class CodexScanWorker: @unchecked Sendable {
                 self.refreshLivenessLocked()
                 self.publishLocked()
             } else {
-                self.startLocked() // root directory may have appeared since
+                self.startLocked()  // root directory may have appeared since
             }
         }
     }
@@ -120,7 +121,8 @@ final class CodexScanWorker: @unchecked Sendable {
         var isDirectory: ObjCBool = false
         // Missing root -> inert: no errors, empty output. refresh() retries.
         guard FileManager.default.fileExists(atPath: root.path, isDirectory: &isDirectory),
-              isDirectory.boolValue else { return }
+            isDirectory.boolValue
+        else { return }
         started = true
         let startedAt = Date()
         // Liveness FIRST: lsof tells us which rollouts are actually held open
@@ -128,9 +130,12 @@ final class CodexScanWorker: @unchecked Sendable {
         // has to cover just-created files — not bootstrap-and-discard hundreds
         // of dead rollouts from a busy day.
         refreshLivenessLocked()
-        debugLog("first liveness done: \(trackers.count) tracker(s), \(holders.count) held, after \(Self.elapsed(since: startedAt))")
+        debugLog(
+            "first liveness done: \(trackers.count) tracker(s), \(holders.count) held, after \(Self.elapsed(since: startedAt))"
+        )
         scanDayDirectoriesLocked()
-        debugLog("day scan done: \(trackers.count) tracker(s) after \(Self.elapsed(since: startedAt))")
+        debugLog(
+            "day scan done: \(trackers.count) tracker(s) after \(Self.elapsed(since: startedAt))")
         startStreamLocked()
         publishLocked()
     }
@@ -141,7 +146,7 @@ final class CodexScanWorker: @unchecked Sendable {
 
     private func debugLog(_ message: String) {
         #if DEBUG
-        print("[codex-scan] \(message)")
+            print("[codex-scan] \(message)")
         #endif
     }
 
@@ -173,15 +178,17 @@ final class CodexScanWorker: @unchecked Sendable {
         // The stream callback holds an unretained reference to self; safe
         // because stopLocked() invalidates the stream before self can go away
         // (stop() retains self until it runs).
-        guard let stream = FSEventStreamCreate(
-            kCFAllocatorDefault,
-            codexScanEventCallback,
-            &context,
-            [root.path] as CFArray,
-            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            0.3,
-            flags
-        ) else { return }
+        guard
+            let stream = FSEventStreamCreate(
+                kCFAllocatorDefault,
+                codexScanEventCallback,
+                &context,
+                [root.path] as CFArray,
+                FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+                0.3,
+                flags
+            )
+        else { return }
         FSEventStreamSetDispatchQueue(stream, queue)
         FSEventStreamStart(stream)
         self.stream = stream
@@ -223,17 +230,21 @@ final class CodexScanWorker: @unchecked Sendable {
         let days = [now, calendar.date(byAdding: .day, value: -1, to: now) ?? now]
         for day in days {
             let components = calendar.dateComponents([.year, .month, .day], from: day)
-            let directory = root
+            let directory =
+                root
                 .appendingPathComponent(String(format: "%04d", components.year ?? 0))
                 .appendingPathComponent(String(format: "%02d", components.month ?? 0))
                 .appendingPathComponent(String(format: "%02d", components.day ?? 0))
-            guard let files = try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
-            ) else { continue }
+            guard
+                let files = try? FileManager.default.contentsOfDirectory(
+                    at: directory, includingPropertiesForKeys: [.contentModificationDateKey]
+                )
+            else { continue }
             for file in files where file.pathExtension == "jsonl" {
                 let path = file.standardizedFileURL.path
                 guard trackers[path] == nil, holders[path] == nil else { continue }
-                let mtime = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
+                let mtime =
+                    (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
                 if now.timeIntervalSince(mtime) <= Self.newFileGrace {
                     bootstrapLocked(path: path)
@@ -256,8 +267,9 @@ final class CodexScanWorker: @unchecked Sendable {
 
     private func processFileLocked(_ path: String) {
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-              let size = (attributes[.size] as? NSNumber)?.uint64Value else {
-            trackers.removeValue(forKey: path) // deleted
+            let size = (attributes[.size] as? NSNumber)?.uint64Value
+        else {
+            trackers.removeValue(forKey: path)  // deleted
             return
         }
         let mtime = attributes[.modificationDate] as? Date ?? Date()
@@ -273,7 +285,8 @@ final class CodexScanWorker: @unchecked Sendable {
         }
         if size > tracker.offset {
             if let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)),
-               (try? handle.seek(toOffset: tracker.offset)) != nil {
+                (try? handle.seek(toOffset: tracker.offset)) != nil
+            {
                 let data = (try? handle.readToEnd()) ?? Data()
                 try? handle.close()
                 // Only complete lines; a partially written trailing line stays
@@ -297,7 +310,8 @@ final class CodexScanWorker: @unchecked Sendable {
         // for transient reasons, and trusting an empty pass would wrongly
         // prune every live session at once.
         if let output = Self.runProcess("/usr/sbin/lsof", ["-c", "codex", "-F", "pn"], timeout: 5),
-           output.hasPrefix("p") || output.contains("\np") {
+            output.hasPrefix("p") || output.contains("\np")
+        {
             let previouslyHeld = Set(holders.keys)
             holders = Self.parseLsofOutput(output, rootPath: root.path)
             debugLog("lsof pass: \(holders.count) held rollout(s)")
@@ -318,7 +332,8 @@ final class CodexScanWorker: @unchecked Sendable {
             // otherwise keep the current set unchanged (possibly stale until
             // lsof recovers on a later refresh).
             if let output = Self.runProcess("/usr/bin/pgrep", ["-x", "codex"], timeout: 5),
-               output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            {
                 trackers.removeAll()
                 holders.removeAll()
             }
@@ -339,8 +354,9 @@ final class CodexScanWorker: @unchecked Sendable {
                 continue
             }
             guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-                  let mtime = attributes[.modificationDate] as? Date else {
-                trackers.removeValue(forKey: path) // file gone
+                let mtime = attributes[.modificationDate] as? Date
+            else {
+                trackers.removeValue(forKey: path)  // file gone
                 continue
             }
             if now.timeIntervalSince(mtime) > Self.newFileGrace {
@@ -377,11 +393,12 @@ final class CodexScanWorker: @unchecked Sendable {
     private func publishLocked() {
         var snapshots: [CodexThreadSnapshot] = []
         for (path, tracker) in trackers {
-            snapshots.append(CodexThreadSnapshot(
-                accumulator: tracker.accumulator,
-                fileActivityAt: tracker.lastActivity,
-                holderPid: holders[path]
-            ))
+            snapshots.append(
+                CodexThreadSnapshot(
+                    accumulator: tracker.accumulator,
+                    fileActivityAt: tracker.lastActivity,
+                    holderPid: holders[path]
+                ))
         }
         let sessions = CodexSessionGrouper.sessions(from: snapshots)
 
@@ -392,7 +409,8 @@ final class CodexScanWorker: @unchecked Sendable {
         var threadIdToSession: [String: String] = [:]
         for tracker in trackers.values {
             guard let meta = tracker.accumulator.meta,
-                  produced.contains(meta.sessionId) else { continue }
+                produced.contains(meta.sessionId)
+            else { continue }
             threadIdToSession[meta.sessionId] = meta.sessionId
             if let threadId = meta.threadId { threadIdToSession[threadId] = meta.sessionId }
         }
@@ -428,11 +446,11 @@ final class CodexScanWorker: @unchecked Sendable {
             process.terminate()
             let pid = process.processIdentifier
             DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
-                kill(pid, SIGKILL) // hard kill if SIGTERM was ignored
+                kill(pid, SIGKILL)  // hard kill if SIGTERM was ignored
             }
             return nil
         }
-        reader.sync {} // wait for the drain to finish
+        reader.sync {}  // wait for the drain to finish
         return String(data: buffer.data, encoding: .utf8)
     }
 }
@@ -445,7 +463,9 @@ private final class ProcessOutputBuffer: @unchecked Sendable {
 private let codexScanEventCallback: FSEventStreamCallback = { _, info, _, eventPaths, _, _ in
     guard let info else { return }
     let worker = Unmanaged<CodexScanWorker>.fromOpaque(info).takeUnretainedValue()
-    guard let paths = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue()
-        as? [String] else { return }
+    guard
+        let paths = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue()
+            as? [String]
+    else { return }
     worker.handleEvents(paths: paths)
 }

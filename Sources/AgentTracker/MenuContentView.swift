@@ -81,9 +81,10 @@ struct MenuContentView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(Capsule().fill(filter == state ? Color.primary.opacity(0.12) : .clear))
-            .overlay(Capsule().stroke(
-                filter == state ? Color.primary.opacity(0.25) : .clear, lineWidth: 1
-            ))
+            .overlay(
+                Capsule().stroke(
+                    filter == state ? Color.primary.opacity(0.25) : .clear, lineWidth: 1
+                ))
         }
         .buttonStyle(.plain)
         .help("Show only \"\(state.label)\" sessions")
@@ -111,10 +112,12 @@ struct MenuContentView: View {
                     }
                 }
                 if filteredSessions.count > Self.maxVisibleRows {
-                    Text("+\(filteredSessions.count - Self.maxVisibleRows) more — use the dot filters to narrow down")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.vertical, 6)
+                    Text(
+                        "+\(filteredSessions.count - Self.maxVisibleRows) more — use the dot filters to narrow down"
+                    )
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
                 }
             }
         }

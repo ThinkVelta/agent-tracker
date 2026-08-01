@@ -48,7 +48,10 @@ def agent_pid():
         try:
             out = subprocess.run(
                 ["ps", "-o", "ppid=,comm=", "-p", str(pid)],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             ).stdout.strip()
             if not out:
                 break
@@ -62,7 +65,7 @@ def agent_pid():
             if parent <= 1:
                 break
             pid = parent
-        except Exception:
+        except Exception:  # noqa: BLE001 — the hook must never break a session
             break
     return fallback
 
@@ -76,7 +79,7 @@ def load_state(path):
     try:
         with open(path) as f:
             return json.load(f)
-    except Exception:
+    except Exception:  # noqa: BLE001 — corrupt state must not break a session
         return {}
 
 
@@ -92,14 +95,16 @@ def update(provider, session_id, event, state, reason, extra):
     current = load_state(path)
     data = {**current}
     data.update({k: v for k, v in extra.items() if v})
-    data.update({
-        "schema": SCHEMA_VERSION,
-        "provider": provider,
-        "sessionId": session_id,
-        "lastEvent": event,
-        "updatedAt": now(),
-        "pid": agent_pid(),
-    })
+    data.update(
+        {
+            "schema": SCHEMA_VERSION,
+            "provider": provider,
+            "sessionId": session_id,
+            "lastEvent": event,
+            "updatedAt": now(),
+            "pid": agent_pid(),
+        }
+    )
     if state is not None:
         if current.get("state") != state:
             data["stateChangedAt"] = now()
@@ -113,7 +118,7 @@ def update(provider, session_id, event, state, reason, extra):
 def handle_claude():
     try:
         payload = json.load(sys.stdin)
-    except Exception:
+    except Exception:  # noqa: BLE001 — malformed input must not break a session
         return
     event = payload.get("hook_event_name", "")
     session_id = payload.get("session_id") or "unknown"
@@ -146,7 +151,7 @@ def handle_claude():
 def handle_codex(args):
     try:
         payload = json.loads(args[0]) if args else {}
-    except Exception:
+    except Exception:  # noqa: BLE001 — malformed input must not break a session
         payload = {}
 
     def get(*keys):
@@ -170,7 +175,14 @@ def handle_codex(args):
 
     event = get("type") or "unknown"
     if event == "agent-turn-complete":
-        update("codex", session_id, event, "needsYou", "Turn complete — ready for you", extra)
+        update(
+            "codex",
+            session_id,
+            event,
+            "needsYou",
+            "Turn complete — ready for you",
+            extra,
+        )
     else:
         update("codex", session_id, event, "needsYou", "Needs your attention", extra)
 
@@ -187,5 +199,5 @@ def main():
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except Exception:
-        sys.exit(0)  # never break the agent session
+    except Exception:  # noqa: BLE001 — never break the agent session
+        sys.exit(0)

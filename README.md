@@ -21,7 +21,7 @@ window — across Spaces — and marks the session as acknowledged.
 
 ## How it works
 
-```
+```text
 Claude Code hooks ──▶                            ┌──▶ menu bar icon (3 dots + counts)
                        ~/.agent-tracker/         │
 Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ dropdown session list

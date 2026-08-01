@@ -20,12 +20,14 @@ enum StatusIconRenderer {
             NSAttributedString(string: "\($0.count)", attributes: [.font: font])
         }
         let textWidths = strings.map { ceil($0.size().width) }
-        let width = textWidths.reduce(0, +)
+        let width =
+            textWidths.reduce(0, +)
             + CGFloat(items.count) * (dotSize + dotTextGap)
             + CGFloat(items.count - 1) * itemGap
             + 2
 
-        let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) { rect in
+        let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) {
+            rect in
             var x: CGFloat = 1
             for (index, item) in items.enumerated() {
                 let dimmed = item.count == 0

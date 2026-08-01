@@ -30,7 +30,7 @@ fi
 
 # 'notify' is a top-level TOML key, so it must be inserted before the first
 # [section] header — prepending is the only always-safe placement.
-python3 - <<PYEOF
+python3 - << PYEOF
 import os
 
 config_path = os.path.expanduser("~/.codex/config.toml")

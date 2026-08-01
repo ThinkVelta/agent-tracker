@@ -16,10 +16,13 @@ final class SessionStore: ObservableObject {
 
     static let sessionsDirectory: URL = {
         let base: URL
-        if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_DIR"], !override.isEmpty {
+        if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_DIR"],
+            !override.isEmpty
+        {
             base = URL(fileURLWithPath: override)
         } else {
-            base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".agent-tracker")
+            base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+                ".agent-tracker")
         }
         return base.appendingPathComponent("sessions")
     }()
@@ -86,7 +89,8 @@ final class SessionStore: ObservableObject {
         ) {
             for file in files where file.pathExtension == "json" {
                 guard let data = try? Data(contentsOf: file),
-                      var session = try? decoder.decode(AgentSession.self, from: data) else { continue }
+                    var session = try? decoder.decode(AgentSession.self, from: data)
+                else { continue }
                 if let pid = session.pid, pid > 0, !Self.isProcessAlive(pid) {
                     // Agent died without a clean SessionEnd (killed terminal, crash).
                     try? fileManager.removeItem(at: file)
@@ -118,7 +122,8 @@ final class SessionStore: ObservableObject {
             if !scanned.isEmpty {
                 merged.removeAll { row in
                     guard row.provider == "codex",
-                          let target = threadMap[row.sessionId] else { return false }
+                        let target = threadMap[row.sessionId]
+                    else { return false }
                     if let termProgram = row.termProgram {
                         termProgramBySession[target] = termProgram
                     }
@@ -129,13 +134,14 @@ final class SessionStore: ObservableObject {
                 let liveIds = Set(scanned.map(\.sessionId))
                 codexAcknowledgedAt = codexAcknowledgedAt.filter { liveIds.contains($0.key) }
             }
-            merged.append(contentsOf: scanned.map { session in
-                var session = session
-                if session.termProgram == nil {
-                    session.termProgram = termProgramBySession[session.sessionId]
-                }
-                return applyAcknowledgement(session)
-            })
+            merged.append(
+                contentsOf: scanned.map { session in
+                    var session = session
+                    if session.termProgram == nil {
+                        session.termProgram = termProgramBySession[session.sessionId]
+                    }
+                    return applyAcknowledgement(session)
+                })
         }
 
         sessions = merged.sorted { lhs, rhs in
@@ -145,15 +151,27 @@ final class SessionStore: ObservableObject {
             return (lhs.stateChangedAt ?? .distantPast) > (rhs.stateChangedAt ?? .distantPast)
         }
         #if DEBUG
-        let counts = counts
-        print("[store] \(sessions.count) sessions — \(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle: \(sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }.joined(separator: ", "))")
+            // Change-only: rebuilds fire on every hook event and timer tick; the
+            // periodic "[codex-scan] lsof pass" line remains as the heartbeat.
+            let counts = counts
+            let summary =
+                "\(sessions.count) sessions — \(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle: \(sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }.joined(separator: ", "))"
+            if summary != lastLoggedSummary {
+                lastLoggedSummary = summary
+                print("[store] \(summary)")
+            }
         #endif
     }
 
+    #if DEBUG
+        private var lastLoggedSummary = ""
+    #endif
+
     private func applyAcknowledgement(_ session: AgentSession) -> AgentSession {
         guard session.state == .needsYou,
-              let ackDate = codexAcknowledgedAt[session.sessionId],
-              ackDate > (session.stateChangedAt ?? .distantPast) else { return session }
+            let ackDate = codexAcknowledgedAt[session.sessionId],
+            ackDate > (session.stateChangedAt ?? .distantPast)
+        else { return session }
         var acknowledged = session
         acknowledged.state = .idle
         acknowledged.reason = "Acknowledged"
@@ -166,11 +184,14 @@ final class SessionStore: ObservableObject {
         guard session.state == .needsYou else { return }
         if let fileURL = session.fileURL {
             guard let data = try? Data(contentsOf: fileURL),
-                  var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                var object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return }
             object["state"] = SessionState.idle.rawValue
             object["reason"] = "Acknowledged"
             object["stateChangedAt"] = ISO8601DateFormatter().string(from: Date())
-            if let updated = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) {
+            if let updated = try? JSONSerialization.data(
+                withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+            {
                 try? updated.write(to: fileURL, options: .atomic)
             }
             reload()

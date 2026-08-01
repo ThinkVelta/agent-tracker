@@ -64,34 +64,41 @@ enum CodexRolloutParser {
 
     static func parseLine(_ line: String) -> CodexRolloutLine {
         guard let data = line.data(using: .utf8),
-              let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-              let type = object["type"] as? String else { return .insignificant }
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let type = object["type"] as? String
+        else { return .insignificant }
         let timestamp = (object["timestamp"] as? String).flatMap(parseDate)
 
         switch type {
         case "session_meta":
             guard let payload = object["payload"] as? [String: Any],
-                  let sessionId = payload["session_id"] as? String else { return .insignificant }
-            return .sessionMeta(CodexSessionMeta(
-                sessionId: sessionId,
-                threadId: payload["id"] as? String,
-                cwd: payload["cwd"] as? String,
-                isSubagent: (payload["thread_source"] as? String) == "subagent",
-                timestamp: timestamp
-            ))
+                let sessionId = payload["session_id"] as? String
+            else { return .insignificant }
+            return .sessionMeta(
+                CodexSessionMeta(
+                    sessionId: sessionId,
+                    threadId: payload["id"] as? String,
+                    cwd: payload["cwd"] as? String,
+                    isSubagent: (payload["thread_source"] as? String) == "subagent",
+                    timestamp: timestamp
+                ))
         case "event_msg":
             guard let payload = object["payload"] as? [String: Any],
-                  let eventType = payload["type"] as? String else { return .insignificant }
+                let eventType = payload["type"] as? String
+            else { return .insignificant }
             switch eventType {
             case "task_started":
-                return .significantEvent(CodexSignificantEvent(kind: .taskStarted, timestamp: timestamp))
+                return .significantEvent(
+                    CodexSignificantEvent(kind: .taskStarted, timestamp: timestamp))
             case "task_complete":
                 let message = payload["last_agent_message"] as? String
-                return .significantEvent(CodexSignificantEvent(
-                    kind: .taskComplete(lastAgentMessage: message), timestamp: timestamp
-                ))
+                return .significantEvent(
+                    CodexSignificantEvent(
+                        kind: .taskComplete(lastAgentMessage: message), timestamp: timestamp
+                    ))
             case "turn_aborted":
-                return .significantEvent(CodexSignificantEvent(kind: .turnAborted, timestamp: timestamp))
+                return .significantEvent(
+                    CodexSignificantEvent(kind: .turnAborted, timestamp: timestamp))
             default:
                 // agent_message, user_message, token_count, … — not state-relevant.
                 return .insignificant
@@ -122,7 +129,8 @@ enum CodexRolloutParser {
         guard let lastNewline = data.lastIndex(of: UInt8(ascii: "\n")) else { return ([], 0) }
         let consumed = data.distance(from: data.startIndex, to: lastNewline) + 1
         let complete = data[data.startIndex..<lastNewline]
-        let lines = complete
+        let lines =
+            complete
             .split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
             .compactMap { String(data: $0, encoding: .utf8) }
         return (lines, consumed)
@@ -148,7 +156,7 @@ struct CodexThreadAccumulator: Equatable {
     mutating func apply(_ parsed: CodexRolloutLine) {
         switch parsed {
         case .sessionMeta(let meta):
-            self.meta = meta // later metas (resume) win
+            self.meta = meta  // later metas (resume) win
         case .significantEvent(let event):
             lastSignificant = event
             if case .taskComplete(let message) = event.kind, let message, !message.isEmpty {
@@ -172,7 +180,7 @@ struct CodexThreadAccumulator: Equatable {
 // MARK: - Bootstrap (streaming scan)
 
 extension CodexThreadAccumulator {
-    static let defaultChunkSize = 1 << 20 // 1 MB
+    static let defaultChunkSize = 1 << 20  // 1 MB
 
     /// Bootstraps an accumulator from an existing (possibly 10+ MB) rollout
     /// file by streaming it whole in bounded chunks. The `mightBeSignificant`
@@ -236,26 +244,28 @@ enum CodexSessionGrouper {
             let (state, reason) = accumulator.derivedState
             let pid = primary.holderPid ?? group.compactMap(\.holderPid).first
             let updatedAt = group.compactMap(\.fileActivityAt).max()
-            let stateChangedAt = accumulator.lastSignificant?.timestamp
+            let stateChangedAt =
+                accumulator.lastSignificant?.timestamp
                 ?? accumulator.meta?.timestamp
                 ?? primary.fileActivityAt
 
-            sessions.append(AgentSession(
-                schema: nil,
-                provider: "codex",
-                sessionId: sessionId,
-                pid: pid,
-                cwd: accumulator.meta?.cwd,
-                state: state,
-                reason: reason,
-                lastEvent: lastEventName(accumulator.lastSignificant?.kind),
-                updatedAt: updatedAt,
-                stateChangedAt: stateChangedAt,
-                transcriptPath: nil,
-                termProgram: nil,
-                lastMessage: accumulator.lastAgentMessage,
-                fileURL: nil
-            ))
+            sessions.append(
+                AgentSession(
+                    schema: nil,
+                    provider: "codex",
+                    sessionId: sessionId,
+                    pid: pid,
+                    cwd: accumulator.meta?.cwd,
+                    state: state,
+                    reason: reason,
+                    lastEvent: lastEventName(accumulator.lastSignificant?.kind),
+                    updatedAt: updatedAt,
+                    stateChangedAt: stateChangedAt,
+                    transcriptPath: nil,
+                    termProgram: nil,
+                    lastMessage: accumulator.lastAgentMessage,
+                    fileURL: nil
+                ))
         }
         return sessions.sorted { $0.sessionId < $1.sessionId }
     }
