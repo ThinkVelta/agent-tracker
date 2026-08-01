@@ -207,7 +207,7 @@ final class TerminalFocuserTests {
         )
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let titles = ["…/Documents/ProjectsVelta/Planner", "⠋ Planner", "Planner"]
-        let ranking = TerminalFocuser.rankTitles(titles, candidates: candidates, state: .needsYou)
+        let ranking = WindowIdentity.rankTitles(titles, candidates: candidates, state: .needsYou)
         #expect(ranking?.index == 2)
         #expect(ranking?.score == 80)
         #expect(ranking?.tiedWithWinner == 0)
@@ -217,7 +217,7 @@ final class TerminalFocuserTests {
         let session = AgentSession(
             provider: "codex", sessionId: "c2", cwd: "/Users/dev/planner", state: .running)
         let candidates = TerminalFocuser.titleCandidates(for: session)
-        let ranking = TerminalFocuser.rankTitles(
+        let ranking = WindowIdentity.rankTitles(
             ["planner", "⠸ planner"], candidates: candidates, state: .running)
         #expect(ranking?.index == 1)
         #expect(ranking?.tiedWithWinner == 0)
@@ -230,7 +230,7 @@ final class TerminalFocuserTests {
             for: session, exactTitle: "Fix the flaky scanner test")
         // The exact-title window is spinning (stale title paint) and the bare
         // project window is not: the far stronger title match must still win.
-        let ranking = TerminalFocuser.rankTitles(
+        let ranking = WindowIdentity.rankTitles(
             ["planner", "⠋ Fix the flaky scanner test"], candidates: candidates, state: .needsYou)
         #expect(ranking?.index == 1)
         #expect(ranking?.activityAgrees == false)
@@ -240,7 +240,7 @@ final class TerminalFocuserTests {
         let session = AgentSession(
             provider: "codex", sessionId: "c4", cwd: "/Users/dev/planner", state: .needsYou)
         let candidates = TerminalFocuser.titleCandidates(for: session)
-        let ranking = TerminalFocuser.rankTitles(
+        let ranking = WindowIdentity.rankTitles(
             ["planner", "planner"], candidates: candidates, state: .needsYou)
         #expect(ranking?.index == 0)
         #expect(ranking?.tiedWithWinner == 1)
@@ -251,8 +251,8 @@ final class TerminalFocuserTests {
             provider: "codex", sessionId: "c5", cwd: "/Users/dev/planner", state: .needsYou)
         let candidates = TerminalFocuser.titleCandidates(for: session)
         #expect(
-            TerminalFocuser.rankTitles(["Mail", "Slack"], candidates: candidates, state: .needsYou)
+            WindowIdentity.rankTitles(["Mail", "Slack"], candidates: candidates, state: .needsYou)
                 == nil)
-        #expect(TerminalFocuser.rankTitles([], candidates: candidates, state: .needsYou) == nil)
+        #expect(WindowIdentity.rankTitles([], candidates: candidates, state: .needsYou) == nil)
     }
 }

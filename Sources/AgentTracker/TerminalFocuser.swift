@@ -101,6 +101,22 @@ enum TerminalFocuser {
         }
         log("title candidates: \(described.joined(separator: ", "))")
 
+        // Strongest identity first. An exact-only candidate is a name for
+        // THIS session (statusline-sourced), so the Window menu — which sees
+        // every Space — gets first refusal. Everything else is per-project at
+        // best, so the structural cwd match goes ahead of it: a title tie can
+        // otherwise land on a different agent's session in another project.
+        let hasSessionIdentity = candidates.contains(where: \.exactOnly)
+        if hasSessionIdentity,
+            let outcome = pressWindowMenuItem(
+                in: app, candidates: candidates, state: session.state, exactOnly: true)
+        {
+            return outcome
+        }
+        if let outcome = raiseByWorkingDirectory(in: app, session: session, candidates: candidates)
+        {
+            return outcome
+        }
         if let outcome = pressWindowMenuItem(in: app, candidates: candidates, state: session.state)
         {
             return outcome
@@ -115,16 +131,69 @@ enum TerminalFocuser {
 
     // MARK: - Focus strategies
 
+    /// Primary: the window whose live working directory is the session's, read
+    /// from the Accessibility `AXDocument` attribute. Only sees the current
+    /// Space, like every AX window query, so a miss falls through to the
+    /// title-based paths rather than being treated as "no such window".
+    private static func raiseByWorkingDirectory(
+        in app: NSRunningApplication,
+        session: AgentSession,
+        candidates: [TitleCandidate]
+    ) -> Outcome? {
+        guard let cwd = session.cwd, !cwd.isEmpty else { return nil }
+        guard let windows = AXAccess.windows(of: app) else { return nil }
+
+        let directories = windows.map { AXAccess.documentPath(of: $0) }
+        let hits = WindowIdentity.matchingIndices(
+            windowDirectories: directories, sessionCwd: cwd)
+        guard !hits.isEmpty else {
+            let known = directories.compactMap { $0 }.count
+            log(
+                "no window on this Space reports cwd \(WindowIdentity.normalize(cwd)) "
+                    + "(\(known)/\(windows.count) window(s) reported one) — falling back to titles")
+            return nil
+        }
+
+        // Several windows in one directory: sibling sessions in the same repo.
+        // Their titles and activity are all that is left to separate them.
+        let titles = hits.map { AXAccess.title(of: windows[$0]) ?? "" }
+        let chosen: Int
+        if hits.count == 1 {
+            chosen = hits[0]
+        } else if let ranking = WindowIdentity.rankTitles(
+            titles, candidates: candidates, state: session.state),
+            ranking.tiedWithWinner == 0
+        {
+            chosen = hits[ranking.index]
+        } else {
+            log(
+                "ambiguous: \(hits.count) window(s) share cwd \(WindowIdentity.normalize(cwd)) "
+                    + "and nothing distinguishes them — raising the first")
+            chosen = hits[0]
+        }
+
+        let windowTitle = AXAccess.title(of: windows[chosen]) ?? ""
+        log("raising window \"\(windowTitle)\" by working directory (exact)")
+        AXAccess.raise(windows[chosen])
+        app.activate()
+        return .focusedWindow(title: windowTitle)
+    }
+
     /// Primary: the app's Window menu. Unlike the AX window list (current Space
     /// only), it enumerates every window AND tab across all Spaces, and
     /// pressing an entry performs the exact jump the user would.
+    /// - Parameter exactOnly: restrict to the session's own name, ignoring the
+    ///   path fallbacks that several sessions can share.
     private static func pressWindowMenuItem(
         in app: NSRunningApplication,
         candidates: [TitleCandidate],
-        state: SessionState
+        state: SessionState,
+        exactOnly: Bool = false
     ) -> Outcome? {
-        guard let menu = windowMenu(of: app), let items = children(of: menu) else { return nil }
-        log("\(items.count) Window-menu item(s):")
+        let candidates = exactOnly ? candidates.filter(\.exactOnly) : candidates
+        guard !candidates.isEmpty else { return nil }
+        guard let items = AXAccess.windowMenuItems(of: app) else { return nil }
+        log("\(items.count) Window-menu item(s)\(exactOnly ? " (session name only)" : ""):")
         guard
             let hit = bestTitleMatch(
                 in: items, candidates: candidates, state: state, logZeroScores: false)
@@ -146,9 +215,7 @@ enum TerminalFocuser {
         candidates: [TitleCandidate],
         state: SessionState
     ) -> Outcome? {
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        guard let windows = copyAttribute(axApp, kAXWindowsAttribute as String) as? [AXUIElement]
-        else {
+        guard let windows = AXAccess.windows(of: app) else {
             log(
                 "AXWindows query failed — permission granted but not yet effective? "
                     + "Try restarting AgentTracker."
@@ -161,30 +228,12 @@ enum TerminalFocuser {
                 in: windows, candidates: candidates, state: state, logZeroScores: true)
         else { return nil }
         log("raising window \"\(best.title)\" (score \(best.score))")
-        AXUIElementPerformAction(best.element, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(best.element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXAccess.raise(best.element)
         app.activate()
         return .focusedWindow(title: best.title)
     }
 
     // MARK: - AX plumbing
-
-    /// Finds the app's "Window" menu. Matching the English title is a
-    /// documented limitation; localized menu bars fall back to the AX window
-    /// list.
-    private static func windowMenu(of app: NSRunningApplication) -> AXUIElement? {
-        let axApp = AXUIElementCreateApplication(app.processIdentifier)
-        guard let menuBar = axElement(copyAttribute(axApp, kAXMenuBarAttribute as String)) else {
-            log("no AX menu bar exposed")
-            return nil
-        }
-        guard let topItems = children(of: menuBar) else { return nil }
-        guard let windowItem = topItems.first(where: { title(of: $0) == "Window" }) else {
-            log("no menu titled \"Window\" found")
-            return nil
-        }
-        return children(of: windowItem)?.first
-    }
 
     private static func bestTitleMatch(
         in elements: [AXUIElement],
@@ -193,7 +242,7 @@ enum TerminalFocuser {
         logZeroScores: Bool
     ) -> AXMatch? {
         let titled = elements.compactMap { element -> (element: AXUIElement, title: String)? in
-            guard let title = title(of: element), !title.isEmpty else { return nil }
+            guard let title = AXAccess.title(of: element), !title.isEmpty else { return nil }
             return (element, title)
         }
         for entry in titled {
@@ -203,7 +252,7 @@ enum TerminalFocuser {
             log("  \"\(entry.title)\" -> score \(score)\(agrees ? "" : ", activity mismatch")")
         }
         guard
-            let ranking = rankTitles(
+            let ranking = WindowIdentity.rankTitles(
                 titled.map(\.title), candidates: candidates, state: state)
         else { return nil }
         let winner = titled[ranking.index]
@@ -219,69 +268,6 @@ enum TerminalFocuser {
         return AXMatch(
             element: winner.element, title: winner.title, score: ranking.score,
             activityAgrees: ranking.activityAgrees)
-    }
-
-    struct TitleRanking: Equatable {
-        let index: Int
-        let score: Int
-        let activityAgrees: Bool
-        /// How many other titles are indistinguishable from the winner (same
-        /// score, same activity agreement) — a raise that could equally have
-        /// landed on any of them.
-        let tiedWithWinner: Int
-    }
-
-    /// Picks the window title a session should jump to, in menu order. Highest
-    /// title score wins; equal scores are broken by whether the window's busy
-    /// spinner agrees with the session's state. Pure, so the ranking (not just
-    /// the scoring) is testable. Internal for tests.
-    static func rankTitles(
-        _ titles: [String],
-        candidates: [TitleCandidate],
-        state: SessionState
-    ) -> TitleRanking? {
-        var best: TitleRanking?
-        for (index, title) in titles.enumerated() {
-            let score = matchScore(windowTitle: title, candidates: candidates)
-            guard score > 0 else { continue }
-            let agrees = activityAgrees(windowTitle: title, state: state)
-            guard let current = best else {
-                best = TitleRanking(
-                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
-                continue
-            }
-            if (score, agrees ? 1 : 0) > (current.score, current.activityAgrees ? 1 : 0) {
-                best = TitleRanking(
-                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
-            } else if score == current.score && agrees == current.activityAgrees {
-                best = TitleRanking(
-                    index: current.index, score: current.score,
-                    activityAgrees: current.activityAgrees,
-                    tiedWithWinner: current.tiedWithWinner + 1)
-            }
-        }
-        return best
-    }
-
-    private static func copyAttribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
-            return nil
-        }
-        return value
-    }
-
-    private static func axElement(_ value: CFTypeRef?) -> AXUIElement? {
-        guard let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeDowncast(value, to: AXUIElement.self)
-    }
-
-    private static func children(of element: AXUIElement) -> [AXUIElement]? {
-        copyAttribute(element, kAXChildrenAttribute as String) as? [AXUIElement]
-    }
-
-    private static func title(of element: AXUIElement) -> String? {
-        copyAttribute(element, kAXTitleAttribute as String) as? String
     }
 
     // MARK: - Matching
