@@ -88,8 +88,14 @@ enum HookSetup {
                 process.standardError = pipe
                 do {
                     try process.run()
-                    process.waitUntilExit()
+                    // Drain the pipe BEFORE waiting for exit: a child that
+                    // writes more than the pipe buffer (64KB) blocks on write
+                    // while waitUntilExit blocks on it — a mutual deadlock
+                    // that would leave onboarding stuck at "running" forever.
+                    // readDataToEndOfFile returns at EOF, i.e. when the child
+                    // exits and the write end closes.
                     let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
                     continuation.resume(
                         returning: InstallOutcome(
                             agent: agent,
