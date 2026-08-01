@@ -4,7 +4,7 @@ import AppKit
 /// grey = idle), each followed by its session count. Zero-count groups are dimmed.
 enum StatusIconRenderer {
     static func image(for counts: SessionCounts) -> NSImage {
-        let items: [(count: Int, color: NSColor)] = [
+        let items: [(total: Int, color: NSColor)] = [
             (counts.needsYou, .systemRed),
             (counts.running, .systemGreen),
             (counts.idle, .systemGray),
@@ -17,7 +17,7 @@ enum StatusIconRenderer {
         let height: CGFloat = 18
 
         let strings = items.map {
-            NSAttributedString(string: "\($0.count)", attributes: [.font: font])
+            NSAttributedString(string: "\($0.total)", attributes: [.font: font])
         }
         let textWidths = strings.map { ceil($0.size().width) }
         let width =
@@ -28,16 +28,16 @@ enum StatusIconRenderer {
 
         let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) {
             rect in
-            var x: CGFloat = 1
+            var penX: CGFloat = 1
             for (index, item) in items.enumerated() {
-                let dimmed = item.count == 0
+                let dimmed = item.total == 0
                 let dotColor = dimmed ? item.color.withAlphaComponent(0.35) : item.color
                 dotColor.setFill()
                 let dotRect = NSRect(
-                    x: x, y: (rect.height - dotSize) / 2, width: dotSize, height: dotSize
+                    x: penX, y: (rect.height - dotSize) / 2, width: dotSize, height: dotSize
                 )
                 NSBezierPath(ovalIn: dotRect).fill()
-                x += dotSize + dotTextGap
+                penX += dotSize + dotTextGap
 
                 let text = NSMutableAttributedString(attributedString: strings[index])
                 text.addAttribute(
@@ -46,8 +46,8 @@ enum StatusIconRenderer {
                     range: NSRange(location: 0, length: text.length)
                 )
                 let textSize = text.size()
-                text.draw(at: NSPoint(x: x, y: (rect.height - textSize.height) / 2))
-                x += textWidths[index] + itemGap
+                text.draw(at: NSPoint(x: penX, y: (rect.height - textSize.height) / 2))
+                penX += textWidths[index] + itemGap
             }
             return true
         }

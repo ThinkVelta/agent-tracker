@@ -6,15 +6,15 @@ final class DirectoryWatcher {
     private let source: DispatchSourceFileSystemObject
 
     init?(url: URL, onChange: @escaping () -> Void) {
-        let fd = open(url.path, O_EVTONLY)
-        guard fd >= 0 else { return nil }
+        let descriptor = open(url.path, O_EVTONLY)
+        guard descriptor >= 0 else { return nil }
         source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
+            fileDescriptor: descriptor,
             eventMask: [.write, .delete, .rename],
             queue: .main
         )
         source.setEventHandler(handler: onChange)
-        source.setCancelHandler { close(fd) }
+        source.setCancelHandler { close(descriptor) }
         source.resume()
     }
 

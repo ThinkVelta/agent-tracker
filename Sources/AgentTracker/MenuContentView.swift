@@ -112,12 +112,11 @@ struct MenuContentView: View {
                     }
                 }
                 if filteredSessions.count > Self.maxVisibleRows {
-                    Text(
-                        "+\(filteredSessions.count - Self.maxVisibleRows) more — use the dot filters to narrow down"
-                    )
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 6)
+                    let hidden = filteredSessions.count - Self.maxVisibleRows
+                    Text("+\(hidden) more — use the dot filters to narrow down")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 6)
                 }
             }
         }

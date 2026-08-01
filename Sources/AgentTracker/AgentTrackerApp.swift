@@ -45,9 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let png = rep.representation(using: .png, properties: [:])
                 {
                     try? png.write(to: URL(fileURLWithPath: path))
-                    print(
-                        "[preview] wrote \(path) (\(Int(image.size.width))x\(Int(image.size.height)) pt)"
-                    )
+                    let size = "\(Int(image.size.width))x\(Int(image.size.height))"
+                    print("[preview] wrote \(path) (\(size) pt)")
                 } else {
                     print("[preview] render failed")
                 }

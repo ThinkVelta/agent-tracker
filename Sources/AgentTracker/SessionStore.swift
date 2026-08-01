@@ -154,8 +154,11 @@ final class SessionStore: ObservableObject {
             // Change-only: rebuilds fire on every hook event and timer tick; the
             // periodic "[codex-scan] lsof pass" line remains as the heartbeat.
             let counts = counts
+            let rows = sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }
+            let tallies =
+                "\(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle"
             let summary =
-                "\(sessions.count) sessions — \(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle: \(sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }.joined(separator: ", "))"
+                "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
             if summary != lastLoggedSummary {
                 lastLoggedSummary = summary
                 print("[store] \(summary)")

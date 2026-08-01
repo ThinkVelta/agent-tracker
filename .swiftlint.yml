@@ -12,6 +12,15 @@ opt_in_rules:
   - redundant_type_annotation
   - sorted_imports
 
+# swift-format owns formatting (`make format` runs it), and its output style
+# conflicts with these three default rules — e.g. it places closure parameters
+# and opening braces on their own line after multi-line conditions, and adds
+# trailing commas in multiline collection literals. The formatter wins.
+disabled_rules:
+  - closure_parameter_position
+  - opening_brace
+  - trailing_comma
+
 # Mirrors swift-format's lineLength (100) and the editor rulers; the error
 # threshold leaves headroom for the odd unbreakable line.
 line_length:

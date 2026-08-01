@@ -1,8 +1,8 @@
 import Foundation
 
-/// Pure parsing/derivation logic for Codex rollout files
-/// (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`). No I/O beyond
-/// reading files explicitly given to it; fully unit-testable.
+// Pure parsing/derivation logic for Codex rollout files
+// (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`). No I/O beyond
+// reading files explicitly given to it; fully unit-testable.
 
 // MARK: - Parsed line model
 

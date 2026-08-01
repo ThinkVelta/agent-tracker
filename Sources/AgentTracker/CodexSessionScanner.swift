@@ -62,14 +62,12 @@ final class CodexScanWorker: @unchecked Sendable {
         var accumulator: CodexThreadAccumulator
         /// Byte offset up to which complete lines have been consumed.
         var offset: UInt64
-        /// File mtime at last observation — grace-period input and updatedAt.
+        /// File mtime at last observation.
         var lastActivity: Date
     }
 
-    /// Grace for files lsof has never reported as held, keyed on file mtime —
-    /// covers the create→open race where a just-written rollout races the lsof
-    /// pass. Old un-held rollouts (dead sessions from earlier scans) fall
-    /// outside it and are pruned on the first successful pass.
+    /// mtime-keyed grace for files lsof has never reported as held — covers
+    /// the create→open race; older un-held rollouts prune on the first pass.
     private static let newFileGrace: TimeInterval = 45
 
     private let root: URL
@@ -130,9 +128,8 @@ final class CodexScanWorker: @unchecked Sendable {
         // has to cover just-created files — not bootstrap-and-discard hundreds
         // of dead rollouts from a busy day.
         refreshLivenessLocked()
-        debugLog(
-            "first liveness done: \(trackers.count) tracker(s), \(holders.count) held, after \(Self.elapsed(since: startedAt))"
-        )
+        let held = "\(trackers.count) tracker(s), \(holders.count) held"
+        debugLog("first liveness done: \(held), after \(Self.elapsed(since: startedAt))")
         scanDayDirectoriesLocked()
         debugLog(
             "day scan done: \(trackers.count) tracker(s) after \(Self.elapsed(since: startedAt))")
@@ -303,17 +300,17 @@ final class CodexScanWorker: @unchecked Sendable {
     // MARK: - Liveness (on queue)
 
     private func refreshLivenessLocked() {
-        // lsof matches process names by prefix, so "-c codex" covers both the
-        // "codex" vendor binary and "codex-code-mode-host".
-        // An lsof pass is authoritative ONLY when it reported at least one
-        // process record: lsof exits nonzero (with empty or partial output)
-        // for transient reasons, and trusting an empty pass would wrongly
-        // prune every live session at once.
-        if let output = Self.runProcess("/usr/sbin/lsof", ["-c", "codex", "-F", "pn"], timeout: 5),
+        // "-c codex" prefix-matches both the vendor binary and
+        // codex-code-mode-host. A pass counts as authoritative only when it
+        // reported at least one process record — lsof exits nonzero with empty
+        // output for transient reasons, and trusting that would wrongly prune
+        // every live session at once.
+        if let output = ProcessProbe.run(
+            "/usr/sbin/lsof", ["-c", "codex", "-F", "pn"], timeout: 5),
             output.hasPrefix("p") || output.contains("\np")
         {
             let previouslyHeld = Set(holders.keys)
-            holders = Self.parseLsofOutput(output, rootPath: root.path)
+            holders = ProcessProbe.parseLsofOutput(output, rootPath: root.path)
             debugLog("lsof pass: \(holders.count) held rollout(s)")
             // Held files we aren't tracking yet: live sessions whose rollout
             // lives in an older day-directory.
@@ -331,7 +328,7 @@ final class CodexScanWorker: @unchecked Sendable {
             // ANY codex process is alive — if none, drop all codex sessions;
             // otherwise keep the current set unchanged (possibly stale until
             // lsof recovers on a later refresh).
-            if let output = Self.runProcess("/usr/bin/pgrep", ["-x", "codex"], timeout: 5),
+            if let output = ProcessProbe.run("/usr/bin/pgrep", ["-x", "codex"], timeout: 5),
                 output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             {
                 trackers.removeAll()
@@ -340,12 +337,9 @@ final class CodexScanWorker: @unchecked Sendable {
         }
     }
 
-    /// Runs only after a successful lsof pass, which is authoritative: a
-    /// rollout that was held on the previous pass and is un-held now means its
-    /// codex process exited — drop it immediately (dead sessions disappear
-    /// within one 30s cycle). Files never yet seen as held get a short
-    /// mtime-keyed grace covering the create→open race; old un-held rollouts
-    /// (from day-directory scans of exited sessions) prune on the first pass.
+    /// Previously-held files that are un-held now mean their codex process
+    /// exited — dropped immediately. Never-held files get a short mtime-keyed
+    /// grace for the create→open race.
     private func pruneDeadLocked(previouslyHeld: Set<String>) {
         let now = Date()
         for (path, _) in trackers where holders[path] == nil {
@@ -363,29 +357,6 @@ final class CodexScanWorker: @unchecked Sendable {
                 trackers.removeValue(forKey: path)
             }
         }
-    }
-
-    /// Parses `lsof -F pn` output ("p<pid>" then "n<path>" lines) into
-    /// {rolloutPath: pid} for .jsonl files under the watched root.
-    static func parseLsofOutput(_ output: String, rootPath: String) -> [String: Int] {
-        var result: [String: Int] = [:]
-        var currentPid: Int?
-        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-        for line in output.split(separator: "\n") {
-            guard let field = line.first else { continue }
-            let value = String(line.dropFirst())
-            switch field {
-            case "p":
-                currentPid = Int(value)
-            case "n":
-                if value.hasSuffix(".jsonl"), value.hasPrefix(prefix), let pid = currentPid {
-                    result[value] = pid
-                }
-            default:
-                break
-            }
-        }
-        return result
     }
 
     // MARK: - Publishing (on queue)
@@ -417,46 +388,6 @@ final class CodexScanWorker: @unchecked Sendable {
         onUpdate?(sessions, threadIdToSession)
     }
 
-    // MARK: - Process helper
-
-    /// Runs a short-lived tool with a hard timeout, off the main thread.
-    /// Returns stdout on normal termination (any exit code), nil on launch
-    /// failure or timeout (the process is killed on expiry).
-    private static func runProcess(
-        _ launchPath: String, _ arguments: [String], timeout: TimeInterval
-    ) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: launchPath)
-        process.arguments = arguments
-        let stdout = Pipe()
-        process.standardOutput = stdout
-        process.standardError = FileHandle.nullDevice
-
-        let finished = DispatchSemaphore(value: 0)
-        process.terminationHandler = { _ in finished.signal() }
-        do { try process.run() } catch { return nil }
-
-        // Drain stdout on a separate queue so a large output can't deadlock the
-        // pipe while we wait for termination.
-        let buffer = ProcessOutputBuffer()
-        let reader = DispatchQueue(label: "agent-tracker.codex-scanner.read")
-        reader.async { buffer.data = stdout.fileHandleForReading.readDataToEndOfFile() }
-
-        if finished.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            let pid = process.processIdentifier
-            DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
-                kill(pid, SIGKILL)  // hard kill if SIGTERM was ignored
-            }
-            return nil
-        }
-        reader.sync {}  // wait for the drain to finish
-        return String(data: buffer.data, encoding: .utf8)
-    }
-}
-
-private final class ProcessOutputBuffer: @unchecked Sendable {
-    var data = Data()
 }
 
 /// C callback for the FSEvent stream; runs on the worker's dispatch queue.
