@@ -11,8 +11,19 @@ import ApplicationServices
 /// silencing a red session is worse than leaving it red.
 @MainActor
 final class TerminalFocusObserver {
-    /// How long one window must stay focused before it counts as "visited".
-    static let dwell: TimeInterval = 3
+    /// How long one window must stay focused before it counts as "visited",
+    /// absent a stored preference.
+    nonisolated static let defaultDwell: TimeInterval = 3
+
+    /// Pure so the off-switch and the threshold are testable: a dwell of 0 (or
+    /// less) disables auto-acknowledge outright — it must never satisfy, not
+    /// even for a window that has been focused all day.
+    nonisolated static func dwellSatisfied(
+        since: Date?, now: Date, dwell: TimeInterval
+    ) -> Bool {
+        guard dwell > 0, let since else { return false }
+        return now.timeIntervalSince(since) >= dwell
+    }
 
     private weak var store: SessionStore?
     private var pollTimer: Timer?
@@ -74,7 +85,9 @@ final class TerminalFocusObserver {
             stableSince = Date()
             return
         }
-        guard let since = stableSince, Date().timeIntervalSince(since) >= Self.dwell,
+        guard
+            Self.dwellSatisfied(
+                since: stableSince, now: Date(), dwell: Preferences.shared.autoAckDwell),
             let store
         else { return }
         // Match against ALL sessions: a running sibling whose window could

@@ -75,6 +75,10 @@ into it.
 - Open PRs into `main`; a human merges every PR — never `gh pr merge`
 - Never `git commit --no-verify` — a PreToolUse hook blocks all of the above mechanically
 - PRs receive an automated AI review comment; address its points or reply explaining why not
+- **Comment before pushing, always**: the Codex reviewer snapshots the PR at the moment new
+  commits arrive, so an explanation posted after the push is invisible to the round that push
+  triggers. Post the reply comment (fix rationale or reasoned decline) first, then push —
+  otherwise every round burns a CI cycle re-litigating what was already answered
 
 ## Before finishing any task
 

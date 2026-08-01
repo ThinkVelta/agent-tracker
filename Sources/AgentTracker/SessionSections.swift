@@ -18,6 +18,17 @@ enum SessionSections {
         var hiddenByBudget: Int { isCollapsed ? 0 : total - rows.count }
     }
 
+    /// While a filter or search narrows the list, every section must show its
+    /// matches — including one the user collapsed by hand earlier. Forcing the
+    /// idle override open (rather than dropping it) means the manual choice
+    /// returns intact once the narrowing clears.
+    static func overridesForNarrowing(
+        _ overrides: [SessionState: Bool], narrowing: Bool
+    ) -> [SessionState: Bool] {
+        guard narrowing else { return overrides }
+        return overrides.merging([.idle: false]) { _, forced in forced }
+    }
+
     /// - Parameters:
     ///   - overrides: explicit per-state collapse choices, which always win.
     ///   - autoCollapseIdle: whether idle *may* fold itself away. False while a

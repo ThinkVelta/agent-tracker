@@ -6,6 +6,9 @@ struct MenuContentView: View {
     /// terminal so the popover doesn't float over the window it just raised.
     var dismiss: () -> Void = {}
 
+    @ObservedObject private var preferences = Preferences.shared
+    @Environment(\.openSettings) private var openSettings
+
     @State private var searchText = ""
     /// Explicit collapse choices, which override the automatic idle folding
     /// below. Absent means "whatever the list thinks is sensible".
@@ -29,10 +32,22 @@ struct MenuContentView: View {
     }
 
     private var sections: [SessionSections.Section] {
-        SessionSections.build(
+        // A filter or search always expands idle — hiding matches would lie
+        // about how many things matched — and the preference decides the rest.
+        let folding = preferences.idleFolding
+        let narrowing = store.selectedFilter != nil || !query.isEmpty
+        return SessionSections.build(
             from: filteredSessions,
-            overrides: sectionOverrides,
-            autoCollapseIdle: store.selectedFilter == nil && query.isEmpty
+            overrides: SessionSections.overridesForNarrowing(
+                sectionOverrides, narrowing: narrowing),
+            autoCollapseIdle: !narrowing && folding != .never,
+            idleAutoCollapseThreshold: {
+                switch folding {
+                case .never: return Int.max
+                case .always: return 0
+                case .past(let threshold): return threshold
+                }
+            }()
         )
     }
 
@@ -123,9 +138,16 @@ struct MenuContentView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Click-to-focus needs Accessibility permission")
                     .font(.system(size: 11, weight: .medium))
-                Text("Grant it, then quit and re-run AgentTracker.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                // The already-listed case matters: every rebuild of an ad-hoc
+                // signed app invalidates its old grant, and toggling the stale
+                // entry does nothing — it must be removed and re-added.
+                Text(
+                    "Grant it in Settings. Already listed? Remove AgentTracker "
+                        + "with − and add it again — a rebuilt app invalidates its old grant."
+                )
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
             Button("Open Settings") { TerminalFocuser.openAccessibilitySettings() }
@@ -282,6 +304,22 @@ struct MenuContentView: View {
                 .font(Theme.Typography.footer)
                 .foregroundStyle(.tertiary)
             Spacer()
+            Button {
+                // Close the popover first or the settings window opens behind
+                // it; activate because an accessory app's windows otherwise
+                // appear without focus.
+                dismiss()
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Settings (⌘,)")
             Button {
                 NSApp.terminate(nil)
             } label: {

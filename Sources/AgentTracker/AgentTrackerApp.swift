@@ -9,10 +9,10 @@ struct AgentTrackerApp: App {
     var body: some Scene {
         // The menu bar presence is a raw NSStatusItem owned by the AppDelegate:
         // MenuBarExtra's label is a single click target, and per-dot filtering
-        // needs to know WHERE in the icon the click landed. The never-opened
-        // Settings scene is the conventional placeholder that keeps a SwiftUI
-        // app alive without any window.
-        Settings {}
+        // needs to know WHERE in the icon the click landed. The Settings scene
+        // both keeps the SwiftUI app alive without a window and provides the
+        // real settings UI (Cmd+, and the popover's gear).
+        Settings { SettingsView() }
     }
 }
 
@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         if runRenderPreviewIfRequested() { return }
 
+        Preferences.shared.applyAppearance()
         let store = SessionStore()
         self.store = store
         setUpStatusItem(for: store)
@@ -249,6 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             switch view {
             case "onboarding":
                 content = AnyView(OnboardingView())
+            case "settings":
+                content = AnyView(SettingsPreviewStack())
             case "popover":
                 let store = SessionStore()
                 if let filterIndex = arguments.firstIndex(of: "--filter"),
@@ -267,7 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(MenuContentView(store: store))
             default:
                 FileHandle.standardError.write(
-                    Data("[preview] --view expects popover or onboarding\n".utf8))
+                    Data("[preview] --view expects popover, onboarding or settings\n".utf8))
                 exit(2)
             }
             let renderer = ImageRenderer(

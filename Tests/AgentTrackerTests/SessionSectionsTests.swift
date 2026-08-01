@@ -66,6 +66,23 @@ final class SessionSectionsTests {
         #expect(forcedShut.first?.isCollapsed == true)
     }
 
+    /// Narrowing (a filter or search) must surface matches even in a section
+    /// the user collapsed by hand — and hand the choice back untouched once
+    /// the narrowing clears.
+    @Test func narrowingForcesACollapsedIdleSectionOpen() {
+        let overrides: [SessionState: Bool] = [.idle: true, .running: true]
+        let narrowed = SessionSections.overridesForNarrowing(overrides, narrowing: true)
+        #expect(narrowed[.idle] == false)
+        // Only idle is forced — a collapsed running section is the user's call.
+        #expect(narrowed[.running] == true)
+        // Not narrowing: the original choices pass through untouched.
+        #expect(SessionSections.overridesForNarrowing(overrides, narrowing: false) == overrides)
+
+        let built = SessionSections.build(from: sessions(.idle, 9), overrides: narrowed)
+        #expect(built.first?.isCollapsed == false)
+        #expect(built.first?.rows.count == 9)
+    }
+
     /// A collapsed section's rows aren't "hidden by the budget" — its own
     /// header states the count, so counting them again would double-report.
     @Test func collapsedSectionsFreeTheirBudgetForOtherStates() {

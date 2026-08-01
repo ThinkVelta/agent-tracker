@@ -123,8 +123,14 @@ exiting (`lsof`-based liveness check on the rollout file).
 - Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
   kitty are wired up but untested.
 - The default `make app` build is ad-hoc signed: Accessibility sticks to that
-  exact binary, so rebuilding and reinstalling the app re-prompts for the
-  grant. A `CODESIGN_IDENTITY` (Developer ID) build survives updates.
+  exact binary, so rebuilding and reinstalling **invalidates the old grant** —
+  and toggling the stale entry in System Settings does nothing. Remove
+  AgentTracker from the Accessibility list with **−** and re-add it (or
+  `tccutil reset Accessibility com.thinkvelta.agent-tracker`). To make grants
+  survive rebuilds, create a signing identity once (Keychain Access →
+  Certificate Assistant → Create a Certificate… → "AgentTracker Local", type
+  *Code Signing*) and build with
+  `CODESIGN_IDENTITY="AgentTracker Local" make install`.
 
 ## Roadmap
 
