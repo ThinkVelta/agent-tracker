@@ -22,10 +22,15 @@ enum StatusIconRenderer {
     private static let height: CGFloat = 18
     private static let edgePad: CGFloat = 1
 
+    /// Half the inter-item gap: snapping by this much lets neighboring regions
+    /// claim the whole gap between them, and forgives edge misses by the same
+    /// amount, while clicks far outside every dot stay "open unfiltered".
+    static let snapTolerance: CGFloat = itemGap / 2
+
     /// Pure layout: each state's x-extent given the measured count-text widths
     /// (in `SessionState.allCases` order). Split from drawing so the click→dot
-    /// mapping is testable without rendering. Item gaps belong to no region —
-    /// a click there means "open unfiltered".
+    /// mapping is testable without rendering. Regions are the drawn extents;
+    /// `state(atImageX:regions:)` adds the click forgiveness on top.
     static func hitRegions(textWidths: [CGFloat]) -> [HitRegion] {
         var regions: [HitRegion] = []
         var penX = edgePad
@@ -35,6 +40,25 @@ enum StatusIconRenderer {
             penX = end + itemGap
         }
         return regions
+    }
+
+    /// Maps a click's x-position (image coordinates) to the dot it hit. The
+    /// dots are ~7pt targets in the menu bar, so near-misses — the gaps
+    /// between dots, the image's edge padding — snap to the nearest dot
+    /// within `snapTolerance` instead of going dead (user-reported: clicks
+    /// had to land pixel-perfect on a dot to register as one).
+    static func state(atImageX imageX: CGFloat, regions: [HitRegion]) -> SessionState? {
+        let nearest = regions.min {
+            distance(from: $0.range, to: imageX) < distance(from: $1.range, to: imageX)
+        }
+        guard let nearest, distance(from: nearest.range, to: imageX) <= snapTolerance else {
+            return nil
+        }
+        return nearest.state
+    }
+
+    private static func distance(from range: Range<CGFloat>, to imageX: CGFloat) -> CGFloat {
+        max(range.lowerBound - imageX, imageX - range.upperBound, 0)
     }
 
     static func render(for counts: SessionCounts) -> Rendering {

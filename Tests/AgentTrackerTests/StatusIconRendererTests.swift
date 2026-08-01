@@ -21,18 +21,60 @@ final class StatusIconRendererTests {
         }
     }
 
-    @Test func clickInGapBetweenDotsMapsToNoState() {
-        let regions = StatusIconRenderer.hitRegions(textWidths: widths)
-        let gapX = (regions[0].range.upperBound + regions[1].range.lowerBound) / 2
-        #expect(!regions.contains { $0.range.contains(gapX) })
-    }
-
     @Test func clickInsideEachRegionMapsToItsState() {
         let regions = StatusIconRenderer.hitRegions(textWidths: widths)
         for region in regions {
             let middle = (region.range.lowerBound + region.range.upperBound) / 2
-            #expect(regions.first { $0.range.contains(middle) }?.state == region.state)
+            #expect(StatusIconRenderer.state(atImageX: middle, regions: regions) == region.state)
         }
+    }
+
+    @Test func gapClicksSnapToTheNearestDot() {
+        let regions = StatusIconRenderer.hitRegions(textWidths: widths)
+        let gapStart = regions[0].range.upperBound
+        let gapEnd = regions[1].range.lowerBound
+        #expect(
+            StatusIconRenderer.state(atImageX: gapStart + 0.5, regions: regions)
+                == regions[0].state)
+        #expect(
+            StatusIconRenderer.state(atImageX: gapEnd - 0.5, regions: regions) == regions[1].state)
+    }
+
+    /// The user-reported failure mode: no dead zones anywhere inside the icon —
+    /// every point from the first dot to the last resolves to some dot.
+    @Test func everyPointBetweenFirstAndLastDotResolvesToADot() {
+        let regions = StatusIconRenderer.hitRegions(textWidths: widths)
+        guard let first = regions.first, let last = regions.last else {
+            Issue.record("no regions")
+            return
+        }
+        var probeX = first.range.lowerBound
+        while probeX <= last.range.upperBound {
+            #expect(StatusIconRenderer.state(atImageX: probeX, regions: regions) != nil)
+            probeX += 0.5
+        }
+    }
+
+    @Test func edgeMissesWithinToleranceSnapToTheOuterDots() {
+        let regions = StatusIconRenderer.hitRegions(textWidths: widths)
+        let tolerance = StatusIconRenderer.snapTolerance
+        let beforeFirst = regions[0].range.lowerBound - tolerance
+        let afterLast = regions[2].range.upperBound + tolerance
+        #expect(
+            StatusIconRenderer.state(atImageX: beforeFirst, regions: regions) == regions[0].state)
+        #expect(StatusIconRenderer.state(atImageX: afterLast, regions: regions) == regions[2].state)
+    }
+
+    @Test func farOutsideClicksMapToNoState() {
+        let regions = StatusIconRenderer.hitRegions(textWidths: widths)
+        let tolerance = StatusIconRenderer.snapTolerance
+        #expect(
+            StatusIconRenderer.state(
+                atImageX: regions[0].range.lowerBound - tolerance - 1, regions: regions) == nil)
+        #expect(
+            StatusIconRenderer.state(
+                atImageX: regions[2].range.upperBound + tolerance + 1, regions: regions) == nil)
+        #expect(StatusIconRenderer.state(atImageX: 0, regions: []) == nil)
     }
 
     @Test func renderedImageEnclosesAllHitRegions() {
