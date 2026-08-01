@@ -12,6 +12,10 @@ import Foundation
 enum DebugLog {
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
+        // Pinned: on a non-POSIX locale or non-Gregorian calendar the stamps
+        // drift from the ASCII yyyy-MM-dd/HH:mm:ss shape tooling greps for.
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "HH:mm:ss"
         return formatter
     }()
@@ -53,6 +57,9 @@ enum DebugLog {
             self.maxBytes = maxBytes
             self.keepBytes = maxBytes / 2
             dateStamp = DateFormatter()
+            // Same pinning as the time stamp: the file format is a contract.
+            dateStamp.locale = Locale(identifier: "en_US_POSIX")
+            dateStamp.calendar = Calendar(identifier: .gregorian)
             dateStamp.dateFormat = "yyyy-MM-dd"
         }
 
