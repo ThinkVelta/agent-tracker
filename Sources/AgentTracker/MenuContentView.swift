@@ -7,6 +7,10 @@ struct MenuContentView: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
+            if !TerminalFocuser.hasAccessibilityPermission {
+                permissionBanner
+                Divider()
+            }
             if store.sessions.isEmpty {
                 emptyState
             } else {
@@ -16,6 +20,27 @@ struct MenuContentView: View {
             footer
         }
         .frame(width: 340)
+    }
+
+    private var permissionBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .font(.system(size: 12))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Click-to-focus needs Accessibility permission")
+                    .font(.system(size: 11, weight: .medium))
+                Text("Grant it, then quit and re-run AgentTracker.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Open Settings") { TerminalFocuser.openAccessibilitySettings() }
+                .buttonStyle(.link)
+                .font(.system(size: 11))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 
     private var header: some View {

@@ -3,11 +3,27 @@ import ApplicationServices
 
 /// Jumps to the terminal window a session lives in.
 ///
-/// Strategy: activate the terminal app, then use the Accessibility API to find
-/// the window whose title best matches the session (Claude Code sets window
-/// titles to "✳ <task summary>"; plain shells show the working directory) and
-/// raise it. Raising a window on another Space makes macOS switch to it.
+/// Strategy: verify Accessibility permission, then find the window whose title
+/// best matches the session (Claude Code sets window titles to "✳ <task
+/// summary>"; plain shells and the Codex TUI show the working directory or
+/// project name) and raise it. Raising a window on another Space makes macOS
+/// switch to it.
+///
+/// Every attempt prints a `[focus]` trace to stdout — visible in the terminal
+/// running `swift run AgentTracker` — so misbehavior is diagnosable from a
+/// single paste.
 enum TerminalFocuser {
+    enum Outcome {
+        /// Raised a specific matching window.
+        case focusedWindow(title: String)
+        /// No window title matched; brought the terminal app forward instead.
+        case activatedAppOnly
+        /// No known terminal app is running.
+        case noTerminalFound
+        /// Accessibility permission missing — the system prompt was triggered.
+        case needsPermission
+    }
+
     private static let bundleIdentifiers: [String: String] = [
         "ghostty": "com.mitchellh.ghostty",
         "iterm.app": "com.googlecode.iterm2",
@@ -16,20 +32,40 @@ enum TerminalFocuser {
         "kitty": "net.kovidgoyal.kitty",
     ]
 
+    /// True when the process can drive the Accessibility API. Does not prompt.
+    static var hasAccessibilityPermission: Bool {
+        AXIsProcessTrusted()
+    }
+
     @discardableResult
-    static func focus(_ session: AgentSession) -> Bool {
-        guard let app = terminalApp(for: session) else { return false }
-        app.activate()
+    static func focus(_ session: AgentSession) -> Outcome {
+        log("focusing \(session.providerDisplayName) session \(session.sessionId) (cwd: \(session.cwd ?? "?"))")
 
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
-        let trusted = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
-        guard trusted else { return false }  // app is frontmost; window matching needs AX
+        guard AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary) else {
+            log("no Accessibility permission — system prompt triggered. NOTE: when run via `swift run` from a terminal, macOS attributes the permission to that terminal (the responsible process). After granting, QUIT AND RE-RUN AgentTracker for it to take effect.")
+            return .needsPermission
+        }
 
-        guard let window = bestWindow(in: app, for: session) else { return false }
-        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        guard let app = terminalApp(for: session) else {
+            log("no known terminal app is running (looked for: \(bundleIdentifiers.values.sorted().joined(separator: ", ")))")
+            return .noTerminalFound
+        }
+        log("terminal app: \(app.localizedName ?? "?") (\(app.bundleIdentifier ?? "?"), pid \(app.processIdentifier))")
+
+        let candidates = titleCandidates(for: session)
+        log("title candidates: \(candidates.map { "\"\($0.text)\" (w\($0.weight))" }.joined(separator: ", "))")
+
+        guard let best = bestWindow(in: app, candidates: candidates) else {
+            log("no window title matched — activating \(app.localizedName ?? "the app") without raising a specific window")
+            app.activate()
+            return .activatedAppOnly
+        }
+        log("raising window \"\(best.title)\" (score \(best.score))")
+        AXUIElementPerformAction(best.window, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(best.window, kAXMainAttribute as CFString, kCFBooleanTrue)
         app.activate()
-        return true
+        return .focusedWindow(title: best.title)
     }
 
     private static func terminalApp(for session: AgentSession) -> NSRunningApplication? {
@@ -38,7 +74,7 @@ enum TerminalFocuser {
            let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
             return app
         }
-        for bundleID in bundleIdentifiers.values {
+        for bundleID in bundleIdentifiers.values.sorted() {
             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
                 return app
             }
@@ -46,24 +82,31 @@ enum TerminalFocuser {
         return nil
     }
 
-    private static func bestWindow(in app: NSRunningApplication, for session: AgentSession) -> AXUIElement? {
+    private static func bestWindow(
+        in app: NSRunningApplication,
+        candidates: [(text: String, weight: Int)]
+    ) -> (window: AXUIElement, title: String, score: Int)? {
         let axApp = AXUIElementCreateApplication(app.processIdentifier)
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value) == .success,
-              let windows = value as? [AXUIElement] else { return nil }
+        let axResult = AXUIElementCopyAttributeValue(axApp, kAXWindowsAttribute as CFString, &value)
+        guard axResult == .success, let windows = value as? [AXUIElement] else {
+            log("AXWindows query failed (\(axResult.rawValue)) — permission granted but not yet effective? Try restarting AgentTracker.")
+            return nil
+        }
+        log("\(windows.count) window(s) visible via Accessibility:")
 
-        let candidates = titleCandidates(for: session)
-        var best: (window: AXUIElement, score: Int)?
+        var best: (window: AXUIElement, title: String, score: Int)?
         for window in windows {
             var titleValue: CFTypeRef?
             guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue) == .success,
                   let title = titleValue as? String else { continue }
             let score = matchScore(windowTitle: title, candidates: candidates)
+            log("  \"\(title)\" -> score \(score)")
             if score > (best?.score ?? 0) {
-                best = (window, score)
+                best = (window, title, score)
             }
         }
-        return best?.window
+        return best
     }
 
     /// Ordered by reliability: the Claude task summary is near-unique per session,
@@ -72,6 +115,9 @@ enum TerminalFocuser {
         var candidates: [(String, Int)] = []
         if let summary = TranscriptTitle.latestSummary(atPath: session.transcriptPath) {
             candidates.append((summary, 100))
+        }
+        if let cwd = session.cwd {
+            candidates.append((cwd, 60)) // full path — some terminals title with it
         }
         if let context = session.pathContext {
             candidates.append((context, 50))
@@ -100,7 +146,18 @@ enum TerminalFocuser {
 
     private static func normalize(_ text: String) -> String {
         text.lowercased()
-            .trimmingCharacters(in: CharacterSet(charactersIn: "✳·⚒ \t"))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "✳·⚒…~ \t"))
             .trimmingCharacters(in: .whitespaces)
+    }
+
+    static func openAccessibilitySettings() {
+        let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        if let url = URL(string: pane) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private static func log(_ message: String) {
+        print("[focus] \(message)")
     }
 }
