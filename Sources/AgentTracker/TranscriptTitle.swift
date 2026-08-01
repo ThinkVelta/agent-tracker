@@ -18,13 +18,21 @@ enum TranscriptTitle {
 
         var latest: String?
         for chunk in windowRanges(fileSize: size) {
+            // A window starting exactly on a line boundary keeps its first
+            // line; only a true mid-line start drops the fragment.
+            let startsMidLine: Bool = {
+                guard chunk.offset > 0,
+                    (try? handle.seek(toOffset: chunk.offset - 1)) != nil,
+                    let previous = try? handle.read(upToCount: 1),
+                    let byte = previous.first
+                else { return false }
+                return byte != UInt8(ascii: "\n")
+            }()
             guard (try? handle.seek(toOffset: chunk.offset)) != nil,
                 let data = try? handle.read(upToCount: chunk.length),
                 var text = String(data: data, encoding: .utf8)
             else { continue }
-            // Drop partial lines cut at window boundaries — a fragment can't
-            // parse and must not shadow a complete line in the other window.
-            if chunk.offset > 0, let firstNewline = text.firstIndex(of: "\n") {
+            if startsMidLine, let firstNewline = text.firstIndex(of: "\n") {
                 text = String(text[text.index(after: firstNewline)...])
             }
             if chunk.offset + UInt64(chunk.length) < size,
