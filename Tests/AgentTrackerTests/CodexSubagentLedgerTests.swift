@@ -11,11 +11,17 @@ final class CodexSubagentLedgerTests {
         for url in tempFiles { try? FileManager.default.removeItem(at: url) }
     }
 
-    private func makeRollout(_ content: String) throws -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("rollout-\(UUID().uuidString).jsonl")
+    /// Mirrors the real naming scheme (`rollout-<timestamp>-<uuid>.jsonl`);
+    /// a unique directory keeps the fixed-uuid filenames collision-free.
+    private func makeRollout(
+        _ content: String, uuid: String = "019f0000-0000-7000-8000-000000000001"
+    ) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ledger-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent("rollout-2026-08-01T10-00-00-\(uuid).jsonl")
         try content.write(to: url, atomically: true, encoding: .utf8)
-        tempFiles.append(url)
+        tempFiles.append(directory)
         return url
     }
 
@@ -85,17 +91,20 @@ final class CodexSubagentLedgerTests {
     }
 
     @Test func harvestReadsEachPathOnce() throws {
+        let fileUuid = "019f0000-0000-7000-8000-00000000dead"
         let url = try makeRollout(
-            metaLine(sessionId: "root", threadId: "sub-dead", source: "subagent") + "\n")
+            metaLine(sessionId: "root", threadId: "sub-dead", source: "subagent") + "\n",
+            uuid: fileUuid)
         let ledger = CodexSubagentLedger()
         ledger.harvest(path: url.path)
-        #expect(ledger.threadIds == ["sub-dead"])
+        // Both the meta's own id and the filename uuid (the notify join key).
+        #expect(ledger.threadIds == ["sub-dead", fileUuid])
 
         // Same path again — memoized, the rewritten content is not re-read.
         try (metaLine(sessionId: "root", threadId: "sub-new", source: "subagent") + "\n")
             .write(to: url, atomically: true, encoding: .utf8)
         ledger.harvest(path: url.path)
-        #expect(ledger.threadIds == ["sub-dead"])
+        #expect(ledger.threadIds == ["sub-dead", fileUuid])
     }
 
     @Test func harvestIgnoresUserThreads() throws {
@@ -104,5 +113,58 @@ final class CodexSubagentLedgerTests {
         let ledger = CodexSubagentLedger()
         ledger.harvest(path: url.path)
         #expect(ledger.threadIds.isEmpty)
+    }
+
+    // MARK: - Real-world resume shapes (observed against codex 0.146)
+
+    @Test func recordPrefersFileThreadIdOverLineageId() {
+        // Resume metas repoint payload "id" at the fork-ancestor thread; the
+        // filename uuid is the id the notify hook joins on. Both belong in
+        // the ledger (the ancestor is a subagent too).
+        let ledger = CodexSubagentLedger()
+        let meta = CodexSessionMeta(
+            sessionId: "root", threadId: "ancestor-thread", cwd: nil, isSubagent: true)
+        ledger.record(meta, fileThreadId: "own-file-uuid")
+        #expect(ledger.threadIds == ["ancestor-thread", "own-file-uuid"])
+    }
+
+    @Test func accumulatorKeepsSubagentMarkAcrossUserResumeMeta() {
+        // Observed: a subagent thread's resume meta flips thread_source back
+        // to "user". The thread is internal fan-out forever — a later meta
+        // must not promote it into a session-producing primary.
+        var accumulator = CodexThreadAccumulator()
+        accumulator.apply(
+            .sessionMeta(
+                CodexSessionMeta(
+                    sessionId: "root", threadId: "sub-1", cwd: nil, isSubagent: true)))
+        accumulator.apply(
+            .sessionMeta(
+                CodexSessionMeta(sessionId: "root", threadId: nil, cwd: nil, isSubagent: false)))
+        #expect(accumulator.meta?.isSubagent == true)
+        #expect(accumulator.meta?.threadId == "sub-1")
+    }
+
+    @Test func accumulatorLetsLaterMetaOverrideThreadIdWhenPresent() {
+        var accumulator = CodexThreadAccumulator()
+        accumulator.apply(
+            .sessionMeta(
+                CodexSessionMeta(
+                    sessionId: "root", threadId: "sub-1", cwd: nil, isSubagent: true)))
+        accumulator.apply(
+            .sessionMeta(
+                CodexSessionMeta(
+                    sessionId: "root", threadId: "ancestor", cwd: nil, isSubagent: true)))
+        #expect(accumulator.meta?.threadId == "ancestor")
+    }
+
+    @Test func threadIdFromRolloutFilename() {
+        let path =
+            "/x/2026/08/01/rollout-2026-08-01T13-20-44-"
+            + "019fbd06-faee-7002-bf14-a3c88d29921d.jsonl"
+        #expect(
+            CodexRolloutParser.threadId(fromRolloutFilename: path)
+                == "019fbd06-faee-7002-bf14-a3c88d29921d")
+        #expect(CodexRolloutParser.threadId(fromRolloutFilename: "/x/notes.jsonl") == nil)
+        #expect(CodexRolloutParser.threadId(fromRolloutFilename: "rollout-short.jsonl") == nil)
     }
 }

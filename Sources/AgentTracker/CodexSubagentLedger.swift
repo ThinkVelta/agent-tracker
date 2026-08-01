@@ -19,9 +19,13 @@ final class CodexSubagentLedger {
     private var harvestedPaths: Set<String> = []
 
     /// Records a parsed session meta; sticky — ids survive tracker pruning.
-    func record(_ meta: CodexSessionMeta) {
-        guard meta.isSubagent, let threadId = meta.threadId else { return }
-        threadIds.insert(threadId)
+    /// `fileThreadId` (the rollout filename uuid) is the authoritative notify
+    /// join key; the meta's own `threadId` is recorded too because resume
+    /// metas repoint it at fork-ancestor threads, which are subagents as well.
+    func record(_ meta: CodexSessionMeta, fileThreadId: String? = nil) {
+        guard meta.isSubagent else { return }
+        if let threadId = meta.threadId { threadIds.insert(threadId) }
+        if let fileThreadId { threadIds.insert(fileThreadId) }
     }
 
     /// Identifies a rollout the scanner won't bootstrap (already dead at
@@ -30,6 +34,6 @@ final class CodexSubagentLedger {
     func harvest(path: String) {
         guard harvestedPaths.insert(path).inserted else { return }
         guard let meta = CodexRolloutParser.firstSessionMeta(atPath: path) else { return }
-        record(meta)
+        record(meta, fileThreadId: CodexRolloutParser.threadId(fromRolloutFilename: path))
     }
 }

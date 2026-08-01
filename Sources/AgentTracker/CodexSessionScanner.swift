@@ -394,12 +394,14 @@ final class CodexScanWorker: @unchecked Sendable {
         // its notify fallback row.
         let produced = Set(sessions.map(\.sessionId))
         var threadIdToSession: [String: String] = [:]
-        for tracker in trackers.values {
+        for (path, tracker) in trackers {
             guard let meta = tracker.accumulator.meta else { continue }
-            subagentLedger.record(meta)
+            let fileThreadId = CodexRolloutParser.threadId(fromRolloutFilename: path)
+            subagentLedger.record(meta, fileThreadId: fileThreadId)
             guard produced.contains(meta.sessionId) else { continue }
             threadIdToSession[meta.sessionId] = meta.sessionId
             if let threadId = meta.threadId { threadIdToSession[threadId] = meta.sessionId }
+            if let fileThreadId { threadIdToSession[fileThreadId] = meta.sessionId }
         }
         onUpdate?(sessions, threadIdToSession, subagentLedger.threadIds)
     }
