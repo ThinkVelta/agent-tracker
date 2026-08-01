@@ -173,10 +173,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         else { return false }
         let path = arguments[flagIndex + 1]
         var darkMode = false
-        if let appearanceIndex = arguments.firstIndex(of: "--appearance"),
-            arguments.count > appearanceIndex + 1
-        {
-            darkMode = arguments[appearanceIndex + 1] == "dark"
+        if let appearanceIndex = arguments.firstIndex(of: "--appearance") {
+            // A typo silently rendering light mode would send someone hunting
+            // for a dark-mode bug in a light-mode screenshot.
+            let value =
+                arguments.count > appearanceIndex + 1
+                ? arguments[appearanceIndex + 1].lowercased() : ""
+            switch value {
+            case "dark": darkMode = true
+            case "light": darkMode = false
+            default:
+                FileHandle.standardError.write(
+                    Data("[preview] --appearance expects light or dark\n".utf8))
+                exit(2)
+            }
         }
         let appearance = NSAppearance(named: darkMode ? .darkAqua : .aqua)
         NSApp.appearance = appearance

@@ -22,9 +22,20 @@ final class AgentSessionTests {
         #expect(
             session(cwd: "/Users/dev/ProjectsVelta/Planner/.worktrees/pln-388").locationContext
                 == "Planner")
-        // Nested containers unwind all the way.
+        // Nested scaffolding unwinds all the way.
         #expect(
-            session(cwd: "/Users/dev/Planner/repos/src/thing").locationContext == "Planner")
+            session(cwd: "/Users/dev/Planner/.claude/worktrees/pln-1").locationContext
+                == "Planner")
+    }
+
+    /// Only known scaffolding is skipped. Generic-sounding directories are
+    /// real context when nothing better encloses them, and a hidden directory
+    /// can be a project root in its own right.
+    @Test func locationContextKeepsDirectoriesThatCarryMeaning() {
+        #expect(session(cwd: "/Users/dev/src/agent-tracker").locationContext == "src")
+        #expect(session(cwd: "/Users/dev/repos/agent-tracker").locationContext == "repos")
+        #expect(session(cwd: "/Users/dev/.config/nvim").locationContext == ".config")
+        #expect(session(cwd: "/Users/dev/.dotfiles/zsh").locationContext == ".dotfiles")
     }
 
     /// The shape this repo's own worktrees actually take — reported ".claude"
@@ -32,9 +43,8 @@ final class AgentSessionTests {
     @Test func locationContextSkipsDotDirectories() {
         let cwd = "/Users/dev/Planner/planner-backend/.claude/worktrees/pln-388-contracts"
         #expect(session(cwd: cwd).locationContext == "planner-backend")
-        #expect(session(cwd: "/Users/dev/dotfiles/.config/nvim").locationContext == "dotfiles")
         // Only contiguous trailing scaffolding is unwound: a real directory
-        // name stops the walk even when a dot-directory sits above it.
+        // name stops the walk even when scaffolding sits above it.
         #expect(session(cwd: "/Users/dev/thing/.git/modules/x").locationContext == "modules")
     }
 

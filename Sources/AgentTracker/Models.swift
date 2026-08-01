@@ -96,14 +96,18 @@ struct AgentSession: Codable, Identifiable, Equatable {
         return parts.last
     }
 
-    /// Tool scaffolding rather than a project: known container names, plus any
-    /// dot-directory (`.claude`, `.worktrees`, …), which by convention belongs
-    /// to whatever encloses it.
+    /// Tool scaffolding rather than a project. An explicit list, not a rule:
+    /// `hasPrefix(".")` would swallow legitimate project roots (a session in
+    /// `~/.config/nvim` belongs to `.config`, not to the home directory), and
+    /// generic names like `src` or `repos` are real context when nothing
+    /// better encloses them.
     private static func namesNoProject(_ component: String) -> Bool {
-        component.hasPrefix(".") || containerDirectoryNames.contains(component.lowercased())
+        scaffoldingDirectoryNames.contains(component.lowercased())
     }
 
-    private static let containerDirectoryNames: Set<String> = ["worktrees", "repos", "src"]
+    private static let scaffoldingDirectoryNames: Set<String> = [
+        "worktrees", ".worktrees", ".claude", ".git",
+    ]
 
     var providerDisplayName: String {
         switch provider {
