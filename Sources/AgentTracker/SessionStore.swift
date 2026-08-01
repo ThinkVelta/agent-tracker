@@ -58,7 +58,6 @@ final class SessionStore: ObservableObject {
 
     private var watcher: DirectoryWatcher?
     private var refreshTimer: Timer?
-    private var scheduledRefreshInterval: TimeInterval = 0
     private var preferencesSubscription: AnyCancellable?
     /// Bumped when a displayed relative time would have changed, so rows
     /// re-render on a quiet machine without republishing identical sessions.
@@ -108,10 +107,14 @@ final class SessionStore: ObservableObject {
         // republishes when something actually changed, so an idle machine
         // stays idle. The cadence is a preference; changing it reschedules
         // the timer live.
-        scheduleRefreshTimer(interval: Preferences.shared.refreshInterval)
-        preferencesSubscription = Preferences.shared.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor in self?.rescheduleRefreshTimerIfNeeded() }
-        }
+        // The publisher's initial emission performs the first schedule;
+        // removeDuplicates keeps unrelated preference churn from restarting
+        // the timer (a restart resets its phase).
+        preferencesSubscription = Preferences.shared.$refreshInterval
+            .removeDuplicates()
+            .sink { [weak self] interval in
+                Task { @MainActor in self?.scheduleRefreshTimer(interval: interval) }
+            }
 
         // Codex has no turn-start hook; live state comes from watching rollout
         // files directly.
@@ -127,20 +130,10 @@ final class SessionStore: ObservableObject {
 
     private func scheduleRefreshTimer(interval: TimeInterval) {
         refreshTimer?.invalidate()
-        scheduledRefreshInterval = interval
         refreshTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) {
             [weak self] _ in
             Task { @MainActor in self?.reload() }
         }
-    }
-
-    /// objectWillChange fires for every preference; only an actual cadence
-    /// change restarts the timer (restarting resets the phase, which would
-    /// otherwise starve the tick under unrelated preference churn).
-    private func rescheduleRefreshTimerIfNeeded() {
-        let wanted = Preferences.shared.refreshInterval
-        guard wanted != scheduledRefreshInterval else { return }
-        scheduleRefreshTimer(interval: wanted)
     }
 
     func reload() {
