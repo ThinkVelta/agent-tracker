@@ -53,6 +53,10 @@ enum Theme {
         static let emptyStateOpacity: Double = 0.35
         /// Idle rows' accent rail, held back so red and green lead.
         static let idleAccentOpacity: Double = 0.45
+        /// Settings grouped-card surface and its internal hairlines — the
+        /// System Settings look: barely-there fill, quieter separators.
+        static let cardFill = Color.primary.opacity(0.04)
+        static let cardSeparator = Color.primary.opacity(0.06)
     }
 
     enum Motion {

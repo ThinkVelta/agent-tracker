@@ -10,7 +10,13 @@
 # notarization requires it, ad-hoc gains nothing from it). Honest ladder:
 #   unsigned      — TCC grants break on every launch; never shipped
 #   ad-hoc        — grants stick to this exact binary; rebuilding/replacing the
-#                   app re-prompts for Accessibility (fine for personal use)
+#                   app INVALIDATES the old Accessibility grant, and toggling
+#                   the stale entry does nothing — remove it with − and re-add
+#                   (or: tccutil reset Accessibility com.thinkvelta.agent-tracker)
+#   self-signed   — grants survive rebuilds. One-time setup: Keychain Access →
+#                   Certificate Assistant → Create a Certificate… → name
+#                   "AgentTracker Local", type "Code Signing"; then build with
+#                   CODESIGN_IDENTITY="AgentTracker Local" make install
 #   Developer ID  — grants survive updates; Gatekeeper-friendly for download
 set -euo pipefail
 
