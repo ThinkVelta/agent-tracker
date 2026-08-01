@@ -39,7 +39,10 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
   Codex's own rollout files in `~/.codex/sessions` (read-only) for
   `task_started`/`task_complete`/`turn_aborted` events, so Codex sessions show
   running/needs-you/idle states in real time. The `notify` hook is just an
-  extra push signal on top.
+  extra push signal on top. Codex multi-agent fan-out is collapsed into its
+  root session: subagent threads get their own rollouts and even fire `notify`
+  per subagent turn, and the app identifies and absorbs them (one session, one
+  row) instead of showing a phantom "needs you" per finished subagent.
 - **Dead sessions are pruned** automatically: each state file records the agent
   CLI's pid, and the app removes files whose process is gone (killed terminal,
   crash) even without a clean `SessionEnd`. Codex sessions are pruned via an

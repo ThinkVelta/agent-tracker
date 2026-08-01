@@ -16,6 +16,10 @@ final class CodexSessionScanner: ObservableObject {
     /// of groups that actually produced a session are listed, so a notify
     /// fallback row is never deduped without a replacement.
     @Published private(set) var threadIdToSession: [String: String] = [:]
+    /// Every thread id ever identified as a subagent (sticky — see
+    /// CodexSubagentLedger). SessionStore drops (and deletes) notify state
+    /// files for these: they are internal fan-out, never user-facing sessions.
+    @Published private(set) var subagentThreadIds: Set<String> = []
 
     static var defaultRootDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_CODEX_DIR"],
@@ -34,11 +38,12 @@ final class CodexSessionScanner: ObservableObject {
     init(rootDirectory: URL? = nil) {
         let worker = CodexScanWorker(root: rootDirectory ?? Self.defaultRootDirectory)
         self.worker = worker
-        worker.onUpdate = { [weak self] sessions, threadMap in
+        worker.onUpdate = { [weak self] sessions, threadMap, subagentIds in
             Task { @MainActor in
                 guard let self else { return }
                 if self.sessions != sessions { self.sessions = sessions }
                 if self.threadIdToSession != threadMap { self.threadIdToSession = threadMap }
+                if self.subagentThreadIds != subagentIds { self.subagentThreadIds = subagentIds }
             }
         }
         worker.start()
@@ -78,8 +83,10 @@ final class CodexScanWorker: @unchecked Sendable {
     /// rolloutPath -> pid of the codex process holding it open (last lsof pass).
     private var holders: [String: Int] = [:]
 
-    /// Called with fresh session rows + threadId→sessionId map after every change.
-    var onUpdate: (([AgentSession], [String: String]) -> Void)?
+    /// Called with fresh session rows + threadId→sessionId map + sticky
+    /// subagent thread ids after every change.
+    var onUpdate: (([AgentSession], [String: String], Set<String>) -> Void)?
+    private let subagentLedger = CodexSubagentLedger()
 
     init(root: URL) {
         self.root = root.standardizedFileURL
@@ -246,6 +253,10 @@ final class CodexScanWorker: @unchecked Sendable {
                     .contentModificationDate ?? .distantPast
                 if now.timeIntervalSince(mtime) <= Self.newFileGrace {
                     bootstrapLocked(path: path)
+                } else {
+                    // Dead rollout, never bootstrapped — but if it was a
+                    // subagent thread, its notify state file may outlive it.
+                    subagentLedger.harvest(path: path)
                 }
             }
         }
@@ -384,13 +395,13 @@ final class CodexScanWorker: @unchecked Sendable {
         let produced = Set(sessions.map(\.sessionId))
         var threadIdToSession: [String: String] = [:]
         for tracker in trackers.values {
-            guard let meta = tracker.accumulator.meta,
-                produced.contains(meta.sessionId)
-            else { continue }
+            guard let meta = tracker.accumulator.meta else { continue }
+            subagentLedger.record(meta)
+            guard produced.contains(meta.sessionId) else { continue }
             threadIdToSession[meta.sessionId] = meta.sessionId
             if let threadId = meta.threadId { threadIdToSession[threadId] = meta.sessionId }
         }
-        onUpdate?(sessions, threadIdToSession)
+        onUpdate?(sessions, threadIdToSession, subagentLedger.threadIds)
     }
 
 }

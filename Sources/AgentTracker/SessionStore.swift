@@ -74,8 +74,8 @@ final class SessionStore: ObservableObject {
         let scanner = CodexSessionScanner()
         codexScanner = scanner
         scannerSubscription = scanner.$sessions
-            .combineLatest(scanner.$threadIdToSession)
-            .sink { [weak self] _, _ in
+            .combineLatest(scanner.$threadIdToSession, scanner.$subagentThreadIds)
+            .sink { [weak self] _, _, _ in
                 // Hop a tick so the scanner's published properties are set.
                 Task { @MainActor in self?.rebuild() }
             }
@@ -111,6 +111,25 @@ final class SessionStore: ObservableObject {
         if let scanner = codexScanner {
             let scanned = scanner.sessions
             let threadMap = scanner.threadIdToSession
+            // Notify rows for subagent threads are internal fan-out, never
+            // user-facing sessions — Codex multi-agent fires the notify hook
+            // per subagent turn. Delete their state files (not just hide):
+            // the live threadMap dedupe below only lasts while the subagent's
+            // rollout is tracked, and these files otherwise resurface as
+            // phantom "needs you" rows for as long as the root codex process
+            // lives, one per completed subagent.
+            let subagentThreads = scanner.subagentThreadIds
+            if !subagentThreads.isEmpty {
+                merged.removeAll { row in
+                    guard row.provider == "codex",
+                        subagentThreads.contains(row.sessionId)
+                    else { return false }
+                    if let fileURL = row.fileURL {
+                        try? FileManager.default.removeItem(at: fileURL)
+                    }
+                    return true
+                }
+            }
             // The notify hook's sessionId may be a thread id rather than the
             // stable session_id — the scanner's map resolves both. A matched
             // notify row is superseded, but still carries enrichment rollouts

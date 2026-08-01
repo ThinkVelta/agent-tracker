@@ -109,6 +109,25 @@ enum CodexRolloutParser {
         }
     }
 
+    /// Reads just the leading `session_meta` line of a rollout file, bounded so
+    /// a malformed file can't stall the scanner (meta lines carry the full base
+    /// instructions and run ~10-100KB). Used to identify subagent threads in
+    /// dead rollouts that are never worth a full bootstrap.
+    static func firstSessionMeta(
+        atPath path: String, limit: Int = 512 * 1024
+    ) -> CodexSessionMeta? {
+        guard let handle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)) else {
+            return nil
+        }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: limit), !data.isEmpty else { return nil }
+        guard let end = data.firstIndex(of: UInt8(ascii: "\n")) else { return nil }
+        guard let line = String(data: data[..<end], encoding: .utf8),
+            case .sessionMeta(let meta) = parseLine(line)
+        else { return nil }
+        return meta
+    }
+
     /// Cheap prefilter: a line can only parse to something state-relevant if it
     /// mentions one of these markers somewhere in its bytes. False positives
     /// just take the full-parse path; false negatives are impossible because
