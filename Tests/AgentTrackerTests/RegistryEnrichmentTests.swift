@@ -61,6 +61,30 @@ final class RegistryEnrichmentTests {
                 sessionDirectories: enriched.windowDirectories) == [0])
     }
 
+    /// AXDocument matching only sees the current Space, so the title path has
+    /// to know about the terminal's directory too — otherwise a worktree
+    /// session on another Space matches nothing.
+    @Test func titleCandidatesCoverBothDirectories() {
+        let enriched = RegistryEnrichment.apply(to: session(), entry: entry())
+        let candidates = TerminalFocuser.titleCandidates(for: enriched)
+        #expect(candidates.contains { $0.text == "/Users/dev/Planner" && $0.weight == 60 })
+        #expect(
+            candidates.contains {
+                $0.text == "/Users/dev/Planner/planner-backend/.claude/worktrees/pln-388"
+            })
+        // The widest tier stays single: a second bare project name would let a
+        // worktree session claim any window of the parent repo.
+        #expect(candidates.filter { $0.weight == 40 }.count <= 1)
+    }
+
+    @Test func duplicateDirectoriesAreNotDoubledUp() {
+        let same = "/Users/dev/Planner"
+        let enriched = RegistryEnrichment.apply(
+            to: session(cwd: same), entry: entry(cwd: same))
+        let candidates = TerminalFocuser.titleCandidates(for: enriched)
+        #expect(candidates.map(\.text).count == Set(candidates.map(\.text)).count)
+    }
+
     // MARK: - State resolution
 
     /// Claude Code has no interrupt hook, so a session the user escaped out of

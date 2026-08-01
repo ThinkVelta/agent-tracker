@@ -100,8 +100,12 @@ struct AgentSession: Codable, Identifiable, Equatable {
 
     /// Short path context shown alongside the project name, e.g. "ProjectsVelta/Planner".
     var pathContext: String? {
-        guard let cwd else { return nil }
-        let parts = (cwd as NSString).pathComponents
+        Self.pathContext(of: cwd)
+    }
+
+    static func pathContext(of path: String?) -> String? {
+        guard let path else { return nil }
+        let parts = (path as NSString).pathComponents
         guard parts.count >= 2 else { return nil }
         return parts.suffix(2).joined(separator: "/")
     }

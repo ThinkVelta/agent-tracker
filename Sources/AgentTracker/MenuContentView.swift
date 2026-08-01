@@ -441,7 +441,7 @@ struct SessionRow: View {
             }
         }
         .animation(Theme.Motion.quick, value: showsPath)
-        .accessibilityLabel("\(session.projectName), \(metadata), \(session.cwd ?? "")")
+        .accessibilityLabel("\(session.displayName), \(metadata), \(session.cwd ?? "")")
     }
 
     /// One dimmed line under the name: provider, where it lives, what it is

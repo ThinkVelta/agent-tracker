@@ -311,12 +311,25 @@ enum TerminalFocuser {
         if let summary = TranscriptTitle.latestSummary(atPath: session.transcriptPath) {
             candidates.append(TitleCandidate(summary, weight: 100))
         }
-        if let cwd = session.cwd {
+        // Both of the session's directories, not just the hook's: a worktree
+        // session's terminal sits at the repo root, so a title showing the
+        // root is still this session's window. Needed whenever AXDocument
+        // matching is unavailable — another Space, or a terminal that doesn't
+        // report a directory.
+        //
+        // Deliberately no second bare project name at the w40 tier: that tier
+        // is the widest and most collision-prone, and adding "Planner" for a
+        // worktree session would let it claim any Planner window — the exact
+        // class of misfocus PR #6 fixed.
+        var seen: Set<String> = []
+        for directory in session.windowDirectories where seen.insert(directory).inserted {
             // Full path — some terminals title with it.
-            candidates.append(TitleCandidate(cwd, weight: 60))
-        }
-        if let context = session.pathContext {
-            candidates.append(TitleCandidate(context, weight: 50))
+            candidates.append(TitleCandidate(directory, weight: 60))
+            if let context = AgentSession.pathContext(of: directory),
+                seen.insert(context).inserted
+            {
+                candidates.append(TitleCandidate(context, weight: 50))
+            }
         }
         if session.projectName != "Session" {
             candidates.append(TitleCandidate(session.projectName, weight: 40))
