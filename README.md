@@ -75,10 +75,18 @@ it, and drag **AgentTracker.app** to `/Applications`. Launch it — the first-ru
 window walks you through granting Accessibility, connecting your agent CLIs, and
 starting at login.
 
-If macOS refuses to open it on first launch, **right-click the app and choose
-Open**, then confirm — only the first launch needs it. Each release's notes say
-whether that step applies, because they are written from how that build was
-actually signed.
+If macOS refuses to open it on first launch, go to **System Settings › Privacy &
+Security**, scroll to the message naming AgentTracker, and click **Open Anyway**.
+On macOS 14 and earlier you can right-click the app and choose **Open** instead —
+macOS 15 removed that shortcut. Either way, only the first launch needs it. Each
+release's notes say whether the step applies, because they are written from how
+that build was actually signed.
+
+Until releases are notarized, each new version is signed differently from the
+last, so **macOS forgets the Accessibility permission when you update**. If
+click-to-focus stops working after an update, remove AgentTracker from System
+Settings › Privacy & Security › Accessibility with **−** and add it again;
+toggling the existing entry off and on does not help.
 
 Settings › About checks for newer releases; there is no auto-updater and nothing
 phones home on its own.
