@@ -37,8 +37,9 @@ jobs:
     #   NOTARY_KEY_ID               that key's ID
     #   NOTARY_ISSUER_ID            the issuer UUID
     #
-    # Every step below is guarded on the secret it needs, so forks and this
-    # repo pre-membership both work.
+    # Each group is all-or-nothing, checked up front by "Classify the available
+    # secrets" — a partial set fails immediately with the missing names rather
+    # than minutes in. Forks and this repo pre-membership both work.
     env:
       MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
       MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
@@ -50,6 +51,68 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
+        with:
+          # Full history: the provenance check below asks whether the tagged
+          # commit is an ancestor of main, which a shallow clone cannot answer.
+          fetch-depth: 0
+
+      # A tag is pushable from any branch, and this job publishes whatever it
+      # is given. Without this, tagging a feature branch — by habit or by
+      # accident — ships unreviewed code to everyone who downloads the app.
+      - name: Verify the tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main."
+            echo "::error::Merge it first, then tag the merge commit."
+            exit 1
+          fi
+
+      # Signing and notarization are all-or-nothing. A half-configured set used
+      # to surface as a failure minutes in, after the build and possibly after
+      # a notarization submission; this states the problem before any work.
+      # Only presence is tested — no secret value is ever echoed.
+      - name: Classify the available secrets
+        id: secrets
+        run: |
+          signing=0
+          for value in "$MACOS_CERTIFICATE_P12" "$MACOS_CERTIFICATE_PASSWORD" \
+            "$MACOS_SIGNING_IDENTITY"; do
+            if [ -n "$value" ]; then signing=$((signing + 1)); fi
+          done
+          notary=0
+          for value in "$NOTARY_KEY_P8" "$NOTARY_KEY_ID" "$NOTARY_ISSUER_ID"; do
+            if [ -n "$value" ]; then notary=$((notary + 1)); fi
+          done
+
+          if [ "$signing" -ne 0 ] && [ "$signing" -ne 3 ]; then
+            echo "::error::$signing of 3 signing secrets set. Set all three or none:"
+            echo "::error::MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD, MACOS_SIGNING_IDENTITY"
+            exit 1
+          fi
+          if [ "$notary" -ne 0 ] && [ "$notary" -ne 3 ]; then
+            echo "::error::$notary of 3 notarization secrets set. Set all three or none:"
+            echo "::error::NOTARY_KEY_P8, NOTARY_KEY_ID, NOTARY_ISSUER_ID"
+            exit 1
+          fi
+          # Apple will not notarize an ad-hoc signature, so this combination
+          # can only ever fail — say so now rather than after the upload.
+          if [ "$notary" -eq 3 ] && [ "$signing" -ne 3 ]; then
+            echo "::error::Notarization needs a Developer ID signature. Add the signing secrets."
+            exit 1
+          fi
+
+          if [ "$signing" -eq 3 ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing secrets — publishing an ad-hoc signed build."
+          fi
+          if [ "$notary" -eq 3 ]; then
+            echo "notarize=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notarize=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # One source of truth. `make app` stamps CFBundleShortVersionString from
       # VERSION, so a tag that disagrees would ship a bundle whose version does
@@ -79,14 +142,14 @@ jobs:
       # stranger's Mac, so it runs the suite rather than trusting the PR that
       # merged.
       - name: Test
-        run: swift test
+        run: make test
 
       # A throwaway keychain rather than the login one: it is deleted with the
       # runner, and set-key-partition-list keeps codesign from prompting.
       # Hand-rolled on purpose — the repo takes no third-party actions for
       # anything that touches signing material.
       - name: Import the signing certificate
-        if: env.MACOS_CERTIFICATE_P12 != ''
+        if: steps.secrets.outputs.sign == 'true'
         run: |
           keychain="$RUNNER_TEMP/release.keychain-db"
           password="$(openssl rand -base64 24)"
@@ -136,7 +199,7 @@ jobs:
       # the stapled bundle. Skipped wholesale without credentials.
       - name: Notarize and staple
         id: notarize
-        if: env.NOTARY_KEY_P8 != '' && env.MACOS_CERTIFICATE_P12 != ''
+        if: steps.secrets.outputs.notarize == 'true'
         env:
           ARCHIVE: ${{ steps.package.outputs.archive }}
         run: |
