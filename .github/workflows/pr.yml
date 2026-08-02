@@ -31,7 +31,17 @@ jobs:
     # Gate on PR author, not triggering actor: when a human syncs/merges a
     # bot PR, `github.actor` becomes the human while the PR itself is still
     # bot-authored. `pull_request.user.login` is the stable signal.
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    #
+    # Skipped entirely for pull requests from forks. GitHub withholds secrets
+    # from fork-triggered `pull_request` runs, so `OPENAI_API_KEY` arrives
+    # empty and the review action's fail-fast guard stops the job — which is
+    # correct, but it would put a red X on every outside contributor's first
+    # PR for a reason they can neither see nor fix. Skipping reads as "not
+    # applicable" instead. Nothing is lost: a maintainer reviews fork PRs by
+    # hand, and pushing the branch into this repo runs the reviewer normally.
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]'
+      && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
