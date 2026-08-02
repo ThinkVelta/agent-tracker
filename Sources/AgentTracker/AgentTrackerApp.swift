@@ -398,6 +398,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(SettingsPreviewStack())
             case "icons":
                 content = AnyView(Image(nsImage: IconPreview.composite(darkMode: darkMode)))
+            case "menubar":
+                // Just the status item, at whatever the loaded sessions add up
+                // to — so the README's menu bar strip and its dropdown agree
+                // about how many of each colour there are.
+                let store = SessionStore()
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                content = AnyView(
+                    Image(nsImage: StatusIconRenderer.render(for: store.counts).image))
             case "popover":
                 let store = SessionStore()
                 if let filterIndex = arguments.firstIndex(of: "--filter"),
@@ -416,7 +424,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 content = AnyView(MenuContentView(store: store))
             default:
                 FileHandle.standardError.write(
-                    Data("[preview] --view expects popover, onboarding, settings or icons\n".utf8))
+                    Data(
+                        "[preview] --view expects popover, onboarding, settings, icons or menubar\n"
+                            .utf8))
                 exit(2)
             }
             let renderer = ImageRenderer(

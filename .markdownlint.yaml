@@ -35,3 +35,19 @@ MD029:
 # Allow bare URLs: angle-bracket wrapping is visual noise in table cells and
 # every renderer in use autolinks them anyway.
 MD034: false
+
+# Allow the inline HTML a README needs and Markdown cannot express: a centred
+# hero, `<picture>` so screenshots follow the reader's light/dark preference,
+# and `<details>` so troubleshooting is available without pushing Install below
+# the fold. Every element here renders on GitHub. Deliberately an allowlist, so
+# arbitrary HTML is still flagged.
+MD033:
+  allowed_elements:
+    - div
+    - img
+    - picture
+    - source
+    - details
+    - summary
+    # Markdown emphasis is not reliably parsed inside a <summary>.
+    - strong
