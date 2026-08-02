@@ -111,6 +111,22 @@ final class WindowIdentityTests {
         #expect(WindowIdentity.FocusRotation.alone.siblingCount == 1)
     }
 
+    /// A session with no rivals still has to advance on repeated clicks. Its
+    /// exact-title match can miss — a stale title, a window since closed — and
+    /// the fallback lands on the same ambiguous tie as everyone else, where
+    /// raising the same window twice reads as a dead click.
+    @Test func aSessionWithoutRivalsStillWalksATieAcrossClicks() {
+        let hits = [2, 4]
+        let first = WindowIdentity.FocusRotation(rank: 0, clicks: 0, siblingCount: 1)
+        let second = WindowIdentity.FocusRotation(rank: 0, clicks: 1, siblingCount: 1)
+        #expect(second.offset == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: first.offset) == 2)
+        #expect(
+            WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: second.offset) == 4)
+        // Same for a session absent from the rival list entirely.
+        #expect(WindowIdentity.FocusRotation.among([], sessionId: "x", clicks: 5).offset == 5)
+    }
+
     /// Ranks must be dense over the sessions that actually compete, and stable
     /// across reloads. A named session sharing the directory does not compete —
     /// counting it would leave ranks 0 and 2 for two rivals, which collide on

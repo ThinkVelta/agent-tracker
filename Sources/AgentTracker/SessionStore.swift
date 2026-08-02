@@ -299,11 +299,16 @@ final class SessionStore: ObservableObject {
         let clicks = previous == .max ? 0 : previous + 1
         focusRotation[session.id] = clicks
 
-        // A session with a name of its own is excluded: it matches its window
-        // exactly through a strategy that runs before any of this, so it never
-        // competes for these windows and counting it would leave the rivals
-        // holding sparse ranks that collide.
-        guard exactWindowTitle(for: session) == nil else { return .alone }
+        // A session with a name of its own is excluded from the grouping: it
+        // matches its window exactly through a strategy that runs before any of
+        // this, so it never competes for these windows and counting it would
+        // leave the rivals holding sparse ranks that collide. It keeps its click
+        // count all the same — the exact match can miss (a stale title, a window
+        // since closed), and the fallback tie still has to advance on a second
+        // click rather than raise the same window again.
+        guard exactWindowTitle(for: session) == nil else {
+            return WindowIdentity.FocusRotation(rank: 0, clicks: clicks, siblingCount: 1)
+        }
 
         // Competition runs over every directory a session answers to, not just
         // the one its row is titled with: a worktree session's terminal sits at
