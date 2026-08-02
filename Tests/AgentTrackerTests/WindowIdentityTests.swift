@@ -72,17 +72,72 @@ final class WindowIdentityTests {
     /// repeated clicks cycle through the candidates.
     @Test func ambiguousChoiceSkipsTheWindowAlreadyFocused() {
         let hits = [1, 3, 5]
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 1) == 3)
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 3) == 5)
-        // Wraps, so a third click returns to the start rather than sticking.
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 5) == 1)
-        // Focused window isn't a candidate, or nothing is focused: first wins.
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 9) == 1)
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 1, offset: 0) == 3)
+        // Focused window isn't a candidate, or nothing is focused: the offset's
+        // own candidate stands.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 9, offset: 0) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 0) == 1)
         // One candidate is still returned even when it is the focused one —
-        // there is nowhere else to go.
-        #expect(WindowIdentity.chooseAmbiguous(hits: [4], focused: 4) == 4)
-        #expect(WindowIdentity.chooseAmbiguous(hits: [], focused: nil) == nil)
+        // there is nowhere else to go, and a click must never be a no-op.
+        #expect(WindowIdentity.chooseAmbiguous(hits: [4], focused: 4, offset: 0) == 4)
+        #expect(WindowIdentity.chooseAmbiguous(hits: [], focused: nil, offset: 0) == nil)
+    }
+
+    /// The reported failure: two Codex rows in one repo both landed on the same
+    /// terminal. Each row's click count starts at 0, so a count alone sends
+    /// every sibling to the same candidate — the offset has to carry which
+    /// sibling is asking.
+    @Test func siblingsStartFromDifferentCandidates() {
+        let hits = [1, 3, 5]
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 0) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 1) == 3)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 2) == 5)
+        // Repeated clicks on one row keep walking, and wrap.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 3) == 1)
+        // Total over every Int — offset is rank + clicks, both caller-supplied.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: -1) == 5)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: .min) != nil)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: .max) != nil)
+    }
+
+    @Test func rotationOffsetCombinesRankAndClicks() {
+        let first = WindowIdentity.FocusRotation(rank: 0, clicks: 0, siblingCount: 2)
+        let second = WindowIdentity.FocusRotation(rank: 1, clicks: 0, siblingCount: 2)
+        #expect(first.offset == 0)
+        #expect(second.offset == 1)
+        // Clicking the first row again reaches what the second row starts on.
+        #expect(WindowIdentity.FocusRotation(rank: 0, clicks: 1, siblingCount: 2).offset == 1)
+        #expect(WindowIdentity.FocusRotation.alone.offset == 0)
+        #expect(WindowIdentity.FocusRotation.alone.siblingCount == 1)
+    }
+
+    /// Ranks must be dense over the sessions that actually compete, and stable
+    /// across reloads. A named session sharing the directory does not compete —
+    /// counting it would leave ranks 0 and 2 for two rivals, which collide on
+    /// candidate 0 of a 2-window tie.
+    @Test func ranksAreDenseStableAndExcludeNamedSessions() {
+        let rivals = ["codex-b", "codex-a"]
+        let first = WindowIdentity.FocusRotation.among(rivals, sessionId: "codex-a", clicks: 0)
+        let second = WindowIdentity.FocusRotation.among(rivals, sessionId: "codex-b", clicks: 0)
+        #expect(first.rank == 0)
+        #expect(second.rank == 1)
+        #expect(first.siblingCount == 2)
+        // Input order does not move a rank: the same rivals listed the other
+        // way round give the same answer.
+        #expect(
+            WindowIdentity.FocusRotation.among(rivals.reversed(), sessionId: "codex-a", clicks: 0)
+                == first)
+        // Two rivals, two windows, two different destinations.
+        let hits = [0, 1]
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: first.offset) == 0)
+        #expect(
+            WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: second.offset) == 1)
+
+        // A session absent from the list has nobody to be confused with.
+        let named = WindowIdentity.FocusRotation.among(rivals, sessionId: "claude-x", clicks: 3)
+        #expect(named.rank == 0)
+        #expect(named.siblingCount == 1)
+        #expect(named.clicks == 3)
     }
 
     /// The reported critical failure, straight from a `[focus]` trace: a Codex

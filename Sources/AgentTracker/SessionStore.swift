@@ -284,18 +284,35 @@ final class SessionStore: ObservableObject {
         return acknowledged
     }
 
-    /// How many times each row has been clicked. Sibling sessions in one repo
-    /// title their windows identically, so the focuser cannot tell them apart;
-    /// handing it a counter lets it walk the tied windows across clicks rather
-    /// than raising the same one forever. Keyed by session id and pruned with
-    /// the sessions themselves.
+    /// How many times each row has been clicked. Keyed by session id and pruned
+    /// with the sessions themselves.
     private var focusRotation: [String: Int] = [:]
 
-    func nextFocusRotation(for session: AgentSession) -> Int {
+    /// Where this row should start looking among windows it cannot be told
+    /// apart from, and how many sessions are competing for them.
+    ///
+    /// The rank is what makes two sibling rows land on two different windows.
+    /// A click count alone is not enough: every row's first click is 0, so all
+    /// of them pick the same candidate — measured, after shipping exactly that.
+    func nextFocusRotation(for session: AgentSession) -> WindowIdentity.FocusRotation {
         let previous = focusRotation[session.id] ?? -1
-        let next = previous == .max ? 0 : previous + 1
-        focusRotation[session.id] = next
-        return next
+        let clicks = previous == .max ? 0 : previous + 1
+        focusRotation[session.id] = clicks
+
+        // Siblings are the sessions whose windows this one cannot be told from:
+        // the same directory yields identical title candidates. A session with
+        // a name of its own is excluded — it matches exactly through a strategy
+        // that runs before any of this, so it never competes for these windows.
+        guard exactWindowTitle(for: session) == nil,
+            let directory = session.primaryDirectory.map(WindowIdentity.normalize)
+        else { return WindowIdentity.FocusRotation(rank: 0, clicks: clicks, siblingCount: 1) }
+
+        let indistinguishable =
+            sessions
+            .filter { exactWindowTitle(for: $0) == nil }
+            .filter { $0.primaryDirectory.map(WindowIdentity.normalize) == directory }
+            .map(\.id)
+        return .among(indistinguishable, sessionId: session.id, clicks: clicks)
     }
 
     /// Downgrade a needs-you session to idle once the user has jumped to it —
