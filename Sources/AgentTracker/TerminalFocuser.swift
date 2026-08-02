@@ -334,10 +334,15 @@ enum TerminalFocuser {
             // the sibling at all. Unlike the directory path, the focused
             // window cannot be identified here — the menu offers titles only,
             // and these titles are identical by definition.
+            // Position within the tie, not the raw click count: it says where
+            // in the cycle this raise landed, which is what the trace is for,
+            // and it is bounded by the tie so it cannot overflow the way
+            // `rotation + 1` could.
+            let position = (ranking.tied.firstIndex(of: pick) ?? 0) + 1
             log(
-                "ambiguous: \(ranking.tiedWithWinner + 1) window(s) tie at score \(ranking.score) "
-                    + "— raising \"\(winner.title)\" (attempt \(target.rotation + 1)), "
-                    + "which may not be this session's window")
+                "ambiguous: \(ranking.tied.count) window(s) tie at score \(ranking.score) "
+                    + "— raising \"\(winner.title)\" (candidate \(position) of "
+                    + "\(ranking.tied.count)), which may not be this session's window")
         }
         return AXMatch(
             element: winner.element, title: winner.title, score: ranking.score,
