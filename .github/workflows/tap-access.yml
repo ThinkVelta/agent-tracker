@@ -1,0 +1,28 @@
+name: Tap access
+
+# Fails loudly on purpose, which is the opposite of the tap step inside
+# release.yml. That step runs after a release is already published, where a red
+# build would misrepresent a good release, so it degrades to printed
+# instructions instead. This one runs on its own schedule with nothing riding on
+# it, so it can afford to be the place where a dead token actually shows up.
+#
+# Monthly, because the token expires on a date nobody remembers, and an expired
+# one otherwise stays invisible until someone notices the cask is behind.
+on:
+  schedule:
+    - cron: "23 7 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tap-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Can the token still write to the tap?
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+        run: python3 .github/scripts/check-tap-access.py
