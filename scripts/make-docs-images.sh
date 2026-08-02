@@ -3,8 +3,9 @@
 #
 # Runs the app's own --render-preview mode against a throwaway state directory,
 # so what lands in assets/ is the real UI drawing invented sessions — never a
-# screenshot of whatever the author happened to be running. Re-run this after
-# any change to the dropdown and commit the result.
+# screenshot of whatever the author happened to be running. Re-run this whenever
+# you change anything the README pictures — the render list at the bottom of
+# this file is what that means — and commit the result.
 #
 # Caveat inherited from --render-preview: ImageRenderer does not rasterize
 # AppKit-backed views, so the search field appears as a placeholder bar and the
@@ -28,11 +29,11 @@ python3 scripts/demo-sessions.py "$STAGE/state" > /dev/null
 mkdir -p "$STAGE/claude/sessions" "$STAGE/codex"
 
 mkdir -p "$OUT"
-# `--render-preview` logs "render failed" and still exits 0, so a broken render
-# would leave the previous image in place and this script would report success —
-# the failure mode where the README quietly documents an old UI forever. Delete
-# the target first so a stale file cannot stand in for a fresh one, and keep the
-# render's own output to show only if something goes wrong.
+# `--render-preview` exits non-zero on a failed render or write. The target is
+# still deleted first and checked afterwards, because an exit code cannot catch
+# the other half: a previous run's image sitting where a fresh one should be
+# would let this script report success while the README documents an old UI
+# forever. The render's own output is kept and shown only if something fails.
 render() {
   local view="$1" appearance="$2" target="$3"
   local path="$OUT/$target"
@@ -63,5 +64,7 @@ render menubar light menubar-light.png
 render menubar dark menubar-dark.png
 render icons light icon-modes-light.png
 render icons dark icon-modes-dark.png
+render architecture light architecture-light.png
+render architecture dark architecture-dark.png
 
 echo "==> done"
