@@ -75,9 +75,10 @@ it, and drag **AgentTracker.app** to `/Applications`. Launch it — the first-ru
 window walks you through granting Accessibility, connecting your agent CLIs, and
 starting at login.
 
-Releases are not notarized yet, so macOS refuses them on first launch:
-**right-click the app and choose Open**, then confirm. Only the first launch
-needs it. (Every release note repeats this, and says so only when it is true.)
+If macOS refuses to open it on first launch, **right-click the app and choose
+Open**, then confirm — only the first launch needs it. Each release's notes say
+whether that step applies, because they are written from how that build was
+actually signed.
 
 Settings › About checks for newer releases; there is no auto-updater and nothing
 phones home on its own.
