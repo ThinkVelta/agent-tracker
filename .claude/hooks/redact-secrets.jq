@@ -48,8 +48,27 @@ def redact:
   | gsub("(?<pre>[a-zA-Z][a-zA-Z0-9+.-]*://[^/@\\s:]+:)[^/@\\s]+@"; "\(.pre)[REDACTED]@")  # inline credentials (scheme://user:PASSWORD@)
     # ── 2. key-name: value after a known sensitive key ──────────────────────
     # Matches KEY<quote?><:|=><quote?>VALUE and keeps the key+separator, masking
-    # the value. [ \t] only (not \s) so it never spans newlines.
-  | gsub("(?<k>RAILWAY_TOKEN|AUTH_SECRET|SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY|SUPABASE_AUTH_KEY|SUPABASE_DB_PASSWORD|SENTRY_AUTH_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|DATABASE_URL|POSTGRES_URL|DB_PASSWORD|DATABASE_PASSWORD|STRIPE_SECRET_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|GOOGLE_API_KEY|SENDGRID_API_KEY)(?<s>[\"']?[ \\t]*[:=][ \\t]*[\"']?)(?<v>[^\\s\"',]+)";
+    # the value.
+    #
+    # What confines the match to one line is the backslash handling in the value
+    # group, NOT the [ \t] in the separator group -- that only constrains the gap
+    # between the key and the value.
+    #
+    # This filter runs over the JSON serialization (see tojson below), where a
+    # newline is not a newline character but the two literal characters \ and n.
+    # Neither is \s, so a naive [^\s"',]+ runs straight through end-of-line and
+    # keeps eating following lines until the next space, quote or comma,
+    # replacing all of it with a single [REDACTED]. That destroys unrelated
+    # output rather than merely over-masking, and leaves no sign anything was
+    # removed.
+    #
+    # Hence the alternation: any character that is not whitespace, quote, comma
+    # or backslash, OR a backslash that does not begin a JSON escape. Simply
+    # excluding backslash also stops the line-spanning, but then masking halts at
+    # a backslash INSIDE the value, so a password like pa55\word\here leaks its
+    # tail. The lookahead keeps such values fully masked while still stopping at
+    # the \n that ends the line.
+  | gsub("(?<k>RAILWAY_TOKEN|AUTH_SECRET|SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY|SUPABASE_AUTH_KEY|SUPABASE_DB_PASSWORD|SENTRY_AUTH_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|DATABASE_URL|POSTGRES_URL|DB_PASSWORD|DATABASE_PASSWORD|STRIPE_SECRET_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|GOOGLE_API_KEY|SENDGRID_API_KEY)(?<s>[\"']?[ \\t]*[:=][ \\t]*[\"']?)(?<v>(?:[^\\s\"',\\\\]|\\\\(?![nrtu]))+)";
           "\(.k)\(.s)[REDACTED]");
 
 # Why tojson/fromjson instead of tostring: `.tool_response` is not a plain
