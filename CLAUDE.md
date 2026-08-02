@@ -49,8 +49,9 @@ rollout files. See README for the full picture.
 - Docs images: `./scripts/make-docs-images.sh` renders the README's assets from
   synthetic sessions (`scripts/demo-sessions.py`) via the app's own
   `--render-preview`. Never screenshot the real app for docs — that publishes
-  whatever you happen to be running. Re-run after any dropdown change and commit
-  the result.
+  whatever you happen to be running. Re-run whenever you change anything the
+  README pictures, and commit the result; the script's own render list is the
+  authority on what that covers.
 - Cut a release: bump `VERSION`, merge to `main`, then `git tag vX.Y.Z && git
   push origin vX.Y.Z`. The tag triggers `.github/workflows/release.yml`, which
   refuses to publish if the tag and `VERSION` disagree or the tagged commit is

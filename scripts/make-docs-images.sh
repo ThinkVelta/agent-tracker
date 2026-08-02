@@ -3,8 +3,9 @@
 #
 # Runs the app's own --render-preview mode against a throwaway state directory,
 # so what lands in assets/ is the real UI drawing invented sessions — never a
-# screenshot of whatever the author happened to be running. Re-run this after
-# any change to the dropdown and commit the result.
+# screenshot of whatever the author happened to be running. Re-run this whenever
+# you change anything the README pictures — the render list at the bottom of
+# this file is what that means — and commit the result.
 #
 # Caveat inherited from --render-preview: ImageRenderer does not rasterize
 # AppKit-backed views, so the search field appears as a placeholder bar and the
