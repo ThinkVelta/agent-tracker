@@ -144,6 +144,29 @@ final class WindowIdentityTests {
                 rivalCandidates: []))
     }
 
+    /// Two windows tie and nothing can separate them, so repeated clicks walk
+    /// them: raising the same one every time makes the second click read as
+    /// dead, and it is the only way to reach the sibling at all. Unlike the
+    /// directory path this cannot skip "the focused window" — the menu offers
+    /// titles only, and tied titles are identical by definition.
+    @Test func tiedCandidatesAreWalkedAcrossRepeatedClicks() {
+        let candidates = [TerminalFocuser.TitleCandidate("Planner", weight: 40)]
+        let ranking = WindowIdentity.rankTitles(
+            ["Planner", "Planner"], candidates: candidates, state: .needsYou)
+        #expect(ranking?.tied == [0, 1])
+        #expect(ranking?.choice(rotation: 0) == 0)
+        #expect(ranking?.choice(rotation: 1) == 1)
+        #expect(ranking?.choice(rotation: 2) == 0)
+
+        // A lone winner is returned whatever the rotation — there is nowhere
+        // else to go, and a click must never become a no-op.
+        let single = WindowIdentity.rankTitles(
+            ["Planner", "Mail"], candidates: candidates, state: .needsYou)
+        #expect(single?.tied == [0])
+        #expect(single?.choice(rotation: 0) == 0)
+        #expect(single?.choice(rotation: 7) == 0)
+    }
+
     @Test func siblingSessionsInOneRepoAllMatch() {
         let directories: [String?] = Array(repeating: "/Users/dev/Planner", count: 3)
         #expect(

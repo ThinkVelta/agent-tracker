@@ -122,13 +122,22 @@ enum WindowIdentity {
     }
 
     struct TitleRanking: Equatable {
-        let index: Int
+        /// Every title indistinguishable from the winner (same score, same
+        /// activity agreement), in input order — a raise could equally have
+        /// landed on any of them. Never empty. Kept as indices rather than a
+        /// count so a caller can walk them across repeated clicks instead of
+        /// raising the same one forever.
+        let tied: [Int]
         let score: Int
         let activityAgrees: Bool
-        /// How many other titles are indistinguishable from the winner (same
-        /// score, same activity agreement) — a raise that could equally have
-        /// landed on any of them.
-        let tiedWithWinner: Int
+
+        var tiedWithWinner: Int { tied.count - 1 }
+
+        /// The candidate for the `rotation`-th attempt at this session, wrapping.
+        func choice(rotation: Int) -> Int? {
+            guard !tied.isEmpty else { return nil }
+            return tied[abs(rotation) % tied.count]
+        }
     }
 
     /// Picks the window title a session should jump to, in menu order. Highest
@@ -146,18 +155,15 @@ enum WindowIdentity {
             guard score > 0 else { continue }
             let agrees = TerminalFocuser.activityAgrees(windowTitle: title, state: state)
             guard let current = best else {
-                best = TitleRanking(
-                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
+                best = TitleRanking(tied: [index], score: score, activityAgrees: agrees)
                 continue
             }
             if (score, agrees ? 1 : 0) > (current.score, current.activityAgrees ? 1 : 0) {
-                best = TitleRanking(
-                    index: index, score: score, activityAgrees: agrees, tiedWithWinner: 0)
+                best = TitleRanking(tied: [index], score: score, activityAgrees: agrees)
             } else if score == current.score && agrees == current.activityAgrees {
                 best = TitleRanking(
-                    index: current.index, score: current.score,
-                    activityAgrees: current.activityAgrees,
-                    tiedWithWinner: current.tiedWithWinner + 1)
+                    tied: current.tied + [index], score: current.score,
+                    activityAgrees: current.activityAgrees)
             }
         }
         return best
