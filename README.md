@@ -224,6 +224,7 @@ from hunting through terminal windows, you can say thanks:
 
 - [**GitHub Sponsors**](https://github.com/sponsors/ThinkVelta) — one-off or
   monthly, and GitHub takes no cut
+- [**PayPal**](https://paypal.me/broekxruben) — one-off, no account needed
 
 Starring the repo, reporting a bug you hit, or telling someone who runs three
 agents at once helps just as much and costs nothing.
