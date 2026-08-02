@@ -12,7 +12,41 @@ import Foundation
 ///
 /// It is not a complete identity — two sessions in one directory still share
 /// one answer — so it narrows the field and the title/activity ranking picks
-/// within it.
+/// within it. Where even that ties, `FocusRotation` spreads the sessions over
+/// the candidates so two rows at least reach two terminals.
+///
+/// ## Why there is nothing better to match on
+///
+/// A real identity would be `session pid → tty → window`. The first half is
+/// trivial (`ps -o tty= -p <pid>`); the second has no implementation on the
+/// terminal this was built against. Measured against Ghostty 1.3.1 and Codex
+/// CLI on 2026-08-01/02, so it does not get re-derived:
+///
+/// - **No per-surface Accessibility data.** A window exposes `AXDocument` (the
+///   cwd, which is what this type uses) and `AXIdentifier`, which is the string
+///   `TerminalWindowRestoration` on *every* window. Children are generic
+///   `AXGroup`/`AXScrollArea`. Nothing tty-, pid- or session-shaped at any
+///   depth.
+/// - **No per-surface environment variable.** A shell inside Ghostty gets
+///   `GHOSTTY_RESOURCES_DIR`, `GHOSTTY_SHELL_FEATURES`, `TERM_PROGRAM`,
+///   `TERM_PROGRAM_VERSION`, `TERMINFO` — nothing unique. iTerm2 has
+///   `ITERM_SESSION_ID`; Ghostty has no equivalent.
+/// - **No process ancestry to walk.** Ghostty is a single process; every
+///   surface's `/usr/bin/login` parents straight to it.
+/// - **We cannot write an identity either.** The obvious workaround is to have
+///   the hook emit an OSC 2 title naming the session. Codex repaints its own
+///   title every animation frame — two reads a second apart returned
+///   `⠋ Planner` then `⠙ Planner` — so anything written is overwritten
+///   immediately.
+/// - **`agent_nickname` in Codex rollouts is a subagent field**, not a session
+///   name: every rollout carrying one also carries `parent_thread_id` and a
+///   `session_id` pointing at the parent.
+///
+/// Ghostty *is* AppleScript-scriptable and its dictionary is richer than its AX
+/// tree — `window`/`tab`/`terminal` with a stable per-surface `id`, plus
+/// `focus`. It enumerates every Space, which the AX window list cannot, so it
+/// would be a better *enumeration* backend. It still carries no tty or pid, so
+/// it would not resolve a tie; and it costs a second TCC prompt.
 enum WindowIdentity {
     /// Extracts a filesystem path from an `AXDocument` value, which terminals
     /// report as a `file://` URL. Returns nil for anything that isn't a local
