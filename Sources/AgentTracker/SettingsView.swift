@@ -305,7 +305,6 @@ private struct AdvancedSettingsTab: View {
                     }
                 }
             }
-            Spacer()
         }
         .padding(20)
     }
@@ -333,7 +332,6 @@ private struct AboutSettingsTab: View {
                 }
             }
             credits
-            Spacer()
         }
         .padding(20)
     }
@@ -360,9 +358,12 @@ private struct AboutSettingsTab: View {
 
     private var credits: some View {
         VStack(spacing: 5) {
-            Text("Made by Ruben Broekx")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            HStack(spacing: 4) {
+                Text("Made by")
+                    .foregroundStyle(.secondary)
+                Link("Velta", destination: URL(string: "https://thinkvelta.ai")!)
+            }
+            .font(.system(size: 11))
             HStack(spacing: 5) {
                 Link(
                     "Source",
