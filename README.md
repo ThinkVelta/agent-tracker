@@ -57,9 +57,10 @@ Requirements: macOS 14 or later.
 <details>
 <summary><strong>If macOS refuses to open it</strong></summary>
 
-Releases are not notarized yet, so Gatekeeper blocks the first launch. Open
-**System Settings › Privacy & Security**, scroll to the message naming
-AgentTracker, and click **Open Anyway**.
+Releases are not notarized — that needs a paid Apple Developer account — so
+Gatekeeper blocks the first launch. Open **System Settings › Privacy &
+Security**, scroll to the message naming AgentTracker, and click **Open
+Anyway**.
 
 On macOS 14 and earlier you can right-click the app and choose **Open** instead —
 macOS 15 removed that shortcut. Only the first launch needs this, and each
@@ -71,9 +72,8 @@ build was actually signed.
 <details>
 <summary><strong>If click-to-focus stops working after an update</strong></summary>
 
-Until releases are notarized, every version is signed differently from the last,
-and macOS ties the Accessibility permission to the exact binary — so it forgets
-the grant when you update.
+macOS ties the Accessibility permission to the exact binary it was granted to,
+so an unsigned build loses the grant every time you update.
 
 Remove AgentTracker from **System Settings › Privacy & Security ›
 Accessibility** with **−**, then add it again. Toggling the existing entry off
@@ -208,7 +208,7 @@ all again — hooks, the installed app, its preferences — run
 
 ## Roadmap
 
-- [ ] Developer ID signing + notarization (also fixes the permission loss on update)
+- [ ] Stable release signing, so the Accessibility grant survives an update
 - [ ] Homebrew tap — `brew install --cask agent-tracker`
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [ ] Migrate the Codex integration to its native hooks engine (approval-request
