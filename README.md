@@ -32,11 +32,9 @@ Agent Tracker keeps it in your menu bar. Three dots, three counts:
 </picture>
 </div>
 
-| | | |
-|---|---|---|
-| 🔴 | **Needs you** | the turn finished, or it wants permission |
-| 🟢 | **Running** | working right now |
-| ⚪ | **Idle** | open, nothing pending |
+- 🔴 **Needs you** — the turn finished, or it wants permission
+- 🟢 **Running** — working right now
+- ⚪ **Idle** — open, nothing pending
 
 **Click a row and you land in that terminal**, across Spaces, and the session
 stops asking for attention. Click a *dot* to open the list already filtered to
@@ -57,7 +55,7 @@ Requirements: macOS 14 or later.
    connecting your agent CLIs, and starting at login.
 
 <details>
-<summary><strong>macOS refuses to open it</strong></summary>
+<summary><strong>If macOS refuses to open it</strong></summary>
 
 Releases are not notarized yet, so Gatekeeper blocks the first launch. Open
 **System Settings › Privacy & Security**, scroll to the message naming
@@ -71,7 +69,7 @@ build was actually signed.
 </details>
 
 <details>
-<summary><strong>Click-to-focus stopped working after an update</strong></summary>
+<summary><strong>If click-to-focus stops working after an update</strong></summary>
 
 Until releases are notarized, every version is signed differently from the last,
 and macOS ties the Accessibility permission to the exact binary — so it forgets
@@ -112,13 +110,12 @@ signal, not a requirement.
 
 ## How it works
 
-```text
-Claude Code hooks ──▶                            ┌──▶ menu bar icon (3 dots + counts)
-                       ~/.agent-tracker/         │
-Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ dropdown session list
-                                                 │
-~/.codex/sessions ──▶  read-only rollout watch ──┴──▶ click row → focus terminal window
-```
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.png">
+  <img alt="Agent CLIs write state files; Agent Tracker watches them; you get a menu bar icon, a session list and click-to-focus" src="assets/architecture-light.png" width="700">
+</picture>
+</div>
 
 - **No daemon; event-driven at the core.** Agent CLIs push events through their
   native hook mechanisms; a tiny dependency-free Python script
@@ -150,36 +147,22 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
   ("✳ &lt;task summary&gt;") and working-directory fragments remain as
   fallbacks when it is absent.
 
-### State mapping
-
-| Provider | Event | State |
-|---|---|---|
-| Claude Code | `SessionStart` | idle |
-| Claude Code | `UserPromptSubmit`, `PreToolUse`, `PreCompact` | running |
-| Claude Code | `Stop` (turn complete), `Notification` (permission/input) | needs you |
-| Claude Code | `SessionEnd` | removed |
-| Codex | `task_started` (rollout) | running |
-| Codex | `task_complete` (rollout), `agent-turn-complete` (notify) | needs you |
-| Codex | `turn_aborted` (rollout, you interrupted) | needs you |
-
-A `Stop` that leaves background shells running is not treated as "needs you":
-Claude publishes its own busy/idle status, and a red row is re-derived as
-running while that status says the session is still working.
-
-Codex sessions are auto-pruned within ~30 seconds of their `codex` process
-exiting (`lsof`-based liveness check on the rollout file).
+- **A finished turn is not always "needs you".** Claude's `Stop` fires when the
+  assistant's turn ends, but a turn that left background shells running is
+  resumed when they finish. Claude publishes its own busy/idle status, so a red
+  row is re-derived as running while that status says the session is still
+  working — no crying wolf for the length of a long build.
 
 ## Known limitations
 
-- **Sessions sharing one directory cannot be told apart.** Several Codex
-  sessions in one repo all title their window with the bare project name, and
-  all report the same working directory, so nothing distinguishes them. Their
-  rows are spread over the candidate windows rather than all pointing at the
-  first one, and repeated clicks walk the rest, so a second row usually opens a
-  second terminal — but nothing here identifies *which* window is whose, and two
-  rows can still land together when fewer windows are visible than there are
-  sessions. Neither Ghostty nor Codex exposes a per-window identity that would
-  settle it; `WindowIdentity` documents what was measured.
+- **Several sessions in one repo look alike, and clicking one may open its
+  sibling.** They share a directory, so they get the same row title, and their
+  terminals report nothing that tells them apart. Clicking is not a coin flip —
+  the rows are spread across the candidate windows rather than all pointing at
+  the first, and clicking again walks the rest — so two rows normally open two
+  terminals. What is *not* guaranteed is that each one opens its own. Neither
+  Ghostty nor Codex exposes a per-window identity that would settle it;
+  `WindowIdentity` documents the four routes that were tried and closed.
 - **Window matching is exact only when a title source exists.** Claude Code
   sessions get exact titles when a statusline script dumps its payload to
   `~/.claude/statusline-last.json`; without it, matching falls back to

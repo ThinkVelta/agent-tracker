@@ -63,5 +63,7 @@ render menubar light menubar-light.png
 render menubar dark menubar-dark.png
 render icons light icon-modes-light.png
 render icons dark icon-modes-dark.png
+render architecture light architecture-light.png
+render architecture dark architecture-dark.png
 
 echo "==> done"
