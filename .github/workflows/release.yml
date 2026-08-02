@@ -1,0 +1,276 @@
+name: Release
+
+run-name: Release ${{ github.ref_name }}
+
+# Cut a release by bumping VERSION, merging to main, then tagging vX.Y.Z there.
+# The tag is the trigger; VERSION is the source of truth and the two must agree
+# (checked below) so a mistyped tag fails before anything is published.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+# Never cancel a release mid-flight: a half-published tag is worse than a slow
+# one, and notarization can take minutes.
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: macos-26
+    timeout-minutes: 45
+
+    # Signing and notarization are OPTIONAL. Without these secrets the job still
+    # produces a release — an ad-hoc signed zip that users must right-click to
+    # open. Add them and the same workflow starts producing notarized builds
+    # with no edits here:
+    #
+    #   MACOS_CERTIFICATE_P12       base64 of a Developer ID Application .p12
+    #   MACOS_CERTIFICATE_PASSWORD  its export password
+    #   MACOS_SIGNING_IDENTITY      e.g. "Developer ID Application: Name (TEAMID)"
+    #   NOTARY_KEY_P8               base64 of the App Store Connect .p8 key
+    #   NOTARY_KEY_ID               that key's ID
+    #   NOTARY_ISSUER_ID            the issuer UUID
+    #
+    # Each group is all-or-nothing, checked up front by "Classify the available
+    # secrets" — a partial set fails immediately with the missing names rather
+    # than minutes in. Forks and this repo pre-membership both work.
+    env:
+      MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+      NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+      NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+      NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          # Full history: the provenance check below asks whether the tagged
+          # commit is an ancestor of main, which a shallow clone cannot answer.
+          fetch-depth: 0
+
+      # A tag is pushable from any branch, and this job publishes whatever it
+      # is given. Without this, tagging a feature branch — by habit or by
+      # accident — ships unreviewed code to everyone who downloads the app.
+      - name: Verify the tag is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_REF_NAME points at a commit that is not on main."
+            echo "::error::Merge it first, then tag the merge commit."
+            exit 1
+          fi
+
+      # Signing and notarization are all-or-nothing. A half-configured set used
+      # to surface as a failure minutes in, after the build and possibly after
+      # a notarization submission; this states the problem before any work.
+      # Only presence is tested — no secret value is ever echoed.
+      - name: Classify the available secrets
+        id: secrets
+        run: |
+          signing=0
+          for value in "$MACOS_CERTIFICATE_P12" "$MACOS_CERTIFICATE_PASSWORD" \
+            "$MACOS_SIGNING_IDENTITY"; do
+            if [ -n "$value" ]; then signing=$((signing + 1)); fi
+          done
+          notary=0
+          for value in "$NOTARY_KEY_P8" "$NOTARY_KEY_ID" "$NOTARY_ISSUER_ID"; do
+            if [ -n "$value" ]; then notary=$((notary + 1)); fi
+          done
+
+          if [ "$signing" -ne 0 ] && [ "$signing" -ne 3 ]; then
+            echo "::error::$signing of 3 signing secrets set. Set all three or none:"
+            echo "::error::MACOS_CERTIFICATE_P12, MACOS_CERTIFICATE_PASSWORD, MACOS_SIGNING_IDENTITY"
+            exit 1
+          fi
+          if [ "$notary" -ne 0 ] && [ "$notary" -ne 3 ]; then
+            echo "::error::$notary of 3 notarization secrets set. Set all three or none:"
+            echo "::error::NOTARY_KEY_P8, NOTARY_KEY_ID, NOTARY_ISSUER_ID"
+            exit 1
+          fi
+          # Apple will not notarize an ad-hoc signature, so this combination
+          # can only ever fail — say so now rather than after the upload.
+          if [ "$notary" -eq 3 ] && [ "$signing" -ne 3 ]; then
+            echo "::error::Notarization needs a Developer ID signature. Add the signing secrets."
+            exit 1
+          fi
+
+          if [ "$signing" -eq 3 ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing secrets — publishing an ad-hoc signed build."
+          fi
+          if [ "$notary" -eq 3 ]; then
+            echo "notarize=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "notarize=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # One source of truth. `make app` stamps CFBundleShortVersionString from
+      # VERSION, so a tag that disagrees would ship a bundle whose version does
+      # not match its own release — and the in-app update check compares
+      # exactly these strings.
+      - name: Verify the tag matches VERSION
+        id: version
+        run: |
+          tagged="${GITHUB_REF_NAME#v}"
+          declared="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tagged" != "$declared" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match VERSION ($declared)."
+            echo "::error::Bump VERSION and re-tag, or tag v$declared."
+            exit 1
+          fi
+          echo "version=$declared" >> "$GITHUB_OUTPUT"
+
+      - name: Cache SwiftPM build directory
+        uses: actions/cache@v6.1.0
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      # A release is the one build nobody gets to inspect before it reaches a
+      # stranger's Mac, so it runs the suite rather than trusting the PR that
+      # merged.
+      - name: Test
+        run: make test
+
+      # A throwaway keychain rather than the login one: it is deleted with the
+      # runner, and set-key-partition-list keeps codesign from prompting.
+      # Hand-rolled on purpose — the repo takes no third-party actions for
+      # anything that touches signing material.
+      - name: Import the signing certificate
+        if: steps.secrets.outputs.sign == 'true'
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          password="$(openssl rand -base64 24)"
+          certificate="$RUNNER_TEMP/certificate.p12"
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$certificate"
+
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 1800 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          security import "$certificate" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$password" "$keychain" > /dev/null
+          # Prepend, don't replace: dropping the system keychain breaks
+          # anything that needs a root certificate later in the job. Collected
+          # into an array rather than split on whitespace, so a keychain path
+          # containing a space survives.
+          existing=()
+          while IFS= read -r entry; do
+            entry="${entry//\"/}"
+            entry="${entry#"${entry%%[![:space:]]*}"}"
+            [ -n "$entry" ] && existing+=("$entry")
+          done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$keychain" "${existing[@]}"
+
+          rm -f "$certificate"
+
+      # make app is the single bundle-assembly path; the workflow calls it and
+      # never reimplements it. Unset identity falls through to ad-hoc inside the
+      # script, which is exactly the unsigned release path.
+      - name: Assemble the app bundle
+        run: CODESIGN_IDENTITY="$MACOS_SIGNING_IDENTITY" make app
+
+      - name: Package
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          archive="dist/AgentTracker-$VERSION.zip"
+          # ditto, not zip: it preserves the bundle's signature and resource
+          # forks, which a plain zip silently corrupts.
+          ditto -c -k --keepParent dist/AgentTracker.app "$archive"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      # notarytool wants an archive, and the ticket is stapled to the .app —
+      # so the zip made above is submitted, then thrown away and rebuilt from
+      # the stapled bundle. Skipped wholesale without credentials.
+      - name: Notarize and staple
+        id: notarize
+        if: steps.secrets.outputs.notarize == 'true'
+        env:
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          key="$RUNNER_TEMP/notary.p8"
+          printf '%s' "$NOTARY_KEY_P8" | base64 --decode > "$key"
+
+          xcrun notarytool submit "$ARCHIVE" \
+            --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
+            --wait --timeout 30m
+          xcrun stapler staple dist/AgentTracker.app
+          # Prove the ticket travels with the bundle rather than trusting the
+          # staple command's exit code.
+          xcrun stapler validate dist/AgentTracker.app
+
+          rm -f "$key" "$ARCHIVE"
+          ditto -c -k --keepParent dist/AgentTracker.app "$ARCHIVE"
+          echo "notarized=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checksum
+        id: checksum
+        env:
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          ( cd dist && shasum -a 256 "$(basename "$ARCHIVE")" > "$(basename "$ARCHIVE").sha256" )
+          echo "sha256=$(cut -d' ' -f1 < "$ARCHIVE.sha256")" >> "$GITHUB_OUTPUT"
+
+      # The install instructions differ by whether the build is notarized, and
+      # getting that wrong in either direction is a support burden: telling
+      # people to bypass Gatekeeper when they need not teaches a bad habit,
+      # and omitting it when they must leaves them with an app that "won't
+      # open". So the notes are written from what actually happened above.
+      - name: Compose release notes
+        id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.checksum.outputs.sha256 }}
+          NOTARIZED: ${{ steps.notarize.outputs.notarized }}
+        run: |
+          {
+            echo "## Install"
+            echo
+            echo "Download \`AgentTracker-$VERSION.zip\`, unzip it, and drag"
+            echo "**AgentTracker.app** to \`/Applications\`."
+            echo
+            if [ "$NOTARIZED" = "true" ]; then
+              echo "Signed and notarized by Apple — it opens normally."
+            else
+              echo "> [!IMPORTANT]"
+              echo "> This build is **not notarized**, so macOS will refuse it on"
+              echo "> first launch. Right-click the app and choose **Open**, then"
+              echo "> confirm. Only the first launch needs this."
+            fi
+            echo
+            echo "Agent Tracker needs **Accessibility** permission to focus a"
+            echo "session's terminal window. Onboarding walks you through it on"
+            echo "first run."
+            echo
+            echo "\`\`\`"
+            echo "sha256  $SHA256"
+            echo "\`\`\`"
+          } > "$RUNNER_TEMP/notes.md"
+          echo "path=$RUNNER_TEMP/notes.md" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+          NOTES: ${{ steps.notes.outputs.path }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$ARCHIVE" "$ARCHIVE.sha256" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file "$NOTES" \
+            --generate-notes

@@ -114,9 +114,14 @@ jobs:
         if: steps.package.outputs.present == 'true'
         run: swift build --build-tests
 
+      # `make test` (i.e. test.sh), not plain `swift test`: on a toolchain
+      # without Xcode the latter builds and then silently runs ZERO tests, and
+      # a green run that tested nothing is worse than a red one. The wrapper is
+      # a no-op where Xcode exists, so this costs nothing and removes the
+      # false-green entirely if the runner image ever changes.
       - name: Test
         if: steps.package.outputs.present == 'true'
-        run: swift test
+        run: make test
 
       # The hook the lint job skips (`SKIP=swift-format-lint`): `swift format`
       # ships with the Xcode toolchain, so it runs here on macOS.
