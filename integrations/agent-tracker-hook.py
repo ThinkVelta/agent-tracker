@@ -136,6 +136,10 @@ def handle_claude():
         return
 
     tool = payload.get("tool_name")
+    # "Stop" is a contract: the app reconsiders a red that came from it (the
+    # turn ended, but background work may still be running), and never one from
+    # "Notification", which is a permission prompt. Renaming either key here
+    # without RegistryEnrichment.turnEndedEvent brings the false reds back.
     mapping = {
         "SessionStart": ("idle", "Session started"),
         "UserPromptSubmit": ("running", "Working…"),

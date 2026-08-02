@@ -25,6 +25,65 @@ final class RegistryEnrichmentTests {
             provider: provider, sessionId: "s1", cwd: cwd, state: state, stateChangedAt: changedAt)
     }
 
+    private func stopped(changedAt: Date = Date(timeIntervalSince1970: 1000)) -> AgentSession {
+        var stopped = session(state: .needsYou, changedAt: changedAt)
+        stopped.lastEvent = "Stop"
+        stopped.reason = "Turn complete — ready for you"
+        return stopped
+    }
+
+    /// The reported bug: Claude backgrounds a shell, its turn ends so `Stop`
+    /// fires, and the row sits red for as long as the shell runs — 46 minutes,
+    /// in the report — while the harness is going to resume the session by
+    /// itself and nothing is wanted from the user. Claude's own registry says
+    /// `busy` throughout.
+    @Test func aTurnThatEndedWithWorkStillRunningIsNotWaitingOnYou() {
+        let enriched = RegistryEnrichment.apply(
+            to: stopped(), entry: entry(status: .busy, statusUpdatedAt: Date()))
+        #expect(enriched.state == .running)
+        #expect(enriched.reason == "Working…")
+    }
+
+    /// Nothing is written back — the state is re-derived every reload — so a
+    /// session that really has finished returns to red on its own.
+    @Test func theRedComesBackWhenClaudeActuallySettles() {
+        let settled = RegistryEnrichment.apply(
+            to: stopped(), entry: entry(status: .idle, statusUpdatedAt: Date()))
+        #expect(settled.state == .needsYou)
+        #expect(settled.reason == "Turn complete — ready for you")
+    }
+
+    /// A permission prompt is the one thing this app exists to show. It arrives
+    /// as `Notification`, the registry knows nothing about it, and no amount of
+    /// "busy" may clear it.
+    @Test func aPermissionPromptIsNeverClearedByABusyRegistry() {
+        var prompted = session(state: .needsYou)
+        prompted.lastEvent = "Notification"
+        prompted.reason = "Claude needs your permission to use Bash"
+        let enriched = RegistryEnrichment.apply(
+            to: prompted, entry: entry(status: .busy, statusUpdatedAt: Date()))
+        #expect(enriched.state == .needsYou)
+        #expect(enriched.reason == "Claude needs your permission to use Bash")
+    }
+
+    /// A registry entry older than the hook event proves nothing: the hook is
+    /// the more precise signal when it is fresher, both directions.
+    @Test func aLaggingRegistryNeverOverridesAFreshHookEvent() {
+        let now = Date()
+        let stale = entry(status: .busy, statusUpdatedAt: now.addingTimeInterval(-60))
+        #expect(
+            RegistryEnrichment.apply(to: stopped(changedAt: now), entry: stale).state == .needsYou)
+        // …and a status the registry cannot express stays out of it.
+        #expect(
+            RegistryEnrichment.apply(
+                to: stopped(), entry: entry(status: .unknown, statusUpdatedAt: Date())
+            ).state == .needsYou)
+        #expect(
+            RegistryEnrichment.apply(
+                to: stopped(), entry: entry(status: .waiting, statusUpdatedAt: Date())
+            ).state == .needsYou)
+    }
+
     /// The registry name is joined in and stays searchable, but the row title
     /// is the directory for EVERY provider — only Claude publishes a registry
     /// name, and preferring it made Claude and Codex rows read differently.
