@@ -78,6 +78,37 @@ enum WindowIdentity {
             .map(\.offset)
     }
 
+    /// Whether this window is demonstrably a *different* session's.
+    ///
+    /// Sharing a directory is not owning a window: six terminals sat in one
+    /// repo, three of them Claude Code, and clicking a Codex row raised the
+    /// Claude window whose directory happened to match — the reported
+    /// "brought to a completely different terminal, not even the same AI
+    /// agent". A window whose title exactly names another live session is
+    /// that session's, and no directory agreement outranks that.
+    ///
+    /// Only an exact title match counts as ownership, and only when this
+    /// session cannot claim the title too: siblings in one repo all answer to
+    /// "Planner", and treating that as somebody else's would rule out every
+    /// candidate. Those stay ambiguous, which the ranking already handles.
+    /// Takes prebuilt candidates rather than sessions: this runs once per
+    /// window per rival session on the click path, and deriving candidates
+    /// reads the session's transcript from disk. Callers build each side once.
+    static func ownedByAnotherSession(
+        windowTitle: String,
+        ownCandidates: [TerminalFocuser.TitleCandidate],
+        rivalCandidates: [[TerminalFocuser.TitleCandidate]]
+    ) -> Bool {
+        guard !claims(windowTitle, ownCandidates) else { return false }
+        return rivalCandidates.contains { claims(windowTitle, $0) }
+    }
+
+    private static func claims(
+        _ windowTitle: String, _ candidates: [TerminalFocuser.TitleCandidate]
+    ) -> Bool {
+        TerminalFocuser.exactScore(windowTitle: windowTitle, candidates: candidates) > 0
+    }
+
     /// Picks among windows that match equally well. Raising the window the
     /// user is already looking at does nothing visible — it reads as "the app
     /// ignored my click" — so when the focused window is one of the

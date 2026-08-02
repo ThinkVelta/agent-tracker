@@ -260,15 +260,16 @@ struct MenuContentView: View {
             onAcknowledge: { store.acknowledge(session) },
             onSelect: {
                 let exactTitle = store.exactWindowTitle(for: session)
-                let outcome = TerminalFocuser.focus(session, exactTitle: exactTitle)
+                let roster = store.sessions.map { ($0, store.exactWindowTitle(for: $0)) }
+                let outcome = TerminalFocuser.focus(
+                    session, exactTitle: exactTitle, among: roster)
                 // Acknowledge only when the raised window is identifiably this
                 // session's (strictly better match than every sibling) — a
                 // fallback raise can land on an unrelated window, and silencing
                 // the session on that guess hides a red state the user never saw.
                 if case .focusedWindow(let title) = outcome,
                     TerminalFocuser.isPreferredMatch(
-                        windowTitle: title, for: session, exactTitle: exactTitle,
-                        among: store.sessions.map { ($0, store.exactWindowTitle(for: $0)) })
+                        windowTitle: title, for: session, exactTitle: exactTitle, among: roster)
                 {
                     store.acknowledge(session)
                 }
