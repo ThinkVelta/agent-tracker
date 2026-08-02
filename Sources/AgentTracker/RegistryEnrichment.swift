@@ -18,7 +18,7 @@ enum RegistryEnrichment {
         enriched.registryCwd = entry.cwd
         enriched.state = resolvedState(for: session, entry: entry)
         if enriched.state != session.state {
-            enriched.reason = "Idle at prompt"
+            enriched.reason = enriched.state == .running ? "Working…" : "Idle at prompt"
         }
         return enriched
     }
@@ -28,25 +28,43 @@ enum RegistryEnrichment {
     /// no interrupt hook, so a session the user escaped out of stays green
     /// "running" until its next event, which may never come.
     ///
-    /// It may only ever *demote* a stale `running` row, and only on evidence:
+    /// Two corrections, both only on evidence newer than the hook's:
     ///
-    /// - `needsYou` is untouchable. It is a user-facing state the registry
-    ///   knows nothing about, and clearing it would hide a session that is
-    ///   waiting on the user — the one thing this app exists to show.
-    /// - A hook event newer than the registry's own timestamp wins. The hook
-    ///   is the more precise signal when it is fresher; letting a lagging file
-    ///   stomp a just-arrived event would make the list flicker.
-    /// - An unrecognized status expresses no opinion.
+    /// - A stale `running` row is demoted. Claude Code has no interrupt hook,
+    ///   so a session the user escaped out of stays green until its next event,
+    ///   which may never come.
+    /// - A `Stop` that turned out not to end the work is promoted back to
+    ///   running. `Stop` fires when the assistant's turn ends, but a turn that
+    ///   left background shells running is resumed by the harness when they
+    ///   finish — so the row sat red for as long as the shells took (46 minutes,
+    ///   reported) while nothing was wanted from the user.
+    ///
+    /// Only a `Stop`-derived red is eligible. A `Notification` red is a
+    /// permission prompt: the user genuinely is needed, the registry knows
+    /// nothing about it, and clearing it would hide the one thing this app
+    /// exists to show. An unrecognized status expresses no opinion.
+    ///
+    /// Nothing is written back — the display state is re-derived each reload —
+    /// so when Claude does settle, the row returns to red by itself.
     static func resolvedState(
         for session: AgentSession,
         entry: ClaudeSessionRegistry.Entry
     ) -> SessionState {
-        guard session.state == .running,
-            let isBusy = entry.status.isBusy, !isBusy,
-            let registryUpdate = entry.statusUpdatedAt
-        else { return session.state }
+        guard let registryUpdate = entry.statusUpdatedAt else { return session.state }
         let lastEvent = session.stateChangedAt ?? session.updatedAt ?? .distantPast
+        // The hook is the more precise signal when it is fresher; letting a
+        // lagging file stomp a just-arrived event would make the list flicker.
         guard registryUpdate > lastEvent else { return session.state }
-        return .idle
+
+        switch session.state {
+        case .running:
+            guard let isBusy = entry.status.isBusy, !isBusy else { return session.state }
+            return .idle
+        case .needsYou:
+            guard session.lastEvent == "Stop", entry.status == .busy else { return session.state }
+            return .running
+        default:
+            return session.state
+        }
     }
 }
