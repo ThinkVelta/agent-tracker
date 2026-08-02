@@ -124,28 +124,51 @@ final class TerminalFocuserTests {
         #expect(winner == nil)
     }
 
-    @Test func isPreferredMatchAcceptsDecoratedTitlesAndRefusesSharedOnes() {
-        // Decorated title (Terminal.app style): substring match, no exact —
-        // but no sibling matches at all, so the click-ack may proceed.
+    @Test func plausibleMatchAcceptsDecoratedTitlesAndRefusesUnrelatedOnes() {
+        // Decorated title (Terminal.app style): substring match, no exact.
         let backend = claudeSession(id: "b", cwd: "/Users/dev/planner/planner-backend")
         let worktree = claudeSession(
             id: "w", cwd: "/Users/dev/planner/planner-backend/.claude/worktrees/pln-1-abc")
         let all = [(backend, String?.none), (worktree, String?.none)]
         #expect(
-            TerminalFocuser.isPreferredMatch(
+            TerminalFocuser.isPlausibleMatch(
                 windowTitle: "planner-backend — zsh — 80x24", for: backend, exactTitle: nil,
                 among: all))
 
-        // A bare parent-directory window relates to both sessions equally
-        // (substring tie) — refuse, this raise proved nothing.
-        #expect(
-            !TerminalFocuser.isPreferredMatch(
-                windowTitle: "planner", for: backend, exactTitle: nil, among: all))
-
         // Unrelated window: no score at all.
         #expect(
-            !TerminalFocuser.isPreferredMatch(
+            !TerminalFocuser.isPlausibleMatch(
                 windowTitle: "totally-unrelated", for: backend, exactTitle: nil, among: all))
+    }
+
+    /// The reported bug: clicking a Codex needs-you row left it red. Two Codex
+    /// sessions in one repo have byte-identical candidates, so neither can
+    /// ever score strictly better than the other — the old "preferred match"
+    /// bar was unsatisfiable and those rows could only be cleared by hand.
+    /// Landing on a window that could be this session's is enough.
+    @Test func siblingSessionsInOneRepoCanStillBeAcknowledgedByClicking() {
+        let first = AgentSession(
+            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+        let second = AgentSession(
+            provider: "codex", sessionId: "c2", cwd: "/Users/dev/Planner", state: .needsYou)
+        let all = [(first, String?.none), (second, String?.none)]
+        #expect(
+            TerminalFocuser.isPlausibleMatch(
+                windowTitle: "⠸ Planner", for: first, exactTitle: nil, among: all))
+    }
+
+    /// Softer, but not blind: a window that exactly names a different session
+    /// is still that session's, and clicking must not silence this one on it.
+    @Test func plausibleMatchStillRefusesAnotherSessionsWindow() {
+        let codex = AgentSession(
+            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+        let claude = AgentSession(
+            provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
+        let summary = "Reduce Pondria ToS visibility in Google search results"
+        #expect(
+            !TerminalFocuser.isPlausibleMatch(
+                windowTitle: "⠐ \(summary)", for: codex, exactTitle: nil,
+                among: [(codex, nil), (claude, summary)]))
     }
 
     /// The real repro: two Claude sessions plus a Codex session sharing one
@@ -204,7 +227,7 @@ final class TerminalFocuserTests {
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let ranking = WindowIdentity.rankTitles(
             ["⠂ planner", "planner"], candidates: candidates, state: .needsYou)
-        #expect(ranking?.index == 1)
+        #expect(ranking?.tied.first == 1)
     }
 
     @Test func activityAgreementFollowsSessionState() {
@@ -228,7 +251,7 @@ final class TerminalFocuserTests {
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let titles = ["…/Documents/ProjectsVelta/Planner", "⠋ Planner", "Planner"]
         let ranking = WindowIdentity.rankTitles(titles, candidates: candidates, state: .needsYou)
-        #expect(ranking?.index == 2)
+        #expect(ranking?.tied.first == 2)
         #expect(ranking?.score == 80)
         #expect(ranking?.tiedWithWinner == 0)
     }
@@ -239,7 +262,7 @@ final class TerminalFocuserTests {
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let ranking = WindowIdentity.rankTitles(
             ["planner", "⠸ planner"], candidates: candidates, state: .running)
-        #expect(ranking?.index == 1)
+        #expect(ranking?.tied.first == 1)
         #expect(ranking?.tiedWithWinner == 0)
     }
 
@@ -252,7 +275,7 @@ final class TerminalFocuserTests {
         // project window is not: the far stronger title match must still win.
         let ranking = WindowIdentity.rankTitles(
             ["planner", "⠋ Fix the flaky scanner test"], candidates: candidates, state: .needsYou)
-        #expect(ranking?.index == 1)
+        #expect(ranking?.tied.first == 1)
         #expect(ranking?.activityAgrees == false)
     }
 
@@ -262,7 +285,7 @@ final class TerminalFocuserTests {
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let ranking = WindowIdentity.rankTitles(
             ["planner", "planner"], candidates: candidates, state: .needsYou)
-        #expect(ranking?.index == 0)
+        #expect(ranking?.tied.first == 0)
         #expect(ranking?.tiedWithWinner == 1)
     }
 

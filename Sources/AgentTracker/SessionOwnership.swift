@@ -43,30 +43,35 @@ extension TerminalFocuser {
         return winner.session
     }
 
-    /// Whether the raised window belongs to `session` more than to any other
-    /// session: a positive match score, strictly ahead of every sibling's.
-    /// Softer than `unambiguousMatch` (substring tiers count) — used to gate
-    /// the row-click acknowledge, where the user already chose the session and
-    /// the only question is whether the raise landed on a plausible window;
-    /// decorated titles ("… — zsh — 80x24") must still clear the red state.
-    static func isPreferredMatch(
+    /// Whether the raised window could be this session's: it scores, and it is
+    /// not a window that exactly names somebody else.
+    ///
+    /// This gates the row-click acknowledge, and is deliberately softer than
+    /// `unambiguousMatch`. The bar used to be "strictly better than every
+    /// sibling", which two sessions in one repo can never clear — their title
+    /// candidates are byte-identical, so each scores exactly what the other
+    /// does. Those rows could then never be cleared by clicking them, which is
+    /// the reported "clicking a Codex needs-you row doesn't make it idle".
+    ///
+    /// The user chose the row and was taken to a window that could be its own;
+    /// that is enough to call it seen. Passive acknowledgement
+    /// (`TerminalFocusObserver`) keeps the strict bar, because there nobody
+    /// chose anything and a wrong guess silences a session unprompted.
+    /// Decorated titles ("… — zsh — 80x24") still clear the red state.
+    static func isPlausibleMatch(
         windowTitle: String,
         for session: AgentSession,
         exactTitle: String?,
         among sessions: [(session: AgentSession, exactTitle: String?)]
     ) -> Bool {
-        let own = matchScore(
+        let own = titleCandidates(for: session, exactTitle: exactTitle)
+        guard matchScore(windowTitle: windowTitle, candidates: own) > 0 else { return false }
+        return !WindowIdentity.ownedByAnotherSession(
             windowTitle: windowTitle,
-            candidates: titleCandidates(for: session, exactTitle: exactTitle)
-        )
-        guard own > 0 else { return false }
-        for entry in sessions where entry.session.id != session.id {
-            let other = matchScore(
-                windowTitle: windowTitle,
-                candidates: titleCandidates(for: entry.session, exactTitle: entry.exactTitle)
-            )
-            if other >= own { return false }
-        }
-        return true
+            ownCandidates: own,
+            rivalCandidates:
+                sessions
+                .filter { $0.session.id != session.id }
+                .map { titleCandidates(for: $0.session, exactTitle: $0.exactTitle) })
     }
 }

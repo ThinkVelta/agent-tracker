@@ -241,6 +241,10 @@ final class SessionStore: ObservableObject {
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
+        if !focusRotation.isEmpty {
+            let live = Set(sorted.map(\.id))
+            focusRotation = focusRotation.filter { live.contains($0.key) }
+        }
         advanceClockIfNeeded()
         // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
         // report from the installed app useful, and rebuilds fire on every
@@ -278,6 +282,20 @@ final class SessionStore: ObservableObject {
         acknowledged.state = .idle
         acknowledged.reason = "Seen"
         return acknowledged
+    }
+
+    /// How many times each row has been clicked. Sibling sessions in one repo
+    /// title their windows identically, so the focuser cannot tell them apart;
+    /// handing it a counter lets it walk the tied windows across clicks rather
+    /// than raising the same one forever. Keyed by session id and pruned with
+    /// the sessions themselves.
+    private var focusRotation: [String: Int] = [:]
+
+    func nextFocusRotation(for session: AgentSession) -> Int {
+        let previous = focusRotation[session.id] ?? -1
+        let next = previous == .max ? 0 : previous + 1
+        focusRotation[session.id] = next
+        return next
     }
 
     /// Downgrade a needs-you session to idle once the user has jumped to it —

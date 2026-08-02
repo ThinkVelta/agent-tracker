@@ -262,13 +262,14 @@ struct MenuContentView: View {
                 let exactTitle = store.exactWindowTitle(for: session)
                 let roster = store.sessions.map { ($0, store.exactWindowTitle(for: $0)) }
                 let outcome = TerminalFocuser.focus(
-                    session, exactTitle: exactTitle, among: roster)
-                // Acknowledge only when the raised window is identifiably this
-                // session's (strictly better match than every sibling) — a
-                // fallback raise can land on an unrelated window, and silencing
-                // the session on that guess hides a red state the user never saw.
+                    session, exactTitle: exactTitle, among: roster,
+                    rotation: store.nextFocusRotation(for: session))
+                // Acknowledge when the raised window could be this session's.
+                // A wholly unrelated window, or one that exactly names someone
+                // else, still refuses — silencing on that guess would hide a
+                // red state the user never saw.
                 if case .focusedWindow(let title) = outcome,
-                    TerminalFocuser.isPreferredMatch(
+                    TerminalFocuser.isPlausibleMatch(
                         windowTitle: title, for: session, exactTitle: exactTitle, among: roster)
                 {
                     store.acknowledge(session)

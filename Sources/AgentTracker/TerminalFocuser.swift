@@ -41,6 +41,9 @@ enum TerminalFocuser {
         /// ownership is tested per window per rival, and deriving candidates
         /// reads that session's transcript.
         let rivalCandidates: [[TitleCandidate]]
+        /// How many times this row has been clicked, so an unresolvable tie
+        /// walks its candidates instead of raising the same window forever.
+        let rotation: Int
 
         func ownedByAnother(_ windowTitle: String) -> Bool {
             WindowIdentity.ownedByAnotherSession(
@@ -91,10 +94,15 @@ enum TerminalFocuser {
     ///   in the right directory", and omitting it would silently disable that
     ///   protection. Pass all sessions — the caller's own is filtered out.
     @discardableResult
+    /// - Parameter rotation: how many times this row has already been clicked.
+    ///   Sibling sessions in one repo title their windows identically, so a
+    ///   tie cannot be resolved — this walks the tied windows across clicks so
+    ///   the user can reach the other one.
     static func focus(
         _ session: AgentSession,
         exactTitle: String? = nil,
-        among roster: [(session: AgentSession, exactTitle: String?)]
+        among roster: [(session: AgentSession, exactTitle: String?)],
+        rotation: Int = 0
     ) -> Outcome {
         log(
             "focusing \(session.providerDisplayName) session \(session.sessionId) "
@@ -132,7 +140,8 @@ enum TerminalFocuser {
             rivalCandidates:
                 roster
                 .filter { $0.session.id != session.id }
-                .map { titleCandidates(for: $0.session, exactTitle: $0.exactTitle) })
+                .map { titleCandidates(for: $0.session, exactTitle: $0.exactTitle) },
+            rotation: rotation)
 
         // Strongest identity first. An exact-only candidate is a name for
         // THIS session (statusline-sourced), so the Window menu — which sees
@@ -206,9 +215,9 @@ enum TerminalFocuser {
             chosen = hits[0]
         } else if let ranking = WindowIdentity.rankTitles(
             titles, candidates: target.candidates, state: session.state),
-            ranking.tiedWithWinner == 0
+            let single = ranking.tied.first, ranking.tiedWithWinner == 0
         {
-            chosen = hits[ranking.index]
+            chosen = hits[single]
         } else {
             // Nothing separates these windows, so skip whichever one the user
             // is already looking at — raising that one reads as a dead click,
@@ -313,17 +322,27 @@ enum TerminalFocuser {
         }
         guard
             let ranking = WindowIdentity.rankTitles(
-                titled.map(\.title), candidates: candidates, state: state)
+                titled.map(\.title), candidates: candidates, state: state),
+            let pick = ranking.choice(rotation: target.rotation)
         else { return nil }
-        let winner = titled[ranking.index]
+        let winner = titled[pick]
         if ranking.tiedWithWinner > 0 {
-            // Sibling sessions in one repo title their windows identically;
-            // nothing left distinguishes them, so the raise is a coin flip.
-            // Say so — the acknowledge gate (isPreferredMatch) already
-            // declines to silence a session on this evidence.
+            // Sibling sessions in one repo title their windows identically, so
+            // the raise is a coin flip. Walk the tied set across repeated
+            // clicks: raising the same window every time makes the second
+            // click read as dead, and this is the only way the user can reach
+            // the sibling at all. Unlike the directory path, the focused
+            // window cannot be identified here — the menu offers titles only,
+            // and these titles are identical by definition.
+            // Position within the tie, not the raw click count: it says where
+            // in the cycle this raise landed, which is what the trace is for,
+            // and it is bounded by the tie so it cannot overflow the way
+            // `rotation + 1` could.
+            let position = (ranking.tied.firstIndex(of: pick) ?? 0) + 1
             log(
-                "ambiguous: \(ranking.tiedWithWinner + 1) window(s) tie at score \(ranking.score) "
-                    + "— raising \"\(winner.title)\", which may not be this session's window")
+                "ambiguous: \(ranking.tied.count) window(s) tie at score \(ranking.score) "
+                    + "— raising \"\(winner.title)\" (candidate \(position) of "
+                    + "\(ranking.tied.count)), which may not be this session's window")
         }
         return AXMatch(
             element: winner.element, title: winner.title, score: ranking.score,
