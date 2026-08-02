@@ -250,10 +250,6 @@ struct MenuContentView: View {
     }
 
     private func row(for session: AgentSession) -> some View {
-        // Auto-acknowledge only fires when the raised window identifies ONE
-        // session beyond doubt, which same-repo siblings never can — so those
-        // rows would stay red forever. onAcknowledge is the escape hatch: the
-        // user says they've seen it, no guessing required.
         SessionRow(
             session: session,
             clockTick: store.clockTick,
@@ -480,28 +476,24 @@ struct SessionRow: View {
     @State private var hovering = false
     @State private var showsPath = false
 
+    // This used to be a checkmark button drawn over the row. It read as a
+    // rendering glitch — trailing-aligned, it landed on top of the jump arrow
+    // instead of the slot reserved for it — and it was a second visible control
+    // for something the row click already does.
+    //
+    // Kept as a context menu rather than deleted outright, because clicking a
+    // row only acknowledges when focus SUCCEEDS: without Accessibility
+    // permission every attempt returns `.needsPermission`, so every red row
+    // would be permanently stuck with no way out. That is the state a user is
+    // in before granting the permission, and again after an update invalidates
+    // it. Hidden until right-click, so it costs the row nothing.
     var body: some View {
-        // The acknowledge control is a SIBLING of the row button, not nested
-        // inside it: a button within a button is unreliable in SwiftUI, and a
-        // click landing on the row action would focus the terminal and dismiss
-        // the panel — exactly what "acknowledge without jumping" must not do.
-        ZStack(alignment: .trailing) {
-            rowButton
-            if session.state == .needsYou {
-                Button(action: onAcknowledge) {
-                    Image(systemName: "checkmark.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 18, height: 18)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .opacity(hovering ? 1 : 0)
-                // Never steals a click while invisible.
-                .allowsHitTesting(hovering)
-                .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
-                .help("Mark as seen (clears the red state)")
+        if session.state == .needsYou {
+            rowButton.contextMenu {
+                Button("Mark as seen", action: onAcknowledge)
             }
+        } else {
+            rowButton
         }
     }
 
@@ -534,11 +526,6 @@ struct SessionRow: View {
                 Text(relativeTime)
                     .font(Theme.Typography.timestamp)
                     .foregroundStyle(.tertiary)
-                // Reserves the space the overlaid acknowledge button occupies,
-                // so the jump affordance never sits underneath it.
-                if session.state == .needsYou {
-                    Color.clear.frame(width: 18, height: 18)
-                }
                 Image(systemName: "arrow.up.forward.app")
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
