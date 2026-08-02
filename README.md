@@ -217,6 +217,17 @@ all again — hooks, the installed app, its preferences — run
 - [x] Onboarding: install as .app + login item
 - [x] Downloadable releases
 
+## Support this project
+
+Agent Tracker is free, MIT-licensed, and built in spare time. If it saves you
+from hunting through terminal windows, you can say thanks:
+
+- [**GitHub Sponsors**](https://github.com/sponsors/ThinkVelta) — one-off or
+  monthly, and GitHub takes no cut
+
+Starring the repo, reporting a bug you hit, or telling someone who runs three
+agents at once helps just as much and costs nothing.
+
 ## License
 
 [MIT](LICENSE) · Made by [Ruben Broekx](https://github.com/RubenBroekx)
