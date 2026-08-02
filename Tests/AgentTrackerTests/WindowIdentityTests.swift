@@ -224,7 +224,7 @@ final class WindowIdentityTests {
     }
 
     /// The reported critical failure, straight from a `[focus]` trace: a Codex
-    /// session in .../Planner raised the window titled "⠐ Reduce Pondria ToS
+    /// session in .../Planner raised the window titled "⠐ Fix the checkout redirect
     /// visibility in Google search results" — a Claude Code session's window
     /// that merely shared the directory. Ownership by name has to beat a
     /// directory tie.
@@ -233,7 +233,7 @@ final class WindowIdentityTests {
             provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let claude = AgentSession(
             provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
-        let summary = "Reduce Pondria ToS visibility in Google search results"
+        let summary = "Fix the checkout redirect loop on expired sessions"
         let codexCandidates = TerminalFocuser.titleCandidates(for: codex, exactTitle: nil)
         let claudeCandidates = TerminalFocuser.titleCandidates(for: claude, exactTitle: summary)
         #expect(

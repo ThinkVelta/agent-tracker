@@ -62,6 +62,15 @@ rollout files. See README for the full picture.
 - Installers must be idempotent and back up user configs before editing.
 - Onboarding (`integrations/onboard.py`) must stay stdlib-only and degrade
   gracefully without a TTY (flag-driven fallback, no hangs, no tracebacks).
+- **Never paste real private specifics into anything durable** — commit
+  messages, PR bodies, code comments, test fixtures. Generic project names are
+  fine; strings that *describe business substance* are not (a ticket title
+  naming a live payments defect, a task about a named third party, an absolute
+  home directory). Paraphrase, or synthesise an equivalent that preserves the
+  property being demonstrated — same length, same shape, same edge case — and
+  use `/Users/dev/` rather than a real home. This repo is going public, and
+  auto-generated release notes and `refs/pull/*` commits are far harder to
+  correct afterwards than the working tree.
 
 ## Git workflow
 
