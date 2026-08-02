@@ -90,7 +90,9 @@ enum ArchitecturePreview {
                     Node(
                         title: "~/.agent-tracker/",
                         detail: "one JSON file per session", accent: nil),
-                    Node(title: "Directory watchers", detail: "no daemon, no polling", accent: nil),
+                    Node(
+                        title: "Directory watchers",
+                        detail: "events first, 1s backstop", accent: nil),
                     Node(
                         title: "Liveness check",
                         detail: "prunes sessions that died", accent: nil),

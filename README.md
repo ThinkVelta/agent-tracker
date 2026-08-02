@@ -120,9 +120,10 @@ signal, not a requirement.
 - **No daemon; event-driven at the core.** Agent CLIs push events through their
   native hook mechanisms; a tiny dependency-free Python script
   (`integrations/agent-tracker-hook.py`) translates each event into a per-session
-  JSON state file. The app watches directories with dispatch sources/FSEvents —
-  the only periodic work is a lightweight 30-second `lsof` liveness check for
-  Codex processes.
+  JSON state file, and the app watches those directories with dispatch
+  sources/FSEvents. Two light timers back that up: a 1-second re-read (tunable
+  in Settings) because FSEvents does not fire for appends to a file Codex holds
+  open, and a 30-second `lsof` pass to notice when a `codex` process has gone.
 - **Codex is tracked live without any config change**: the app also watches
   Codex's own rollout files in `~/.codex/sessions` (read-only) for
   `task_started`/`task_complete`/`turn_aborted` events, so Codex sessions show
@@ -146,7 +147,6 @@ signal, not a requirement.
   at the top of `statusline.sh`). Transcript task summaries
   ("✳ &lt;task summary&gt;") and working-directory fragments remain as
   fallbacks when it is absent.
-
 - **A finished turn is not always "needs you".** Claude's `Stop` fires when the
   assistant's turn ends, but a turn that left background shells running is
   resumed when they finish. Claude publishes its own busy/idle status, so a red
