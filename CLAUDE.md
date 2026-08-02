@@ -46,6 +46,17 @@ rollout files. See README for the full picture.
   First-run onboarding shows once (`--onboarding` re-opens it on demand)
 - Onboard: `./install.sh` (interactive picker; `--agents claude,codex --yes`
   for automation; `integrations/uninstall.sh` reverses it)
+- Docs images: `./scripts/make-docs-images.sh` renders the README's assets from
+  synthetic sessions (`scripts/demo-sessions.py`) via the app's own
+  `--render-preview`. Never screenshot the real app for docs — that publishes
+  whatever you happen to be running. Re-run after any dropdown change and commit
+  the result.
+- Cut a release: bump `VERSION`, merge to `main`, then `git tag vX.Y.Z && git
+  push origin vX.Y.Z`. The tag triggers `.github/workflows/release.yml`, which
+  refuses to publish if the tag and `VERSION` disagree or the tagged commit is
+  not on `main`. Signing and notarization are driven entirely by repository
+  secrets — absent, it ships an ad-hoc signed zip; present, the same workflow
+  produces a notarized one with no edits.
 - Test hook script manually:
   `AGENT_TRACKER_DIR=/tmp/at-test sh -c 'echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"x\"}" | python3 integrations/agent-tracker-hook.py claude'`
   (`AGENT_TRACKER_DIR` overrides `~/.agent-tracker` for both app and hook;

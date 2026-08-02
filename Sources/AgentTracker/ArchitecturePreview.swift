@@ -6,8 +6,9 @@ import SwiftUI
 ///
 /// Deliberately three columns — where state comes from, what holds it, what you
 /// see — because that is the only structural claim worth making: the app owns
-/// no process and polls nothing that matters, it watches files other tools
-/// already write.
+/// no process, it reads files other tools already write. Events drive it; the
+/// 1-second re-read and the 30-second liveness pass are backstops, and the
+/// diagram says so rather than claiming nothing runs on a timer.
 enum ArchitecturePreview {
     private struct Node: View {
         let title: String
@@ -43,10 +44,19 @@ enum ArchitecturePreview {
 
     private struct Arrow: View {
         var body: some View {
-            Image(systemName: "arrow.right")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 26)
+            // Carries an invisible copy of the column heading so the arrow
+            // centres on the three cards rather than on the column *including*
+            // its label, which left it sitting visibly high.
+            VStack(spacing: 8) {
+                Text(" ")
+                    .font(Theme.Typography.sectionHeader)
+                    .hidden()
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(width: 26)
         }
     }
 
@@ -70,7 +80,7 @@ enum ArchitecturePreview {
     }
 
     static func diagram() -> some View {
-        HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .top, spacing: 0) {
             Column(
                 heading: "Agents write",
                 nodes: [
