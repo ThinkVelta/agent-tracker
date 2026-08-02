@@ -48,11 +48,19 @@ to disk.
 
 Requirements: macOS 14 or later.
 
+```sh
+brew tap ThinkVelta/tap
+brew install --cask agent-tracker
+```
+
+Or download it by hand:
+
 1. Download `AgentTracker-x.y.z.zip` from
    [the latest release](https://github.com/ThinkVelta/agent-tracker/releases/latest).
 2. Unzip it and drag **AgentTracker.app** to `/Applications`.
-3. Launch it. A first-run window walks you through granting Accessibility,
-   connecting your agent CLIs, and starting at login.
+
+Either way, launch it: a first-run window walks you through granting
+Accessibility, connecting your agent CLIs, and starting at login.
 
 <details>
 <summary><strong>If macOS refuses to open it</strong></summary>
