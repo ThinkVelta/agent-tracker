@@ -305,6 +305,12 @@ jobs:
             exit 0
           }
 
+          # Actions runs this with `bash -e`, so any unguarded command that
+          # fails would kill the job. The trap makes the guarantee above hold
+          # for every command in the step, including ones added later, rather
+          # than only the failures that were thought of here.
+          trap 'manual warning "The tap update hit an unexpected error."' ERR
+
           if [ -z "$TAP_TOKEN" ]; then
             manual notice "TAP_GITHUB_TOKEN not set."
           fi
@@ -317,9 +323,14 @@ jobs:
           cask="$tap/Casks/agent-tracker.rb"
 
           # Anchored to the stanza names, so this cannot rewrite a version or
-          # digest that happens to appear elsewhere in the file.
-          sed -i -E "s|^  version \".*\"$|  version \"$VERSION\"|" "$cask"
-          sed -i -E "s|^  sha256 \".*\"$|  sha256 \"$SHA256\"|" "$cask"
+          # digest that happens to appear elsewhere in the file. Written to a
+          # new file rather than edited in place: this runs on macOS, where
+          # `sed -i` reads the next argument as a backup suffix, so `-i -E`
+          # silently means "back up to .rb-E and use a basic regex".
+          sed -E -e "s|^  version \".*\"$|  version \"$VERSION\"|" \
+                 -e "s|^  sha256 \".*\"$|  sha256 \"$SHA256\"|" \
+                 "$cask" > "$cask.new"
+          mv "$cask.new" "$cask"
 
           if ! grep -q "^  version \"$VERSION\"$" "$cask" \
             || ! grep -q "^  sha256 \"$SHA256\"$" "$cask"; then
