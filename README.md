@@ -1,29 +1,114 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="" width="120">
+
 # Agent Tracker
 
-Keep track of your agent sessions in your MacBook's Menu Bar.
+**Know which AI coding session needs you — without hunting through terminals.**
 
-## What is this?
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](https://github.com/ThinkVelta/agent-tracker/releases/latest)
+[![Download](https://img.shields.io/badge/download-latest%20release-2ea44f)](https://github.com/ThinkVelta/agent-tracker/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Agent Tracker is a lightweight macOS menu bar app that gives you an at-a-glance
-view of your running AI agent sessions (Claude Code, Codex, …) — so you always
-know what's running, what's waiting on you, and what's done, without cycling
-through terminal windows and desktops.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/dropdown-dark.png">
+  <img alt="The dropdown, listing sessions grouped by state" src="assets/dropdown-light.png" width="380">
+</picture>
 
-The menu bar shows three dots with counts:
+</div>
 
-- 🔴 **Needs you** — a session finished its turn or is waiting for permission/input
-- 🟢 **Running** — the agent is actively working
-- ⚪ **Idle** — session open, nothing pending
+## Why
 
-Clicking the icon opens a dropdown listing every session (project, provider,
-status reason, time in state) — and clicking a specific dot opens it
-pre-filtered to that state (click the same dot again to close; the in-dropdown
-chips drive the same filter). Clicking a row jumps straight to that terminal
-window — across Spaces — and marks the session as acknowledged when the
-raised window is identifiably that session's (a strictly better title match
-than every sibling). Visiting a session's terminal yourself works too: once
-its window has been focused for a few seconds, the session is
-auto-acknowledged (exact, unambiguous title matches only — ties never guess).
+Run more than one coding agent and the same question keeps coming back: *which
+one is waiting on me?* Answering it means cycling through terminal windows
+across Spaces, and the answer goes stale while you look.
+
+Agent Tracker keeps it in your menu bar. Three dots, three counts:
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/menubar-dark.png">
+  <img alt="Menu bar icon: 2 red, 2 green, 1 grey" src="assets/menubar-light.png" width="120">
+</picture>
+</div>
+
+| | | |
+|---|---|---|
+| 🔴 | **Needs you** | the turn finished, or it wants permission |
+| 🟢 | **Running** | working right now |
+| ⚪ | **Idle** | open, nothing pending |
+
+**Click a row and you land in that terminal**, across Spaces, and the session
+stops asking for attention. Click a *dot* to open the list already filtered to
+that state. Visit a session's terminal yourself and it clears on its own after a
+few seconds.
+
+No daemon, no telemetry, no account. It reads what your agent CLIs already write
+to disk.
+
+## Install
+
+Requirements: macOS 14 or later.
+
+1. Download `AgentTracker-x.y.z.zip` from
+   [the latest release](https://github.com/ThinkVelta/agent-tracker/releases/latest).
+2. Unzip it and drag **AgentTracker.app** to `/Applications`.
+3. Launch it. A first-run window walks you through granting Accessibility,
+   connecting your agent CLIs, and starting at login.
+
+<details>
+<summary><strong>macOS refuses to open it</strong></summary>
+
+Releases are not notarized yet, so Gatekeeper blocks the first launch. Open
+**System Settings › Privacy & Security**, scroll to the message naming
+AgentTracker, and click **Open Anyway**.
+
+On macOS 14 and earlier you can right-click the app and choose **Open** instead —
+macOS 15 removed that shortcut. Only the first launch needs this, and each
+release's notes say whether it applies, because they are written from how that
+build was actually signed.
+
+</details>
+
+<details>
+<summary><strong>Click-to-focus stopped working after an update</strong></summary>
+
+Until releases are notarized, every version is signed differently from the last,
+and macOS ties the Accessibility permission to the exact binary — so it forgets
+the grant when you update.
+
+Remove AgentTracker from **System Settings › Privacy & Security ›
+Accessibility** with **−**, then add it again. Toggling the existing entry off
+and on does not help.
+
+</details>
+
+Settings › About checks for newer releases. There is no auto-updater, and
+nothing phones home on its own.
+
+## What you get
+
+**Click-to-focus.** The row you click raises that session's terminal window,
+switching Spaces if it lives on another one — matched by the window's live
+working directory and title, via the Accessibility API.
+
+**Per-dot filtering.** Clicking the red dot opens the list showing only what
+needs you. Clicking it again closes it. The chips at the top of the dropdown do
+the same thing.
+
+**A menu bar that stays out of the way.** Five icon modes, from counts on every
+dot down to a single dot that appears only when something needs you:
+
+<div align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/icon-modes-dark.png">
+  <img alt="The available menu bar icon modes" src="assets/icon-modes-light.png" width="420">
+</picture>
+</div>
+
+**Both agents, no configuration.** Claude Code reports through its hooks. Codex
+is tracked live by reading its own session files — its `notify` hook is an extra
+signal, not a requirement.
 
 ## How it works
 
@@ -65,31 +150,44 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
   ("✳ &lt;task summary&gt;") and working-directory fragments remain as
   fallbacks when it is absent.
 
-## Install
+### State mapping
 
-Requirements: macOS 14+.
+| Provider | Event | State |
+|---|---|---|
+| Claude Code | `SessionStart` | idle |
+| Claude Code | `UserPromptSubmit`, `PreToolUse`, `PreCompact` | running |
+| Claude Code | `Stop` (turn complete), `Notification` (permission/input) | needs you |
+| Claude Code | `SessionEnd` | removed |
+| Codex | `task_started` (rollout) | running |
+| Codex | `task_complete` (rollout), `agent-turn-complete` (notify) | needs you |
+| Codex | `turn_aborted` (rollout, you interrupted) | needs you |
 
-Download the latest `AgentTracker-x.y.z.zip` from
-[Releases](https://github.com/ThinkVelta/agent-tracker/releases/latest), unzip
-it, and drag **AgentTracker.app** to `/Applications`. Launch it — the first-run
-window walks you through granting Accessibility, connecting your agent CLIs, and
-starting at login.
+A `Stop` that leaves background shells running is not treated as "needs you":
+Claude publishes its own busy/idle status, and a red row is re-derived as
+running while that status says the session is still working.
 
-If macOS refuses to open it on first launch, go to **System Settings › Privacy &
-Security**, scroll to the message naming AgentTracker, and click **Open Anyway**.
-On macOS 14 and earlier you can right-click the app and choose **Open** instead —
-macOS 15 removed that shortcut. Either way, only the first launch needs it. Each
-release's notes say whether the step applies, because they are written from how
-that build was actually signed.
+Codex sessions are auto-pruned within ~30 seconds of their `codex` process
+exiting (`lsof`-based liveness check on the rollout file).
 
-Until releases are notarized, each new version is signed differently from the
-last, so **macOS forgets the Accessibility permission when you update**. If
-click-to-focus stops working after an update, remove AgentTracker from System
-Settings › Privacy & Security › Accessibility with **−** and add it again;
-toggling the existing entry off and on does not help.
+## Known limitations
 
-Settings › About checks for newer releases; there is no auto-updater and nothing
-phones home on its own.
+- **Sessions sharing one directory cannot be told apart.** Several Codex
+  sessions in one repo all title their window with the bare project name, and
+  all report the same working directory, so nothing distinguishes them. Their
+  rows are spread over the candidate windows rather than all pointing at the
+  first one, and repeated clicks walk the rest, so a second row usually opens a
+  second terminal — but nothing here identifies *which* window is whose, and two
+  rows can still land together when fewer windows are visible than there are
+  sessions. Neither Ghostty nor Codex exposes a per-window identity that would
+  settle it; `WindowIdentity` documents what was measured.
+- **Window matching is exact only when a title source exists.** Claude Code
+  sessions get exact titles when a statusline script dumps its payload to
+  `~/.claude/statusline-last.json`; without it, matching falls back to
+  transcript summaries and path fragments.
+- **Codex approval prompts don't surface as red yet** — rollouts don't record
+  them; planned via Codex's native hooks engine.
+- Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
+  kitty are wired up but untested.
 
 ## Build from source
 
@@ -110,18 +208,11 @@ a bundle is what makes the Accessibility grant stick to the app (running via
 
 For development, `swift run AgentTracker` still works exactly as before.
 
-### Cutting a release
-
-Bump `VERSION`, merge to `main`, then tag it:
-
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
-
-The tag triggers `.github/workflows/release.yml`, which refuses to publish if
-the tag and `VERSION` disagree. Signing and notarization are driven entirely by
-repository secrets — absent, the workflow ships an ad-hoc signed zip; present,
-the same workflow produces a notarized one with no edits.
+Ad-hoc signing ties the Accessibility grant to that exact binary, so every
+rebuild invalidates it. To make grants survive rebuilds, create a signing
+identity once (Keychain Access → Certificate Assistant → Create a Certificate…
+→ "AgentTracker Local", type *Code Signing*) and build with
+`CODESIGN_IDENTITY="AgentTracker Local" make install`.
 
 Prefer the command line for the agent hookup? `./install.sh` is the same
 onboarding as a checkbox picker (non-interactive:
@@ -132,58 +223,39 @@ all again — hooks, the installed app, its preferences — run
 `./integrations/uninstall.sh` (add `--purge` to also delete
 `~/.agent-tracker`).
 
-### State mapping
+### Documentation images
 
-| Provider | Event | State |
-|---|---|---|
-| Claude Code | `SessionStart` | idle |
-| Claude Code | `UserPromptSubmit`, `PreToolUse`, `PreCompact` | running |
-| Claude Code | `Stop` (turn complete), `Notification` (permission/input) | needs you |
-| Claude Code | `SessionEnd` | removed |
-| Codex | `task_started` (rollout) | running |
-| Codex | `task_complete` (rollout), `agent-turn-complete` (notify) | needs you |
-| Codex | `turn_aborted` (rollout, you interrupted) | needs you |
+Everything under `assets/` except the icon is generated, never screenshotted —
+`./scripts/make-docs-images.sh` renders the real UI against invented sessions
+(`scripts/demo-sessions.py`), so the images can be regenerated by anyone without
+exposing whatever they happen to be working on. Re-run it after any change to
+the dropdown and commit the result.
 
-Codex sessions are auto-pruned within ~30 seconds of their `codex` process
-exiting (`lsof`-based liveness check on the rollout file).
+### Cutting a release
 
-## Current limitations
+Bump `VERSION`, merge to `main`, then tag it:
 
-- **Codex approval prompts don't surface as red yet** — rollouts don't record
-  them; planned via Codex's new native hooks engine.
-- **Window matching is exact only when a title source exists.** Claude Code
-  sessions get exact titles when a statusline script dumps its payload to
-  `~/.claude/statusline-last.json`; without it, matching falls back to
-  transcript summaries and path fragments.
-- **Sessions sharing one directory cannot be told apart.** Several Codex
-  sessions in one repo all title their window with the bare project name, and
-  all report the same working directory, so nothing distinguishes them. Their
-  rows are spread over the candidate windows rather than all pointing at the
-  first one, and repeated clicks walk the rest, so a second row usually opens a
-  second terminal — but nothing here identifies *which* window is whose, and two
-  rows can still land together when fewer windows are visible than there are
-  sessions. Neither Ghostty nor Codex exposes a per-window identity that would
-  settle it; `WindowIdentity` documents what was measured.
-- Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
-  kitty are wired up but untested.
-- The default `make app` build is ad-hoc signed: Accessibility sticks to that
-  exact binary, so rebuilding and reinstalling **invalidates the old grant** —
-  and toggling the stale entry in System Settings does nothing. Remove
-  AgentTracker from the Accessibility list with **−** and re-add it (or
-  `tccutil reset Accessibility com.thinkvelta.agent-tracker`). To make grants
-  survive rebuilds, create a signing identity once (Keychain Access →
-  Certificate Assistant → Create a Certificate… → "AgentTracker Local", type
-  *Code Signing*) and build with
-  `CODESIGN_IDENTITY="AgentTracker Local" make install`.
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The tag triggers `.github/workflows/release.yml`, which refuses to publish if
+the tag and `VERSION` disagree, or if the tagged commit is not on `main`.
+Signing and notarization are driven entirely by repository secrets — absent, the
+workflow ships an ad-hoc signed zip; present, the same workflow produces a
+notarized one with no edits.
 
 ## Roadmap
 
+- [ ] Developer ID signing + notarization (also fixes the permission loss on update)
+- [ ] Homebrew tap — `brew install --cask agent-tracker`
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
-- [ ] Migrate Codex integration to its native hooks engine (approval-request
+- [ ] Migrate the Codex integration to its native hooks engine (approval-request
       red states)
 - [ ] More providers (Kimi, GLM, …) — the state file schema is provider-agnostic
 - [x] Onboarding: install as .app + login item
+- [x] Downloadable releases
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) · Made by [Ruben Broekx](https://github.com/RubenBroekx)
