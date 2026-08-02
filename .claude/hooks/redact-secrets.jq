@@ -48,8 +48,31 @@ def redact:
   | gsub("(?<pre>[a-zA-Z][a-zA-Z0-9+.-]*://[^/@\\s:]+:)[^/@\\s]+@"; "\(.pre)[REDACTED]@")  # inline credentials (scheme://user:PASSWORD@)
     # ── 2. key-name: value after a known sensitive key ──────────────────────
     # Matches KEY<quote?><:|=><quote?>VALUE and keeps the key+separator, masking
-    # the value. [ \t] only (not \s) so it never spans newlines.
-  | gsub("(?<k>RAILWAY_TOKEN|AUTH_SECRET|SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY|SUPABASE_AUTH_KEY|SUPABASE_DB_PASSWORD|SENTRY_AUTH_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|DATABASE_URL|POSTGRES_URL|DB_PASSWORD|DATABASE_PASSWORD|STRIPE_SECRET_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|GOOGLE_API_KEY|SENDGRID_API_KEY)(?<s>[\"']?[ \\t]*[:=][ \\t]*[\"']?)(?<v>[^\\s\"',]+)";
+    # the value.
+    #
+    # EVERYTHING here is written against the JSON serialization, not the text
+    # (see tojson below). Inside a JSON string there are no newlines, tabs or
+    # quotes -- only the two-character escapes \n, \t and \" -- and every one of
+    # those starts with a backslash that is not \s and not a quote. Patterns
+    # written for raw text therefore misbehave in three separate ways, so:
+    #
+    #   separator: accepts \" as well as ", and \t as well as a literal tab.
+    #     Without that, neither {"KEY": "VALUE"} nor KEY\t=\tVALUE matches at
+    #     all, and the shapeless secret passes through in the clear.
+    #
+    #   value: consumes an escaped backslash \\ as a UNIT, and stops at every
+    #     other escape. Stopping at \n is what keeps the match on one line: a
+    #     plain [^\s"',]+ runs through end-of-line and eats following lines
+    #     until the next space, destroying unrelated output with no sign
+    #     anything went missing. Consuming \\ as a unit is what keeps a value
+    #     like pa55\word\here masked to its end rather than leaking the tail.
+    #
+    #     Stopping at \" specifically is what keeps the round trip valid. A
+    #     value group that swallows the backslash of a closing \" leaves an
+    #     unescaped quote behind, fromjson then rejects the result, and the
+    #     wrapper's fail-open design passes the ORIGINAL through unredacted --
+    #     turning a masking bug into a full disclosure.
+  | gsub("(?<k>RAILWAY_TOKEN|AUTH_SECRET|SUPABASE_SERVICE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ANON_KEY|SUPABASE_AUTH_KEY|SUPABASE_DB_PASSWORD|SENTRY_AUTH_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|AWS_SECRET_ACCESS_KEY|AWS_SESSION_TOKEN|DATABASE_URL|POSTGRES_URL|DB_PASSWORD|DATABASE_PASSWORD|STRIPE_SECRET_KEY|GITHUB_TOKEN|GH_TOKEN|NPM_TOKEN|GOOGLE_API_KEY|SENDGRID_API_KEY)(?<s>(?:[\"']|\\\\[\"'])?(?:[ \\t]|\\\\t)*[:=](?:[ \\t]|\\\\t)*(?:[\"']|\\\\[\"'])?)(?<v>(?:[^\\s\"',\\\\]|\\\\\\\\|\\\\/)+)";
           "\(.k)\(.s)[REDACTED]");
 
 # Why tojson/fromjson instead of tostring: `.tool_response` is not a plain
