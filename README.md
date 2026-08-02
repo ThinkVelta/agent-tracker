@@ -72,12 +72,13 @@ build was actually signed.
 <details>
 <summary><strong>If click-to-focus stops working after an update</strong></summary>
 
-macOS ties the Accessibility permission to the exact binary it was granted to,
-so an unsigned build loses the grant every time you update.
+Releases are signed with a stable certificate, so updating should keep your
+Accessibility permission. If it is ever lost anyway, remove AgentTracker from
+**System Settings › Privacy & Security › Accessibility** with **−**, then add it
+again. Toggling the existing entry off and on does not help.
 
-Remove AgentTracker from **System Settings › Privacy & Security ›
-Accessibility** with **−**, then add it again. Toggling the existing entry off
-and on does not help.
+Builds you make yourself are ad-hoc signed unless you pass `CODESIGN_IDENTITY`,
+and those *do* lose the grant on every rebuild. See Build from source.
 
 </details>
 
@@ -208,14 +209,13 @@ all again (hooks, the installed app, its preferences), run
 
 ## Roadmap
 
-- [ ] Stable release signing, so the Accessibility grant survives an update
 - [ ] Homebrew tap: `brew install --cask agent-tracker`
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [ ] Migrate the Codex integration to its native hooks engine (approval-request
       red states)
 - [ ] More providers (Kimi, GLM, …), since the state file schema is provider-agnostic
 - [x] Onboarding: install as .app + login item
-- [x] Downloadable releases
+- [x] Downloadable releases, signed so the Accessibility grant survives an update
 
 ## Support this project
 
