@@ -407,10 +407,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 // cannot be captured half-finished.
                 let store = SessionStore()
                 var settled = SessionCounts()
-                for _ in 0..<40 {
+                for tick in 0..<40 {
                     try? await Task.sleep(nanoseconds: 250_000_000)
                     let current = store.counts
-                    if current.total > 0, current == settled { break }
+                    // Equality settles it, including at zero — a genuinely
+                    // empty state is a legitimate thing to render. But not on
+                    // the first tick: a store that has not finished loading
+                    // also reads as zero, and the two are indistinguishable
+                    // from here. One tick of floor separates them.
+                    if tick > 0, current == settled { break }
                     settled = current
                 }
                 content = AnyView(
