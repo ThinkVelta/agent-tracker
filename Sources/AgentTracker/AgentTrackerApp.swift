@@ -401,9 +401,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             case "menubar":
                 // Just the status item, at whatever the loaded sessions add up
                 // to — so the README's menu bar strip and its dropdown agree
-                // about how many of each colour there are.
+                // about how many of each colour there are. A fixed sleep would
+                // make that agreement a race: wait for the count to be both
+                // non-zero and unchanged across two ticks, so a slow load
+                // cannot be captured half-finished.
                 let store = SessionStore()
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                var settled = SessionCounts()
+                for _ in 0..<40 {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    let current = store.counts
+                    if current.total > 0, current == settled { break }
+                    settled = current
+                }
                 content = AnyView(
                     Image(nsImage: StatusIconRenderer.render(for: store.counts).image))
             case "popover":
@@ -453,13 +462,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                     rendered = (png, image.size)
                 }
             }
-            if let rendered {
-                try? rendered.data.write(to: URL(fileURLWithPath: path))
-                let size = "\(Int(rendered.size.width))x\(Int(rendered.size.height))"
-                DebugLog.log("[preview] wrote \(path) (\(size) pt)")
-            } else {
-                DebugLog.log("[preview] render failed")
+            // `try?` here used to swallow the write error and then log "wrote",
+            // so a render into an unwritable path reported success and exited 0
+            // — which let the docs-image script leave a stale PNG in place and
+            // still go green.
+            guard let rendered else {
+                FileHandle.standardError.write(Data("[preview] render failed\n".utf8))
+                exit(1)
             }
+            do {
+                try rendered.data.write(to: URL(fileURLWithPath: path))
+            } catch {
+                FileHandle.standardError.write(
+                    Data("[preview] could not write \(path): \(error)\n".utf8))
+                exit(1)
+            }
+            let size = "\(Int(rendered.size.width))x\(Int(rendered.size.height))"
+            DebugLog.log("[preview] wrote \(path) (\(size) pt)")
             NSApp.terminate(nil)
         }
         return true

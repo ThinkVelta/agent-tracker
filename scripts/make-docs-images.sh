@@ -28,14 +28,32 @@ python3 scripts/demo-sessions.py "$STAGE/state" > /dev/null
 mkdir -p "$STAGE/claude/sessions" "$STAGE/codex"
 
 mkdir -p "$OUT"
+# `--render-preview` logs "render failed" and still exits 0, so a broken render
+# would leave the previous image in place and this script would report success —
+# the failure mode where the README quietly documents an old UI forever. Delete
+# the target first so a stale file cannot stand in for a fresh one, and keep the
+# render's own output to show only if something goes wrong.
 render() {
   local view="$1" appearance="$2" target="$3"
-  AGENT_TRACKER_DIR="$STAGE/state" \
+  local path="$OUT/$target"
+  local log="$STAGE/render.log"
+
+  rm -f "$path"
+  if ! AGENT_TRACKER_DIR="$STAGE/state" \
     AGENT_TRACKER_CLAUDE_DIR="$STAGE/claude" \
     AGENT_TRACKER_CODEX_DIR="$STAGE/codex" \
-    "$BINARY" --render-preview "$OUT/$target" --view "$view" --appearance "$appearance" \
-    > /dev/null 2>&1
-  echo "    $OUT/$target"
+    "$BINARY" --render-preview "$path" --view "$view" --appearance "$appearance" \
+    > "$log" 2>&1; then
+    cat "$log" >&2
+    echo "render exited non-zero: $path" >&2
+    exit 1
+  fi
+  if [ ! -s "$path" ]; then
+    cat "$log" >&2
+    echo "render produced no image: $path" >&2
+    exit 1
+  fi
+  echo "    $path"
 }
 
 echo "==> rendering"
