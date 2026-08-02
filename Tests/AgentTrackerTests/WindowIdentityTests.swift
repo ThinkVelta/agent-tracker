@@ -165,6 +165,12 @@ final class WindowIdentityTests {
         #expect(single?.tied == [0])
         #expect(single?.choice(rotation: 0) == 0)
         #expect(single?.choice(rotation: 7) == 0)
+
+        // Total over every Int: rotation is caller-supplied, and a trap here
+        // would take down a click.
+        #expect(ranking?.choice(rotation: -1) == 1)
+        #expect(ranking?.choice(rotation: Int.min) == 0)
+        #expect(ranking?.choice(rotation: Int.max) == 1)
     }
 
     @Test func siblingSessionsInOneRepoAllMatch() {

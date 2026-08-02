@@ -133,10 +133,13 @@ enum WindowIdentity {
 
         var tiedWithWinner: Int { tied.count - 1 }
 
-        /// The candidate for the `rotation`-th attempt at this session, wrapping.
+        /// The candidate for the `rotation`-th attempt at this session,
+        /// wrapping. Total over every `Int`: `rotation` comes from a caller,
+        /// and `abs` traps on `Int.min`.
         func choice(rotation: Int) -> Int? {
             guard !tied.isEmpty else { return nil }
-            return tied[abs(rotation) % tied.count]
+            let count = tied.count
+            return tied[((rotation % count) + count) % count]
         }
     }
 

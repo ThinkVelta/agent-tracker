@@ -292,7 +292,8 @@ final class SessionStore: ObservableObject {
     private var focusRotation: [String: Int] = [:]
 
     func nextFocusRotation(for session: AgentSession) -> Int {
-        let next = (focusRotation[session.id] ?? -1) + 1
+        let previous = focusRotation[session.id] ?? -1
+        let next = previous == .max ? 0 : previous + 1
         focusRotation[session.id] = next
         return next
     }
