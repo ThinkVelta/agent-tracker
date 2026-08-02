@@ -117,9 +117,16 @@ exiting (`lsof`-based liveness check on the rollout file).
 - **Window matching is exact only when a title source exists.** Claude Code
   sessions get exact titles when a statusline script dumps its payload to
   `~/.claude/statusline-last.json`; without it, matching falls back to
-  transcript summaries and path fragments, and same-directory siblings may
-  collide. Multiple Codex sessions in one directory can still collide (bare
-  project-name tab titles).
+  transcript summaries and path fragments.
+- **Sessions sharing one directory cannot be told apart.** Several Codex
+  sessions in one repo all title their window with the bare project name, and
+  all report the same working directory, so nothing distinguishes them. Their
+  rows are spread over the candidate windows rather than all pointing at the
+  first one, and repeated clicks walk the rest, so a second row usually opens a
+  second terminal — but nothing here identifies *which* window is whose, and two
+  rows can still land together when fewer windows are visible than there are
+  sessions. Neither Ghostty nor Codex exposes a per-window identity that would
+  settle it; `WindowIdentity` documents what was measured.
 - Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
   kitty are wired up but untested.
 - The default `make app` build is ad-hoc signed: Accessibility sticks to that
