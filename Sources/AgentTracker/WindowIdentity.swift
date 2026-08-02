@@ -129,6 +129,45 @@ enum WindowIdentity {
         return hits[(start + 1) % count]
     }
 
+    /// The sessions competing with this one for the same terminal windows.
+    ///
+    /// Competition runs over `windowDirectories`, the same basis window
+    /// matching uses — not the single directory a row is titled with. A
+    /// worktree session's terminal sits at the repo root, so it answers to both
+    /// paths and can take a window a root session also wants, even though the
+    /// two are titled differently.
+    ///
+    /// Transitively: sharing a directory is not an equivalence relation on its
+    /// own, and if A meets B on the repo root while B meets C in a worktree,
+    /// the three would compute three different groups and hand out ranks that
+    /// no longer agree — the exact collision this ranking exists to prevent.
+    /// Closing over reachable directories gives every member of a group the
+    /// same group, so the ranks partition.
+    static func competingGroup(
+        for sessionId: String,
+        among sessions: [(id: String, directories: [String])]
+    ) -> [String] {
+        let normalized = sessions.map { entry in
+            (id: entry.id, dirs: Set(entry.directories.filter { !$0.isEmpty }.map(normalize)))
+        }
+        guard let start = normalized.first(where: { $0.id == sessionId }), !start.dirs.isEmpty
+        else { return [sessionId] }
+
+        var reachable = start.dirs
+        var group: Set<String> = [sessionId]
+        var grew = true
+        while grew {
+            grew = false
+            for entry in normalized where !group.contains(entry.id) {
+                guard !entry.dirs.isDisjoint(with: reachable) else { continue }
+                group.insert(entry.id)
+                reachable.formUnion(entry.dirs)
+                grew = true
+            }
+        }
+        return group.sorted()
+    }
+
     /// Which of several indistinguishable sessions this one is, and how often
     /// its row has been clicked.
     ///

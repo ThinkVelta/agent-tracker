@@ -299,20 +299,21 @@ final class SessionStore: ObservableObject {
         let clicks = previous == .max ? 0 : previous + 1
         focusRotation[session.id] = clicks
 
-        // Siblings are the sessions whose windows this one cannot be told from:
-        // the same directory yields identical title candidates. A session with
-        // a name of its own is excluded — it matches exactly through a strategy
-        // that runs before any of this, so it never competes for these windows.
-        guard exactWindowTitle(for: session) == nil,
-            let directory = session.primaryDirectory.map(WindowIdentity.normalize)
-        else { return WindowIdentity.FocusRotation(rank: 0, clicks: clicks, siblingCount: 1) }
+        // A session with a name of its own is excluded: it matches its window
+        // exactly through a strategy that runs before any of this, so it never
+        // competes for these windows and counting it would leave the rivals
+        // holding sparse ranks that collide.
+        guard exactWindowTitle(for: session) == nil else { return .alone }
 
-        let indistinguishable =
+        // Competition runs over every directory a session answers to, not just
+        // the one its row is titled with: a worktree session's terminal sits at
+        // the repo root, so it can take a window a root session also wants.
+        let rivals =
             sessions
             .filter { exactWindowTitle(for: $0) == nil }
-            .filter { $0.primaryDirectory.map(WindowIdentity.normalize) == directory }
-            .map(\.id)
-        return .among(indistinguishable, sessionId: session.id, clicks: clicks)
+            .map { (id: $0.id, directories: $0.windowDirectories) }
+        let group = WindowIdentity.competingGroup(for: session.id, among: rivals)
+        return .among(group, sessionId: session.id, clicks: clicks)
     }
 
     /// Downgrade a needs-you session to idle once the user has jumped to it —

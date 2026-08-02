@@ -140,6 +140,73 @@ final class WindowIdentityTests {
         #expect(named.clicks == 3)
     }
 
+    /// Sessions compete over every directory they answer to, not the one their
+    /// row is titled with. A worktree session's terminal sits at the repo root,
+    /// so it wants a window the root session wants — grouping on the title
+    /// directory alone leaves both at rank 0, back on one window.
+    @Test func worktreeAndRootSessionsCompeteForTheSameWindows() {
+        let sessions = [
+            (id: "codex-root", directories: ["/Users/dev/Planner"]),
+            (
+                id: "claude-worktree",
+                directories: [
+                    "/Users/dev/Planner/backend/.claude/worktrees/x", "/Users/dev/Planner",
+                ]
+            ),
+        ]
+        let group = WindowIdentity.competingGroup(for: "codex-root", among: sessions)
+        #expect(group == ["claude-worktree", "codex-root"])
+        // Both members agree on the group, so their ranks are 0 and 1.
+        #expect(WindowIdentity.competingGroup(for: "claude-worktree", among: sessions) == group)
+        // Ranks follow sorted id order, so they are stable across reloads.
+        #expect(
+            WindowIdentity.FocusRotation.among(group, sessionId: "claude-worktree", clicks: 0).rank
+                == 0)
+        #expect(
+            WindowIdentity.FocusRotation.among(group, sessionId: "codex-root", clicks: 0).rank == 1)
+    }
+
+    /// Sharing a directory is not transitive on its own: A meets B at the repo
+    /// root and B meets C in a worktree, but A and C share nothing. Computed
+    /// pairwise the three would disagree about who is in the group and hand out
+    /// ranks that collide, so the relation is closed over reachable directories.
+    @Test func competingGroupsAreClosedSoEveryMemberAgrees() {
+        let sessions = [
+            (id: "a", directories: ["/repo"]),
+            (id: "b", directories: ["/repo", "/repo/wt"]),
+            (id: "c", directories: ["/repo/wt"]),
+        ]
+        let expected = ["a", "b", "c"]
+        #expect(WindowIdentity.competingGroup(for: "a", among: sessions) == expected)
+        #expect(WindowIdentity.competingGroup(for: "b", among: sessions) == expected)
+        #expect(WindowIdentity.competingGroup(for: "c", among: sessions) == expected)
+        // Dense ranks over the whole group: three sessions, three destinations.
+        let ranks = expected.map {
+            WindowIdentity.FocusRotation.among(expected, sessionId: $0, clicks: 0).rank
+        }
+        #expect(ranks == [0, 1, 2])
+    }
+
+    /// Unrelated projects stay apart, and a session with no directory at all
+    /// competes with nobody.
+    @Test func competingGroupsExcludeUnrelatedAndDirectorylessSessions() {
+        let sessions = [
+            (id: "a", directories: ["/repo"]),
+            (id: "b", directories: ["/elsewhere"]),
+            (id: "c", directories: [String]()),
+            (id: "d", directories: [""]),
+        ]
+        #expect(WindowIdentity.competingGroup(for: "a", among: sessions) == ["a"])
+        #expect(WindowIdentity.competingGroup(for: "c", among: sessions) == ["c"])
+        #expect(WindowIdentity.competingGroup(for: "d", among: sessions) == ["d"])
+        // A session nobody knows about is alone, not a crash.
+        #expect(WindowIdentity.competingGroup(for: "missing", among: sessions) == ["missing"])
+        // Paths are compared normalized, like everywhere else.
+        #expect(
+            WindowIdentity.competingGroup(
+                for: "a", among: [("a", ["/repo"]), ("e", ["/private/repo/"])]) == ["a", "e"])
+    }
+
     /// The reported critical failure, straight from a `[focus]` trace: a Codex
     /// session in .../Planner raised the window titled "⠐ Reduce Pondria ToS
     /// visibility in Google search results" — a Claude Code session's window
