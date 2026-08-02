@@ -41,9 +41,10 @@ enum TerminalFocuser {
         /// ownership is tested per window per rival, and deriving candidates
         /// reads that session's transcript.
         let rivalCandidates: [[TitleCandidate]]
-        /// How many times this row has been clicked, so an unresolvable tie
-        /// walks its candidates instead of raising the same window forever.
-        let rotation: Int
+        /// Which sibling this is and how often its row has been clicked, so
+        /// an unresolvable tie spreads the siblings across the windows
+        /// instead of sending every row to the same one.
+        let rotation: WindowIdentity.FocusRotation
 
         func ownedByAnother(_ windowTitle: String) -> Bool {
             WindowIdentity.ownedByAnotherSession(
@@ -94,15 +95,15 @@ enum TerminalFocuser {
     ///   in the right directory", and omitting it would silently disable that
     ///   protection. Pass all sessions — the caller's own is filtered out.
     @discardableResult
-    /// - Parameter rotation: how many times this row has already been clicked.
-    ///   Sibling sessions in one repo title their windows identically, so a
-    ///   tie cannot be resolved — this walks the tied windows across clicks so
-    ///   the user can reach the other one.
+    /// - Parameter rotation: which of its indistinguishable siblings this
+    ///   session is, and how often its row has been clicked. Sibling sessions
+    ///   in one repo title their windows identically, so a tie cannot be
+    ///   resolved — this spreads them over the tied windows instead.
     static func focus(
         _ session: AgentSession,
         exactTitle: String? = nil,
         among roster: [(session: AgentSession, exactTitle: String?)],
-        rotation: Int = 0
+        rotation: WindowIdentity.FocusRotation = .alone
     ) -> Outcome {
         log(
             "focusing \(session.providerDisplayName) session \(session.sessionId) "
@@ -207,6 +208,19 @@ enum TerminalFocuser {
             return nil
         }
 
+        // This strategy sees the current Space only. When several sessions
+        // claim this directory they each want their own window, and finding
+        // fewer here than there are siblings cannot be right for all of them —
+        // one visible window would be raised for every row. The Window menu
+        // sees every Space, so let it answer instead.
+        let siblings = target.rotation.siblingCount
+        guard hits.count >= siblings else {
+            log(
+                "\(hits.count) window(s) on this Space for \(siblings) sessions sharing "
+                    + "this directory — falling back to titles, which see every Space")
+            return nil
+        }
+
         // Several windows in one directory: sibling sessions in the same repo.
         // Their titles and activity are all that is left to separate them.
         let titles = hits.map { AXAccess.title(of: windows[$0]) ?? "" }
@@ -219,15 +233,19 @@ enum TerminalFocuser {
         {
             chosen = hits[single]
         } else {
-            // Nothing separates these windows, so skip whichever one the user
-            // is already looking at — raising that one reads as a dead click,
-            // and repeated clicks then cycle through the candidates.
+            // Nothing separates these windows: start from this session's own
+            // rank so siblings spread rather than collide, step past the window
+            // the user is already looking at (raising that reads as a dead
+            // click), and let repeated clicks walk the rest.
             let focused = AXAccess.focusedWindowIndex(in: windows, of: app)
-            guard let pick = WindowIdentity.chooseAmbiguous(hits: hits, focused: focused)
+            guard
+                let pick = WindowIdentity.chooseAmbiguous(
+                    hits: hits, focused: focused, offset: target.rotation.offset)
             else { return nil }
             log(
                 "ambiguous: \(hits.count) window(s) share this session's directory "
-                    + "and nothing distinguishes them — cycling past the focused one")
+                    + "and nothing distinguishes them — taking sibling \(target.rotation.rank + 1) "
+                    + "of \(siblings)'s share")
             chosen = pick
         }
 
@@ -323,7 +341,7 @@ enum TerminalFocuser {
         guard
             let ranking = WindowIdentity.rankTitles(
                 titled.map(\.title), candidates: candidates, state: state),
-            let pick = ranking.choice(rotation: target.rotation)
+            let pick = ranking.choice(rotation: target.rotation.offset)
         else { return nil }
         let winner = titled[pick]
         if ranking.tiedWithWinner > 0 {

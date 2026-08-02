@@ -72,17 +72,155 @@ final class WindowIdentityTests {
     /// repeated clicks cycle through the candidates.
     @Test func ambiguousChoiceSkipsTheWindowAlreadyFocused() {
         let hits = [1, 3, 5]
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 1) == 3)
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 3) == 5)
-        // Wraps, so a third click returns to the start rather than sticking.
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 5) == 1)
-        // Focused window isn't a candidate, or nothing is focused: first wins.
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 9) == 1)
-        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 1, offset: 0) == 3)
+        // Focused window isn't a candidate, or nothing is focused: the offset's
+        // own candidate stands.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: 9, offset: 0) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 0) == 1)
         // One candidate is still returned even when it is the focused one —
-        // there is nowhere else to go.
-        #expect(WindowIdentity.chooseAmbiguous(hits: [4], focused: 4) == 4)
-        #expect(WindowIdentity.chooseAmbiguous(hits: [], focused: nil) == nil)
+        // there is nowhere else to go, and a click must never be a no-op.
+        #expect(WindowIdentity.chooseAmbiguous(hits: [4], focused: 4, offset: 0) == 4)
+        #expect(WindowIdentity.chooseAmbiguous(hits: [], focused: nil, offset: 0) == nil)
+    }
+
+    /// The reported failure: two Codex rows in one repo both landed on the same
+    /// terminal. Each row's click count starts at 0, so a count alone sends
+    /// every sibling to the same candidate — the offset has to carry which
+    /// sibling is asking.
+    @Test func siblingsStartFromDifferentCandidates() {
+        let hits = [1, 3, 5]
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 0) == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 1) == 3)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 2) == 5)
+        // Repeated clicks on one row keep walking, and wrap.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: 3) == 1)
+        // Total over every Int — offset is rank + clicks, both caller-supplied.
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: -1) == 5)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: .min) != nil)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: .max) != nil)
+    }
+
+    @Test func rotationOffsetCombinesRankAndClicks() {
+        let first = WindowIdentity.FocusRotation(rank: 0, clicks: 0, siblingCount: 2)
+        let second = WindowIdentity.FocusRotation(rank: 1, clicks: 0, siblingCount: 2)
+        #expect(first.offset == 0)
+        #expect(second.offset == 1)
+        // Clicking the first row again reaches what the second row starts on.
+        #expect(WindowIdentity.FocusRotation(rank: 0, clicks: 1, siblingCount: 2).offset == 1)
+        #expect(WindowIdentity.FocusRotation.alone.offset == 0)
+        #expect(WindowIdentity.FocusRotation.alone.siblingCount == 1)
+    }
+
+    /// A session with no rivals still has to advance on repeated clicks. Its
+    /// exact-title match can miss — a stale title, a window since closed — and
+    /// the fallback lands on the same ambiguous tie as everyone else, where
+    /// raising the same window twice reads as a dead click.
+    @Test func aSessionWithoutRivalsStillWalksATieAcrossClicks() {
+        let hits = [2, 4]
+        let first = WindowIdentity.FocusRotation(rank: 0, clicks: 0, siblingCount: 1)
+        let second = WindowIdentity.FocusRotation(rank: 0, clicks: 1, siblingCount: 1)
+        #expect(second.offset == 1)
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: first.offset) == 2)
+        #expect(
+            WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: second.offset) == 4)
+        // Same for a session absent from the rival list entirely.
+        #expect(WindowIdentity.FocusRotation.among([], sessionId: "x", clicks: 5).offset == 5)
+    }
+
+    /// Ranks must be dense over the sessions that actually compete, and stable
+    /// across reloads. A named session sharing the directory does not compete —
+    /// counting it would leave ranks 0 and 2 for two rivals, which collide on
+    /// candidate 0 of a 2-window tie.
+    @Test func ranksAreDenseStableAndExcludeNamedSessions() {
+        let rivals = ["codex-b", "codex-a"]
+        let first = WindowIdentity.FocusRotation.among(rivals, sessionId: "codex-a", clicks: 0)
+        let second = WindowIdentity.FocusRotation.among(rivals, sessionId: "codex-b", clicks: 0)
+        #expect(first.rank == 0)
+        #expect(second.rank == 1)
+        #expect(first.siblingCount == 2)
+        // Input order does not move a rank: the same rivals listed the other
+        // way round give the same answer.
+        #expect(
+            WindowIdentity.FocusRotation.among(rivals.reversed(), sessionId: "codex-a", clicks: 0)
+                == first)
+        // Two rivals, two windows, two different destinations.
+        let hits = [0, 1]
+        #expect(WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: first.offset) == 0)
+        #expect(
+            WindowIdentity.chooseAmbiguous(hits: hits, focused: nil, offset: second.offset) == 1)
+
+        // A session absent from the list has nobody to be confused with.
+        let named = WindowIdentity.FocusRotation.among(rivals, sessionId: "claude-x", clicks: 3)
+        #expect(named.rank == 0)
+        #expect(named.siblingCount == 1)
+        #expect(named.clicks == 3)
+    }
+
+    /// Sessions compete over every directory they answer to, not the one their
+    /// row is titled with. A worktree session's terminal sits at the repo root,
+    /// so it wants a window the root session wants — grouping on the title
+    /// directory alone leaves both at rank 0, back on one window.
+    @Test func worktreeAndRootSessionsCompeteForTheSameWindows() {
+        let sessions = [
+            (id: "codex-root", directories: ["/Users/dev/Planner"]),
+            (
+                id: "claude-worktree",
+                directories: [
+                    "/Users/dev/Planner/backend/.claude/worktrees/x", "/Users/dev/Planner",
+                ]
+            ),
+        ]
+        let group = WindowIdentity.competingGroup(for: "codex-root", among: sessions)
+        #expect(group == ["claude-worktree", "codex-root"])
+        // Both members agree on the group, so their ranks are 0 and 1.
+        #expect(WindowIdentity.competingGroup(for: "claude-worktree", among: sessions) == group)
+        // Ranks follow sorted id order, so they are stable across reloads.
+        #expect(
+            WindowIdentity.FocusRotation.among(group, sessionId: "claude-worktree", clicks: 0).rank
+                == 0)
+        #expect(
+            WindowIdentity.FocusRotation.among(group, sessionId: "codex-root", clicks: 0).rank == 1)
+    }
+
+    /// Sharing a directory is not transitive on its own: A meets B at the repo
+    /// root and B meets C in a worktree, but A and C share nothing. Computed
+    /// pairwise the three would disagree about who is in the group and hand out
+    /// ranks that collide, so the relation is closed over reachable directories.
+    @Test func competingGroupsAreClosedSoEveryMemberAgrees() {
+        let sessions = [
+            (id: "a", directories: ["/repo"]),
+            (id: "b", directories: ["/repo", "/repo/wt"]),
+            (id: "c", directories: ["/repo/wt"]),
+        ]
+        let expected = ["a", "b", "c"]
+        #expect(WindowIdentity.competingGroup(for: "a", among: sessions) == expected)
+        #expect(WindowIdentity.competingGroup(for: "b", among: sessions) == expected)
+        #expect(WindowIdentity.competingGroup(for: "c", among: sessions) == expected)
+        // Dense ranks over the whole group: three sessions, three destinations.
+        let ranks = expected.map {
+            WindowIdentity.FocusRotation.among(expected, sessionId: $0, clicks: 0).rank
+        }
+        #expect(ranks == [0, 1, 2])
+    }
+
+    /// Unrelated projects stay apart, and a session with no directory at all
+    /// competes with nobody.
+    @Test func competingGroupsExcludeUnrelatedAndDirectorylessSessions() {
+        let sessions = [
+            (id: "a", directories: ["/repo"]),
+            (id: "b", directories: ["/elsewhere"]),
+            (id: "c", directories: [String]()),
+            (id: "d", directories: [""]),
+        ]
+        #expect(WindowIdentity.competingGroup(for: "a", among: sessions) == ["a"])
+        #expect(WindowIdentity.competingGroup(for: "c", among: sessions) == ["c"])
+        #expect(WindowIdentity.competingGroup(for: "d", among: sessions) == ["d"])
+        // A session nobody knows about is alone, not a crash.
+        #expect(WindowIdentity.competingGroup(for: "missing", among: sessions) == ["missing"])
+        // Paths are compared normalized, like everywhere else.
+        #expect(
+            WindowIdentity.competingGroup(
+                for: "a", among: [("a", ["/repo"]), ("e", ["/private/repo/"])]) == ["a", "e"])
     }
 
     /// The reported critical failure, straight from a `[focus]` trace: a Codex

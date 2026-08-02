@@ -115,10 +115,101 @@ enum WindowIdentity {
     /// candidates, step past it. Repeated clicks then cycle through the
     /// candidates, which is the only sane behaviour when nothing can tell
     /// them apart. Pure so the wrap-around is testable.
-    static func chooseAmbiguous(hits: [Int], focused: Int?) -> Int? {
-        guard let first = hits.first else { return nil }
-        guard let focused, let position = hits.firstIndex(of: focused) else { return first }
-        return hits[(position + 1) % hits.count]
+    /// - Parameter offset: which candidate this session starts from — its rank
+    ///   among the siblings it cannot be told apart from, plus how many times
+    ///   its row has been clicked. Without the rank every sibling row starts at
+    ///   0 and they all raise the same window, which is exactly what shipped
+    ///   and did not work.
+    static func chooseAmbiguous(hits: [Int], focused: Int?, offset: Int) -> Int? {
+        let count = hits.count
+        guard count > 0 else { return nil }
+        let start = ((offset % count) + count) % count
+        let pick = hits[start]
+        guard let focused, pick == focused, count > 1 else { return pick }
+        return hits[(start + 1) % count]
+    }
+
+    /// The sessions competing with this one for the same terminal windows.
+    ///
+    /// Competition runs over `windowDirectories`, the same basis window
+    /// matching uses — not the single directory a row is titled with. A
+    /// worktree session's terminal sits at the repo root, so it answers to both
+    /// paths and can take a window a root session also wants, even though the
+    /// two are titled differently.
+    ///
+    /// Transitively: sharing a directory is not an equivalence relation on its
+    /// own, and if A meets B on the repo root while B meets C in a worktree,
+    /// the three would compute three different groups and hand out ranks that
+    /// no longer agree — the exact collision this ranking exists to prevent.
+    /// Closing over reachable directories gives every member of a group the
+    /// same group, so the ranks partition.
+    static func competingGroup(
+        for sessionId: String,
+        among sessions: [(id: String, directories: [String])]
+    ) -> [String] {
+        let normalized = sessions.map { entry in
+            (id: entry.id, dirs: Set(entry.directories.filter { !$0.isEmpty }.map(normalize)))
+        }
+        guard let start = normalized.first(where: { $0.id == sessionId }), !start.dirs.isEmpty
+        else { return [sessionId] }
+
+        var reachable = start.dirs
+        var group: Set<String> = [sessionId]
+        var grew = true
+        while grew {
+            grew = false
+            for entry in normalized where !group.contains(entry.id) {
+                guard !entry.dirs.isDisjoint(with: reachable) else { continue }
+                group.insert(entry.id)
+                reachable.formUnion(entry.dirs)
+                grew = true
+            }
+        }
+        return group.sorted()
+    }
+
+    /// Which of several indistinguishable sessions this one is, and how often
+    /// its row has been clicked.
+    ///
+    /// Sibling sessions in one repo cannot be told apart, so the best the app
+    /// can do is spread them: give each a different starting candidate, then
+    /// let repeated clicks walk the alternatives. `clicks` alone is not enough
+    /// — every row's first click is 0, so two rows would raise the same window,
+    /// which is what the first attempt at this shipped.
+    ///
+    /// `siblingCount` also says how many windows a strategy must be able to see
+    /// before it may answer: finding one window on the current Space when two
+    /// sessions want one each cannot be right for both.
+    struct FocusRotation: Equatable {
+        let rank: Int
+        let clicks: Int
+        let siblingCount: Int
+
+        var offset: Int { rank &+ clicks }
+
+        /// A session with nobody to be confused with.
+        static let alone = FocusRotation(rank: 0, clicks: 0, siblingCount: 1)
+
+        /// - Parameter indistinguishable: the ids of every session competing
+        ///   for the same windows as this one — same directory, and no name of
+        ///   its own. Ranks are assigned in sorted id order so they hold still
+        ///   across reloads; a rank that moved would send the same row
+        ///   somewhere new on every refresh.
+        ///
+        ///   Sessions that *do* have a name must be left out even when they
+        ///   share the directory. They match their window exactly through an
+        ///   earlier strategy and never enter the tie, so counting them would
+        ///   spread the rest over slots that do not exist — with one named and
+        ///   two unnamed sessions, ranks 0 and 2 both land on candidate 0 of 2.
+        static func among(
+            _ indistinguishable: [String], sessionId: String, clicks: Int
+        ) -> FocusRotation {
+            let ranked = indistinguishable.sorted()
+            guard let rank = ranked.firstIndex(of: sessionId) else {
+                return FocusRotation(rank: 0, clicks: clicks, siblingCount: 1)
+            }
+            return FocusRotation(rank: rank, clicks: clicks, siblingCount: ranked.count)
+        }
     }
 
     struct TitleRanking: Equatable {

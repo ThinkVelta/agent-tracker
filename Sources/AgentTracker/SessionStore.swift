@@ -284,18 +284,41 @@ final class SessionStore: ObservableObject {
         return acknowledged
     }
 
-    /// How many times each row has been clicked. Sibling sessions in one repo
-    /// title their windows identically, so the focuser cannot tell them apart;
-    /// handing it a counter lets it walk the tied windows across clicks rather
-    /// than raising the same one forever. Keyed by session id and pruned with
-    /// the sessions themselves.
+    /// How many times each row has been clicked. Keyed by session id and pruned
+    /// with the sessions themselves.
     private var focusRotation: [String: Int] = [:]
 
-    func nextFocusRotation(for session: AgentSession) -> Int {
+    /// Where this row should start looking among windows it cannot be told
+    /// apart from, and how many sessions are competing for them.
+    ///
+    /// The rank is what makes two sibling rows land on two different windows.
+    /// A click count alone is not enough: every row's first click is 0, so all
+    /// of them pick the same candidate — measured, after shipping exactly that.
+    func nextFocusRotation(for session: AgentSession) -> WindowIdentity.FocusRotation {
         let previous = focusRotation[session.id] ?? -1
-        let next = previous == .max ? 0 : previous + 1
-        focusRotation[session.id] = next
-        return next
+        let clicks = previous == .max ? 0 : previous + 1
+        focusRotation[session.id] = clicks
+
+        // A session with a name of its own is excluded from the grouping: it
+        // matches its window exactly through a strategy that runs before any of
+        // this, so it never competes for these windows and counting it would
+        // leave the rivals holding sparse ranks that collide. It keeps its click
+        // count all the same — the exact match can miss (a stale title, a window
+        // since closed), and the fallback tie still has to advance on a second
+        // click rather than raise the same window again.
+        guard exactWindowTitle(for: session) == nil else {
+            return WindowIdentity.FocusRotation(rank: 0, clicks: clicks, siblingCount: 1)
+        }
+
+        // Competition runs over every directory a session answers to, not just
+        // the one its row is titled with: a worktree session's terminal sits at
+        // the repo root, so it can take a window a root session also wants.
+        let rivals =
+            sessions
+            .filter { exactWindowTitle(for: $0) == nil }
+            .map { (id: $0.id, directories: $0.windowDirectories) }
+        let group = WindowIdentity.competingGroup(for: session.id, among: rivals)
+        return .among(group, sessionId: session.id, clicks: clicks)
     }
 
     /// Downgrade a needs-you session to idle once the user has jumped to it —
