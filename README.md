@@ -65,16 +65,31 @@ Codex notify      ──▶  sessions/*.json  ──watch──┼──▶ drop
   ("✳ &lt;task summary&gt;") and working-directory fragments remain as
   fallbacks when it is absent.
 
-## Getting started
+## Install
 
-Requirements: macOS 14+, Swift toolchain (Xcode or CLT), Python 3.
+Requirements: macOS 14+.
+
+Download the latest `AgentTracker-x.y.z.zip` from
+[Releases](https://github.com/ThinkVelta/agent-tracker/releases/latest), unzip
+it, and drag **AgentTracker.app** to `/Applications`. Launch it — the first-run
+window walks you through granting Accessibility, connecting your agent CLIs, and
+starting at login.
+
+Releases are not notarized yet, so macOS refuses them on first launch:
+**right-click the app and choose Open**, then confirm. Only the first launch
+needs it. (Every release note repeats this, and says so only when it is true.)
+
+Settings › About checks for newer releases; there is no auto-updater and nothing
+phones home on its own.
+
+## Build from source
+
+Requirements: the above, plus a Swift toolchain (Xcode or CLT) and Python 3.
 
 ```sh
 # Build AgentTracker.app and install it into /Applications
 make install
 
-# Launch it — the first-run window walks you through the rest:
-# granting Accessibility, connecting your agent CLIs, start at login.
 open /Applications/AgentTracker.app
 ```
 
@@ -85,6 +100,19 @@ a bundle is what makes the Accessibility grant stick to the app (running via
 `swift run` attributes it to your terminal) and enables start-at-login.
 
 For development, `swift run AgentTracker` still works exactly as before.
+
+### Cutting a release
+
+Bump `VERSION`, merge to `main`, then tag it:
+
+```sh
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The tag triggers `.github/workflows/release.yml`, which refuses to publish if
+the tag and `VERSION` disagree. Signing and notarization are driven entirely by
+repository secrets — absent, the workflow ships an ad-hoc signed zip; present,
+the same workflow produces a notarized one with no edits.
 
 Prefer the command line for the agent hookup? `./install.sh` is the same
 onboarding as a checkbox picker (non-interactive:
