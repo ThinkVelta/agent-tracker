@@ -4,6 +4,14 @@ import Foundation
 /// Pure so the precedence rules — which source wins, and when a registry
 /// status may override a state a hook reported — are testable without a store.
 enum RegistryEnrichment {
+    /// Claude's "the assistant's turn ended" event, as `lastEvent` records it.
+    ///
+    /// Named because the string is a contract with
+    /// `integrations/agent-tracker-hook.py`, which writes it verbatim from
+    /// `hook_event_name` and is the only reason a row is red here at all.
+    /// Nothing but this pairing links the two files.
+    static let turnEndedEvent = "Stop"
+
     /// - Parameters:
     ///   - session: a row loaded from `~/.agent-tracker/sessions`.
     ///   - entry: the registry entry with the same `sessionId`, if any.
@@ -61,7 +69,8 @@ enum RegistryEnrichment {
             guard let isBusy = entry.status.isBusy, !isBusy else { return session.state }
             return .idle
         case .needsYou:
-            guard session.lastEvent == "Stop", entry.status == .busy else { return session.state }
+            guard session.lastEvent == turnEndedEvent, entry.status == .busy
+            else { return session.state }
             return .running
         default:
             return session.state
