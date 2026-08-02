@@ -164,7 +164,7 @@ final class TerminalFocuserTests {
             provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let claude = AgentSession(
             provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
-        let summary = "Reduce Pondria ToS visibility in Google search results"
+        let summary = "Fix the checkout redirect loop on expired sessions"
         #expect(
             !TerminalFocuser.isPlausibleMatch(
                 windowTitle: "⠐ \(summary)", for: codex, exactTitle: nil,
@@ -246,7 +246,7 @@ final class TerminalFocuserTests {
     @Test func needsYouSessionSkipsTheStillSpinningSiblingWindow() {
         let session = AgentSession(
             provider: "codex", sessionId: "c1",
-            cwd: "/Users/rubenbroekx/Documents/ProjectsVelta/Planner", state: .needsYou
+            cwd: "/Users/dev/Documents/ProjectsVelta/Planner", state: .needsYou
         )
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let titles = ["…/Documents/ProjectsVelta/Planner", "⠋ Planner", "Planner"]

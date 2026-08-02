@@ -33,7 +33,7 @@ final class AgentSessionTests {
     }
 
     /// The reported inconsistency: Codex rows read "Planner" while Claude rows
-    /// beside them read "ruben-pln-396-live-stripe-webhook-…-8419e2f7". Same
+    /// beside them read "alice-app-123-fix-checkout-…-8419e2f7". Same
     /// rule, wildly different results — because only the Claude sessions were
     /// running in worktrees. Both now title by project, and the generated name
     /// moves to the metadata line, shortened so it cannot push the session's
@@ -41,10 +41,10 @@ final class AgentSessionTests {
     @Test func generatedWorktreeNamesDoNotTitleTheRow() {
         let real =
             "/Users/dev/ProjectsVelta/Planner/planner-backend/.claude/worktrees/"
-            + "ruben-pln-396-live-stripe-webhook-endpoint-missing-invoice-payment-events-8419e2f7"
+            + "alice-app-123-fix-checkout-redirect-loop-on-expired-session-8419e2f7"
         let worktree = session(cwd: real)
         #expect(worktree.displayName == "planner-backend")
-        #expect(worktree.locationContext == "ruben-pln-396…8419e2f7")
+        #expect(worktree.locationContext == "alice-app-123…8419e2f7")
         #expect((worktree.locationContext?.count ?? 0) <= 24)
 
         // A session in the repo root is unaffected — this is the row the
@@ -58,8 +58,8 @@ final class AgentSessionTests {
     @Test func shorteningKeepsBothEndsAndLeavesShortNamesWhole() {
         #expect(AgentSession.shortened("pln-388") == "pln-388")
         #expect(
-            AgentSession.shortened("ruben-pln-404-405-noindex-sitemap-graph-6b694566")
-                == "ruben-pln-404…6b694566")
+            AgentSession.shortened("alice-app-124-125-tidy-nav-and-footer-6b694566")
+                == "alice-app-124…6b694566")
         // No separator to cut back to: the head is taken as-is.
         #expect(
             AgentSession.shortened(String(repeating: "x", count: 40)) == "xxxxxxxxxxxxxxx…xxxxxxxx")
