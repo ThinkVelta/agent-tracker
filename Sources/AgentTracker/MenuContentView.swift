@@ -253,6 +253,7 @@ struct MenuContentView: View {
         SessionRow(
             session: session,
             clockTick: store.clockTick,
+            onAcknowledge: { store.acknowledge(session) },
             onSelect: {
                 let exactTitle = store.exactWindowTitle(for: session)
                 let roster = store.sessions.map { ($0, store.exactWindowTitle(for: $0)) }
@@ -468,22 +469,32 @@ struct SessionRow: View {
     /// Re-renders the relative time on a quiet machine; the value itself is
     /// unused (see `SessionStore.clockTick`).
     var clockTick = 0
+    /// Clears a needs-you row without jumping to its terminal.
+    var onAcknowledge: () -> Void = {}
     let onSelect: () -> Void
 
     @State private var hovering = false
     @State private var showsPath = false
 
-    // A needs-you row used to carry a second control — a checkmark that cleared
-    // the red state without opening the terminal. It existed because the
-    // acknowledge gate then demanded a match strictly better than every other
-    // session, which same-repo siblings can never be, so those rows could not
-    // be cleared by clicking them at all. Once that gate was relaxed the button
-    // was redundant, and it read as a rendering glitch: trailing-aligned over
-    // the row, it landed on top of the jump arrow. Deleted rather than
-    // relaid-out. You cannot tell from a row title whether a session needs real
-    // work, so "seen without looking" was rarely the honest action anyway.
+    // This used to be a checkmark button drawn over the row. It read as a
+    // rendering glitch — trailing-aligned, it landed on top of the jump arrow
+    // instead of the slot reserved for it — and it was a second visible control
+    // for something the row click already does.
+    //
+    // Kept as a context menu rather than deleted outright, because clicking a
+    // row only acknowledges when focus SUCCEEDS: without Accessibility
+    // permission every attempt returns `.needsPermission`, so every red row
+    // would be permanently stuck with no way out. That is the state a user is
+    // in before granting the permission, and again after an update invalidates
+    // it. Hidden until right-click, so it costs the row nothing.
     var body: some View {
-        rowButton
+        if session.state == .needsYou {
+            rowButton.contextMenu {
+                Button("Mark as seen", action: onAcknowledge)
+            }
+        } else {
+            rowButton
+        }
     }
 
     private var rowButton: some View {
