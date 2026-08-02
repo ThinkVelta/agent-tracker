@@ -31,7 +31,7 @@ final class RegistryEnrichmentTests {
     @Test func registryNameIsJoinedButDoesNotTitleTheRow() {
         let enriched = RegistryEnrichment.apply(to: session(), entry: entry())
         #expect(enriched.registryName == "planner-e8")
-        #expect(enriched.displayName == "pln-388")
+        #expect(enriched.displayName == "planner-backend")
         // Identical with or without a registry entry — that is the point.
         #expect(enriched.displayName == session().displayName)
     }
@@ -52,7 +52,7 @@ final class RegistryEnrichmentTests {
     @Test func rowsWithoutARegistryEntryAreUntouched() {
         let plain = session()
         #expect(RegistryEnrichment.apply(to: plain, entry: nil) == plain)
-        #expect(plain.displayName == "pln-388")
+        #expect(plain.displayName == "planner-backend")
     }
 
     @Test func theRegistryIsClaudeOnly() {

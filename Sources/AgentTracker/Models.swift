@@ -88,11 +88,32 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// better than a better rule for one of them.
     ///
     /// The registry name stays searchable (it is what Claude shows in its own
-    /// terminal), and long worktree directories truncate in the middle with
-    /// the full path on hover.
+    /// terminal), as does the full path.
+    ///
+    /// The *project*, not the leaf directory: a session in a worktree lives at
+    /// `…/planner-backend/.claude/worktrees/ruben-pln-396-live-…-8419e2f7`, and
+    /// titling it with that generated name made worktree rows read as noise
+    /// beside plain ones. Same rule for both providers, wildly different
+    /// results — which is what "Planner" sitting next to
+    /// "ruben-pln-396-live-…" looked like.
     var displayName: String {
-        guard let name = Self.lastComponent(of: primaryDirectory) else { return "Session" }
-        return name
+        Self.projectAndWorktree(of: primaryDirectory)?.project ?? "Session"
+    }
+
+    /// The project a path belongs to, plus the worktree beneath it when the
+    /// path runs through tool scaffolding. The worktree directory distinguishes
+    /// a session from its siblings; it is not what the session should be
+    /// called.
+    static func projectAndWorktree(of path: String?) -> (project: String, worktree: String?)? {
+        guard let path, !path.isEmpty else { return nil }
+        var parts = (path as NSString).pathComponents.filter { $0 != "/" }
+        guard let leaf = parts.popLast() else { return nil }
+        guard let enclosing = parts.last, namesNoProject(enclosing) else { return (leaf, nil) }
+        while let last = parts.last, namesNoProject(last) {
+            parts.removeLast()
+        }
+        guard let project = parts.last else { return (leaf, nil) }
+        return (project, leaf)
     }
 
     /// The directory this session is presented as living in: the hook's, or
@@ -104,12 +125,6 @@ struct AgentSession: Codable, Identifiable, Equatable {
         if let cwd, !cwd.isEmpty { return cwd }
         guard let registryCwd, !registryCwd.isEmpty else { return nil }
         return registryCwd
-    }
-
-    private static func lastComponent(of path: String?) -> String? {
-        guard let path, !path.isEmpty else { return nil }
-        let component = (path as NSString).lastPathComponent
-        return component.isEmpty || component == "/" ? nil : component
     }
 
     /// Directories any of this session's terminal windows might report, most
@@ -133,13 +148,16 @@ struct AgentSession: Codable, Identifiable, Equatable {
         return parts.suffix(2).joined(separator: "/")
     }
 
-    /// Where this session lives, for the row's metadata line: the directory
-    /// containing `projectName`. Container directories that name no project
-    /// are skipped — a worktree at `…/planner-backend/.claude/worktrees/pln-388`
-    /// belongs to "planner-backend", and answering "worktrees" or ".claude"
-    /// would tell the user nothing.
+    /// Where this session lives, for the row's metadata line. For a worktree
+    /// session that is the worktree itself — now that the title names the
+    /// project, the branch directory is what tells two sibling rows apart.
+    /// Otherwise it is the enclosing directory, skipping containers that name
+    /// no project ("worktrees", ".claude").
     var locationContext: String? {
-        guard let directory = primaryDirectory else { return nil }
+        guard let directory = primaryDirectory,
+            let split = Self.projectAndWorktree(of: directory)
+        else { return nil }
+        if let worktree = split.worktree { return Self.shortened(worktree) }
         var parts = (directory as NSString).pathComponents.filter { $0 != "/" }
         guard !parts.isEmpty else { return nil }
         parts.removeLast()
@@ -147,6 +165,23 @@ struct AgentSession: Codable, Identifiable, Equatable {
             parts.removeLast()
         }
         return parts.last
+    }
+
+    /// Worktree directories are generated: a ticket, a slug and a hash. Shown
+    /// whole they push the session's status off the end of the metadata line,
+    /// so keep the two ends that identify one and drop the slug between them.
+    static func shortened(_ name: String, to limit: Int = 24) -> String {
+        let tail = 8
+        guard name.count > limit, limit > tail + 5 else { return name }
+        var head = Substring(name.prefix(limit - tail - 1))
+        // Cut back to a separator so the head does not end mid-word, unless
+        // that would leave almost nothing.
+        if let separator = head.lastIndex(of: "-"),
+            head.distance(from: head.startIndex, to: separator) >= 4
+        {
+            head = head[..<separator]
+        }
+        return "\(head)…\(name.suffix(tail))"
     }
 
     /// Tool scaffolding rather than a project. An explicit list, not a rule:
