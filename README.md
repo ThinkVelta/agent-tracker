@@ -50,7 +50,7 @@ Requirements: macOS 14 or later.
 
 ```sh
 brew tap ThinkVelta/tap
-brew trust thinkvelta/tap
+brew trust --cask thinkvelta/tap/agent-tracker
 brew install --cask agent-tracker
 ```
 
@@ -58,6 +58,10 @@ Homebrew 6 refuses to load casks from taps outside its own repositories until
 you trust them, so without the middle line the install stops with *"Refusing to
 load cask … from untrusted tap"*. That applies to every third-party tap, not
 just this one, and trusting is per-machine.
+
+Trusting the single cask rather than the tap is deliberate: `brew trust
+thinkvelta/tap` also works, but it covers everything added to the tap in future,
+including casks that do not exist yet.
 
 Or download it by hand:
 
