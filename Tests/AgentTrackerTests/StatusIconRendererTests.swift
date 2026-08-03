@@ -119,15 +119,55 @@ final class StatusIconRendererTests {
         #expect(StatusIconRenderer.state(atImageX: 4, regions: rendering.hitRegions) == nil)
     }
 
-    /// Template tinting erases hue, so monochrome must tell its three states
-    /// apart by shape alone.
-    @Test func monochromeEncodesEveryStateDistinctly() {
-        let elements = StatusIconRenderer.elements(for: counts(), mode: .monochrome)
-        let shapes = elements.map { String(describing: $0.shape) }
-        #expect(Set(shapes).count == SessionState.allCases.count)
-        #expect(StatusIconRenderer.render(for: counts(), mode: .monochrome).image.isTemplate)
-        // Color modes must NOT be templates — tinting would erase the colors.
-        #expect(!StatusIconRenderer.render(for: counts(), mode: .dotsAndCounts).image.isTemplate)
+    // MARK: - Monochrome, across every mode
+
+    /// Template tinting erases hue, so monochrome must tell the states apart by
+    /// shape alone — in every mode, now that it crosses them all instead of
+    /// being a mode of its own.
+    @Test func monochromeEncodesEveryStateDistinctlyInEveryMode() {
+        for mode in StatusIconRenderer.Mode.allCases {
+            let shapes = StatusIconRenderer.elements(for: counts(), mode: mode, monochrome: true)
+                .map { String(describing: $0.shape) }
+            #expect(Set(shapes).count == shapes.count, "mode \(mode) reuses a shape")
+            #expect(
+                StatusIconRenderer.render(for: counts(), mode: mode, monochrome: true)
+                    .image.isTemplate,
+                "mode \(mode) is not a template in monochrome, so it will not be tinted")
+            // Color rendering must NOT be a template — tinting would erase the
+            // state colors it is entirely built on.
+            #expect(
+                !StatusIconRenderer.render(for: counts(), mode: mode).image.isTemplate,
+                "mode \(mode) is a template in color")
+        }
+        // The three-dot modes carry the whole vocabulary; needs-you-only draws
+        // a single dot, so it has nothing to distinguish.
+        #expect(
+            StatusIconRenderer.elements(for: counts(), mode: .dotsAndCounts, monochrome: true)
+                .map(\.shape) == [.filled, .half, .hollow])
+    }
+
+    /// Monochrome recolors and reshapes in place. If it moved anything, the
+    /// per-dot click mapping would depend on the coloring.
+    @Test func monochromeNeverChangesLayout() {
+        for mode in StatusIconRenderer.Mode.allCases {
+            let color = StatusIconRenderer.render(for: counts(), mode: mode)
+            let mono = StatusIconRenderer.render(for: counts(), mode: mode, monochrome: true)
+            #expect(color.hitRegions == mono.hitRegions, "mode \(mode) shifts in monochrome")
+            #expect(color.image.size == mono.image.size, "mode \(mode) resizes in monochrome")
+        }
+    }
+
+    /// What the mode draws is the mode's business alone: monochrome must not
+    /// smuggle in a count or a dot that the color rendering leaves out.
+    @Test func monochromeDrawsWhateverTheModeDraws() {
+        for mode in StatusIconRenderer.Mode.allCases {
+            let color = StatusIconRenderer.elements(for: counts(), mode: mode)
+            let mono = StatusIconRenderer.elements(for: counts(), mode: mode, monochrome: true)
+            #expect(color.map(\.state) == mono.map(\.state), "mode \(mode) draws other dots")
+            #expect(
+                color.map(\.showsCount) == mono.map(\.showsCount),
+                "mode \(mode) draws other counts")
+        }
     }
 
     /// The pulse scales the red dot in place; layout and click mapping are

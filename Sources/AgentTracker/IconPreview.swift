@@ -14,10 +14,19 @@ enum IconPreview {
         quiet.running = 4
         quiet.idle = 2
 
-        // attention-only appears twice: with a red session and without —
+        // Every mode in both colorings, paired, since monochrome crosses the
+        // modes rather than being one of them.
+        //
+        // attention-only appears twice more: with a red session and without —
         // the placeholder variant is exactly what needs a human eye.
-        var rows: [(String, NSImage)] = StatusIconRenderer.Mode.allCases.map { mode in
-            (mode.label, StatusIconRenderer.render(for: sample, mode: mode).image)
+        var rows: [(String, NSImage)] = StatusIconRenderer.Mode.allCases.flatMap { mode in
+            [
+                (mode.label, StatusIconRenderer.render(for: sample, mode: mode).image),
+                (
+                    "\(mode.label) · monochrome",
+                    StatusIconRenderer.render(for: sample, mode: mode, monochrome: true).image
+                ),
+            ]
         }
         rows.append(
             (
