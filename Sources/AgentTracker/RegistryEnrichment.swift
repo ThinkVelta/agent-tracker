@@ -91,12 +91,25 @@ enum RegistryEnrichment {
             else { return session.state }
             return .running
         case .running:
-            if entry.status == .waiting { return .needsYou }
+            // Both corrections here compare against the row's own event, but
+            // they treat a missing timestamp oppositely, which is the whole
+            // difference between them.
+            let hookEvent = session.stateChangedAt ?? session.updatedAt ?? .distantPast
+            if entry.status == .waiting {
+                // A dialog is written AFTER the event that triggered it, so an
+                // undated `waiting` is still evidence. An OLDER one has been
+                // overtaken: tool calls cannot run while something blocks on a
+                // human, so a hook event that postdates it means the dialog is
+                // gone. `waiting` also covers any local dialog — `/config` over
+                // a session whose background work resumes behind it.
+                guard let registryUpdate = entry.statusUpdatedAt, registryUpdate <= hookEvent
+                else { return .needsYou }
+                return session.state
+            }
             // A demotion DOES need the newer timestamp: "idle" is only evidence
             // of an abandoned turn if it was written after the event that made
             // the row green, or every tool call would race its own idle.
-            guard let registryUpdate = entry.statusUpdatedAt,
-                registryUpdate > (session.stateChangedAt ?? session.updatedAt ?? .distantPast),
+            guard let registryUpdate = entry.statusUpdatedAt, registryUpdate > hookEvent,
                 let isWorking = entry.status.isWorking, !isWorking
             else { return session.state }
             return .idle

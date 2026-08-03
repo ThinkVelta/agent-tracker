@@ -215,13 +215,31 @@ final class RegistryEnrichmentTests {
     }
 
     /// A dialog that opens mid-turn is reported after the `PreToolUse` that
-    /// triggered it, so this correction must not be gated on being newer than
-    /// the hook event the way the demotion is.
+    /// triggered it, so an undated `waiting` is still evidence — unlike an
+    /// undated `idle`, which never demotes.
     @Test func aDialogIsRedEvenWithNoTimestampAtAll() {
         let enriched = RegistryEnrichment.apply(
             to: session(state: .running, changedAt: Date()),
             entry: entry(status: .waiting, statusUpdatedAt: nil))
         #expect(enriched.state == .needsYou)
+    }
+
+    /// A `waiting` the row's own event has overtaken is a dialog that is gone.
+    /// Tool calls cannot run while something blocks on a human, so a newer hook
+    /// event proves it was answered — and `waiting` covers any local dialog,
+    /// including `/config` left open over a session whose background work
+    /// resumes behind it.
+    @Test func aWaitingOlderThanTheRowsOwnEventDoesNotRaiseIt() {
+        let overtaken = RegistryEnrichment.apply(
+            to: session(state: .running, changedAt: Date(timeIntervalSince1970: 2000)),
+            entry: entry(status: .waiting, statusUpdatedAt: Date(timeIntervalSince1970: 1000)))
+        #expect(overtaken.state == .running)
+        #expect(overtaken.reason == nil)
+        // The dialog that is genuinely up still wins.
+        let live = RegistryEnrichment.apply(
+            to: session(state: .running, changedAt: Date(timeIntervalSince1970: 1000)),
+            entry: entry(status: .waiting, statusUpdatedAt: Date(timeIntervalSince1970: 2000)))
+        #expect(live.state == .needsYou)
     }
 
     /// The user's own click has to win. Acknowledging a row writes idle, and
