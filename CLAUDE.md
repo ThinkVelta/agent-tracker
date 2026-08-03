@@ -52,12 +52,15 @@ rollout files. See README for the full picture.
   whatever you happen to be running. Re-run whenever you change anything the
   README pictures, and commit the result; the script's own render list is the
   authority on what that covers.
-- Cut a release: bump `VERSION`, merge to `main`, then `git tag vX.Y.Z && git
-  push origin vX.Y.Z`. The tag triggers `.github/workflows/release.yml`, which
-  refuses to publish if the tag and `VERSION` disagree or the tagged commit is
-  not on `main`. Signing and notarization are driven entirely by repository
-  secrets — absent, it ships an ad-hoc signed zip; present, the same workflow
-  produces a notarized one with no edits.
+- Cut a release: `/release` (it derives the bump from the commits since the last
+  tag, opens the `VERSION` PR, then tags the merge commit on a second run, and
+  verifies the published digest and the Homebrew cask). By hand it is: bump
+  `VERSION`, merge to `main`, then `git tag vX.Y.Z && git push origin vX.Y.Z`.
+  The tag triggers `.github/workflows/release.yml`, which refuses to publish if
+  the tag and `VERSION` disagree or the tagged commit is not on `main`. Signing
+  and notarization are driven entirely by repository secrets — absent, it ships
+  an ad-hoc signed zip; present, the same workflow produces a notarized one with
+  no edits.
 - Test hook script manually:
   `AGENT_TRACKER_DIR=/tmp/at-test sh -c 'echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"x\"}" | python3 integrations/agent-tracker-hook.py claude'`
   (`AGENT_TRACKER_DIR` overrides `~/.agent-tracker` for both app and hook;
@@ -119,5 +122,5 @@ Still defer — surface it instead of doing it silently — when the change is g
 
 Always-on, path-scoped conventions live in `.claude/rules/`; repeatable workflows live in
 `.claude/skills/` as slash commands (`/commit`, `/pr-open`, `/pr-babysit`, `/pr-iterate`,
-`/cleanup`, `/wt-open`, `/wt-close`, `/wt-list`, `/wt-cleanup`, `/wt-help`). See
+`/release`, `/cleanup`, `/wt-open`, `/wt-close`, `/wt-list`, `/wt-cleanup`, `/wt-help`). See
 `.claude/README.md` for how the pieces fit together.
