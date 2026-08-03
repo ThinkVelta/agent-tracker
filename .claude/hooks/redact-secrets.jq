@@ -44,8 +44,18 @@ def redact:
   | gsub("npm_[A-Za-z0-9]{36}"; "npm_[REDACTED]")                       # npm token
     # PEM private-key blocks (multi-line)
   | gsub("-----BEGIN[A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END[A-Z ]*PRIVATE KEY-----"; "[REDACTED-PRIVATE-KEY]")
-    # URLs / connection strings
-  | gsub("(?<pre>[a-zA-Z][a-zA-Z0-9+.-]*://[^/@\\s:]+:)[^/@\\s]+@"; "\(.pre)[REDACTED]@")  # inline credentials (scheme://user:PASSWORD@)
+    # URLs / connection strings — inline credentials (scheme://user:PASSWORD@).
+    #
+    # The backslash exclusions are load-bearing, for the same reason spelled out
+    # over the key-name pass below: this runs on the JSON serialization, where
+    # \n is two characters that are not \s. An unguarded negated class walks off
+    # the end of the line, through the structural  ","stderr":"  between fields,
+    # and eats the next field's opening quote. fromjson then rejects the result
+    # and the wrapper fails OPEN, passing the entire original through
+    # unredacted — including secrets the shape rules above had already masked.
+    # A plain https URL at the end of stdout plus a user@host in stderr is
+    # enough to trigger it, which is what a failed `git clone` looks like.
+  | gsub("(?<pre>[a-zA-Z][a-zA-Z0-9+.-]*://[^/@\\s:\\\\]+:)(?:[^/@\\s\\\\]|\\\\\\\\)+@"; "\(.pre)[REDACTED]@")
     # ── 2. key-name: value after a known sensitive key ──────────────────────
     # Matches KEY<quote?><:|=><quote?>VALUE and keeps the key+separator, masking
     # the value.
