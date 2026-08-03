@@ -62,18 +62,37 @@ Or download it by hand:
 Either way, launch it: a first-run window walks you through granting
 Accessibility, connecting your agent CLIs, and starting at login.
 
+> [!IMPORTANT]
+> **The first launch is blocked, and the dialog's default button deletes the
+> app.** This build is not yet notarized, so macOS shows *"AgentTracker Not
+> Opened — Apple could not verify AgentTracker is free of malware"*, offering
+> **Move to Trash** (highlighted) and **Done**.
+>
+> Click **Done**. Never Move to Trash.
+>
+> Then open **System Settings › Privacy & Security**, scroll to Security, and
+> click **Open Anyway** next to *"AgentTracker was blocked to protect your
+> Mac."* Launch the app again and it opens normally from then on.
+>
+> Only the first launch needs this. Notarized builds are coming, which removes
+> the block entirely.
+
 <details>
-<summary><strong>If macOS refuses to open it</strong></summary>
+<summary><strong>Skipping that prompt from the terminal</strong></summary>
 
-Releases are not notarized, which needs a paid Apple Developer account, so
-Gatekeeper blocks the first launch. Open **System Settings › Privacy &
-Security**, scroll to the message naming AgentTracker, and click **Open
-Anyway**.
+The block comes from the quarantine attribute macOS attaches to downloads.
+Clearing it before the first launch avoids the dialog:
 
-On macOS 14 and earlier you can right-click the app and choose **Open** instead;
-macOS 15 removed that shortcut. Only the first launch needs this, and each
-release's notes say whether it applies, because they are written from how that
-build was actually signed.
+```sh
+xattr -dr com.apple.quarantine -- /Applications/AgentTracker.app
+```
+
+That is a real Gatekeeper check you are switching off for this app, so only do
+it if you are comfortable with that. The System Settings route above is the
+safer one and reaches the same place.
+
+On macOS 14 and earlier you could right-click the app and choose **Open**;
+macOS 15 removed that shortcut.
 
 </details>
 
