@@ -26,31 +26,49 @@ enum RegistryEnrichment {
         enriched.registryCwd = entry.cwd
         enriched.state = resolvedState(for: session, entry: entry)
         if enriched.state != session.state {
-            enriched.reason = enriched.state == .running ? "Working…" : "Idle at prompt"
+            enriched.reason = reason(for: enriched.state, entry: entry)
         }
         return enriched
     }
 
-    /// The registry carries Claude's own busy/idle signal, refreshed every few
-    /// seconds without any hook firing. That closes a real gap: Claude Code has
-    /// no interrupt hook, so a session the user escaped out of stays green
-    /// "running" until its next event, which may never come.
+    /// Why the row disagrees with its hook event. A corrected row that kept the
+    /// hook's wording would read "Turn complete" while showing green.
+    private static func reason(
+        for state: SessionState,
+        entry: ClaudeSessionRegistry.Entry
+    ) -> String {
+        switch state {
+        case .running:
+            return entry.status == .shell ? "Background work still running" : "Working…"
+        case .needsYou:
+            // Claude's own phrasing, which is more specific than anything that
+            // could be inferred here ("input needed", "sandbox request", …).
+            return entry.waitingFor.map { "Waiting on you — \($0)" } ?? "Needs your attention"
+        case .idle:
+            return "Idle at prompt"
+        }
+    }
+
+    /// The hooks report events; the registry reports what Claude is *doing*.
+    /// Three corrections come out of the difference.
     ///
-    /// Two corrections, both only on evidence newer than the hook's:
+    /// - **A `Stop` that did not end the work is promoted back to running.**
+    ///   `Stop` fires when the assistant's turn ends, but a turn that left a
+    ///   background shell running is resumed by the harness when it finishes,
+    ///   and one that delegated to subagents or teammates is not over either.
+    ///   Claude says so itself: `shell` for the first, `busy` for the second.
+    /// - **A dialog makes a row red.** `waiting` is only ever written while
+    ///   something is blocking on a human, so a green row becomes red rather
+    ///   than being demoted to a grey "nothing pending".
+    /// - **A stale `running` row is demoted.** Claude Code has no interrupt
+    ///   hook, so a session the user escaped out of stays green until its next
+    ///   event, which may never come.
     ///
-    /// - A stale `running` row is demoted. Claude Code has no interrupt hook,
-    ///   so a session the user escaped out of stays green until its next event,
-    ///   which may never come.
-    /// - A `Stop` that turned out not to end the work is promoted back to
-    ///   running. `Stop` fires when the assistant's turn ends, but a turn that
-    ///   left background shells running is resumed by the harness when they
-    ///   finish — so the row sat red for as long as the shells took (46 minutes,
-    ///   reported) while nothing was wanted from the user.
-    ///
-    /// Only a `Stop`-derived red is eligible. A `Notification` red is a
-    /// permission prompt: the user genuinely is needed, the registry knows
-    /// nothing about it, and clearing it would hide the one thing this app
-    /// exists to show. An unrecognized status expresses no opinion.
+    /// Only a `Stop`-derived red may be promoted. A `Notification` red is a
+    /// permission prompt: the user genuinely is needed, and clearing it would
+    /// hide the one thing this app exists to show. An unrecognized status
+    /// expresses no opinion, and an acknowledged (idle) row is left alone so
+    /// the registry can never undo a click.
     ///
     /// Nothing is written back — the display state is re-derived each reload —
     /// so when Claude does settle, the row returns to red by itself.
@@ -58,20 +76,30 @@ enum RegistryEnrichment {
         for session: AgentSession,
         entry: ClaudeSessionRegistry.Entry
     ) -> SessionState {
-        guard let registryUpdate = entry.statusUpdatedAt else { return session.state }
-        let lastEvent = session.stateChangedAt ?? session.updatedAt ?? .distantPast
-        // The hook is the more precise signal when it is fresher; letting a
-        // lagging file stomp a just-arrived event would make the list flicker.
-        guard registryUpdate > lastEvent else { return session.state }
-
         switch session.state {
-        case .running:
-            guard let isBusy = entry.status.isBusy, !isBusy else { return session.state }
-            return .idle
         case .needsYou:
-            guard session.lastEvent == turnEndedEvent, entry.status == .busy
+            // Deliberately NOT gated on the timestamp being newer than the
+            // hook's. The file is written on change, so its status is current
+            // at any age, and the write trails the hook by ~600ms — meaning at
+            // every turn end the freshest thing on disk still describes the
+            // turn that just ended. Requiring a newer timestamp here would
+            // therefore reject exactly the moment this correction exists for,
+            // and show a red blink at the end of every turn. Erring toward
+            // "still working" costs a red that arrives ~600ms late; erring the
+            // other way is the false red the whole rule is here to prevent.
+            guard session.lastEvent == turnEndedEvent, entry.status.isWorking == true
             else { return session.state }
             return .running
+        case .running:
+            if entry.status == .waiting { return .needsYou }
+            // A demotion DOES need the newer timestamp: "idle" is only evidence
+            // of an abandoned turn if it was written after the event that made
+            // the row green, or every tool call would race its own idle.
+            guard let registryUpdate = entry.statusUpdatedAt,
+                registryUpdate > (session.stateChangedAt ?? session.updatedAt ?? .distantPast),
+                let isWorking = entry.status.isWorking, !isWorking
+            else { return session.state }
+            return .idle
         default:
             return session.state
         }

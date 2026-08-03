@@ -2,12 +2,21 @@ import Foundation
 
 /// Reads Claude Code's own per-process session registry, `~/.claude/sessions/<pid>.json`.
 ///
-/// Claude Code rewrites one file per live session every few seconds. It is the
-/// only place that carries a session's *name* — the slug the user sees in their
-/// own terminal ("planner-e8") — and Claude's own busy/idle signal, neither of
-/// which any hook payload provides. Strictly read-only: the directory belongs to
-/// Claude Code, which owns the format and may change it, so every field is
-/// optional and anything unrecognized is ignored rather than guessed at.
+/// One file per live session. It is the only place that carries a session's
+/// *name* — the slug the user sees in their own terminal ("planner-e8") — and
+/// Claude's own activity status, neither of which any hook payload provides.
+/// Strictly read-only: the directory belongs to Claude Code, which owns the
+/// format and may change it, so every field is optional and anything
+/// unrecognized is ignored rather than guessed at.
+///
+/// **The file is written on change, not on a heartbeat**, which is what
+/// `statusUpdatedAt` means: the status has held this value *since* then.
+/// Measured on 2.1.220 — a session busy for 14 minutes had not been rewritten
+/// once in that time. Two consequences the enrichment rules depend on:
+///
+/// - a status is current however old its timestamp is, so age is not staleness
+/// - the write trails the hook by ~600ms at both ends of a turn, so right after
+///   a hook event the file still describes the *previous* state
 @MainActor
 final class ClaudeSessionRegistry {
     struct Entry: Equatable {
@@ -22,31 +31,49 @@ final class ClaudeSessionRegistry {
         let name: String?
         let status: Status
         let statusUpdatedAt: Date?
+        /// Claude's own words for what a `waiting` session is blocked on:
+        /// "input needed", "sandbox request", "dialog open", "worker request",
+        /// or a dialog's own label. Absent for every other status.
+        let waitingFor: String?
     }
 
-    /// Claude's own activity signal. Values seen in the wild: busy, idle,
-    /// waiting. Anything else maps to `.unknown` and expresses no opinion —
-    /// this field is not ours and can grow new cases at any time.
+    /// Claude's own activity signal. The vocabulary is closed and complete —
+    /// `["busy","shell","idle","waiting"]`, per the validator in 2.1.220 — but
+    /// it is Claude's to change, so an unrecognized value maps to `.unknown`
+    /// and expresses no opinion rather than being forced into a state.
     enum Status: Equatable {
+        /// The model is generating, or delegated agents are active. Claude
+        /// derives it as `isLoading || delegatedActive`, so a lead session
+        /// whose teammates and subagents are doing the work reads busy.
         case busy
-        case idle
+        /// The turn is over, but a background shell it started is still
+        /// running, and the harness resumes the turn when that finishes.
+        /// Derived by Claude as "idle AND an unfinished local_bash task".
+        case shell
+        /// A dialog is up and blocking on a human — permission, a sandbox
+        /// request, an elicitation. `Entry.waitingFor` says which.
         case waiting
+        case idle
         case unknown
 
         init(raw: String?) {
             switch raw?.lowercased() {
             case "busy": self = .busy
+            case "shell": self = .shell
             case "idle": self = .idle
             case "waiting": self = .waiting
             default: self = .unknown
             }
         }
 
-        /// Whether Claude considers the session to be working right now.
-        /// `.unknown` is not an answer, so callers must handle nil.
-        var isBusy: Bool? {
+        /// Whether work is still outstanding, whoever is doing it: the model,
+        /// a delegated agent, or a background shell after the turn ended.
+        /// Claude Code's own `/agents` JSON collapses `shell` into `busy` for
+        /// exactly this reason. `.unknown` is not an answer, so callers must
+        /// handle nil.
+        var isWorking: Bool? {
             switch self {
-            case .busy: return true
+            case .busy, .shell: return true
             case .idle, .waiting: return false
             case .unknown: return nil
             }
@@ -129,7 +156,8 @@ final class ClaudeSessionRegistry {
             cwd: cwd,
             name: name,
             status: Status(raw: object["status"] as? String),
-            statusUpdatedAt: Self.date(from: object["statusUpdatedAt"])
+            statusUpdatedAt: Self.date(from: object["statusUpdatedAt"]),
+            waitingFor: (object["waitingFor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 
