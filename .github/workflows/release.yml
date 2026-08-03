@@ -226,17 +226,26 @@ jobs:
           ( cd dist && shasum -a 256 "$(basename "$ARCHIVE")" > "$(basename "$ARCHIVE").sha256" )
           echo "sha256=$(cut -d' ' -f1 < "$ARCHIVE.sha256")" >> "$GITHUB_OUTPUT"
 
-      # The install instructions differ by whether the build is notarized, and
-      # getting that wrong in either direction is a support burden: telling
-      # people to bypass Gatekeeper when they need not teaches a bad habit,
-      # and omitting it when they must leaves them with an app that "won't
-      # open". So the notes are written from what actually happened above.
+      # The install instructions differ by how the build was signed, and getting
+      # that wrong in either direction is a support burden: telling people to
+      # bypass Gatekeeper when they need not teaches a bad habit, and omitting
+      # it when they must leaves them with an app that "won't open". So the
+      # notes are written from what actually happened above.
+      #
+      # THREE states, not two. Notarization decides whether Gatekeeper blocks
+      # the first launch; SIGNING decides whether the Accessibility grant
+      # survives an update, because the grant is tied to the signature and an
+      # ad-hoc one differs every build. A Developer ID build that is not yet
+      # notarized is both blocked AND stable, so keying the permission warning
+      # on notarization alone told those users their grant would break when it
+      # would not — contradicting the README and the Homebrew cask.
       - name: Compose release notes
         id: notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
           SHA256: ${{ steps.checksum.outputs.sha256 }}
           NOTARIZED: ${{ steps.notarize.outputs.notarized }}
+          SIGNED: ${{ steps.secrets.outputs.sign }}
         run: |
           {
             echo "## Install"
@@ -245,7 +254,8 @@ jobs:
             echo "**AgentTracker.app** to \`/Applications\`."
             echo
             if [ "$NOTARIZED" = "true" ]; then
-              echo "Signed and notarized by Apple — it opens normally."
+              echo "Signed and notarized by Apple — it opens normally, and updating"
+              echo "keeps your Accessibility permission."
             else
               echo "> [!IMPORTANT]"
               echo "> This build is **not notarized**, so macOS refuses it on first"
@@ -253,11 +263,18 @@ jobs:
               echo "> to the message naming AgentTracker, and click **Open Anyway**."
               echo "> On macOS 14 and earlier you can right-click the app and choose"
               echo "> **Open** instead — macOS 15 removed that shortcut."
-              echo ">"
-              echo "> Un-notarized builds are also signed differently each release, so"
-              echo "> macOS forgets the Accessibility permission when you update. If"
-              echo "> click-to-focus stops working, remove AgentTracker from the"
-              echo "> Accessibility list with **−** and add it again."
+              if [ "$SIGNED" != "true" ]; then
+                echo ">"
+                echo "> This build is also ad-hoc signed, which differs every release, so"
+                echo "> macOS forgets the Accessibility permission when you update. If"
+                echo "> click-to-focus stops working, remove AgentTracker from the"
+                echo "> Accessibility list with **−** and add it again."
+              fi
+              if [ "$SIGNED" = "true" ]; then
+                echo
+                echo "Signed with a stable Developer ID certificate, so updating keeps"
+                echo "your Accessibility permission."
+              fi
             fi
             echo
             echo "Agent Tracker needs **Accessibility** permission to focus a"
