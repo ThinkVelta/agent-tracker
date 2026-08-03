@@ -234,11 +234,18 @@ jobs:
       #
       # THREE states, not two. Notarization decides whether Gatekeeper blocks
       # the first launch; SIGNING decides whether the Accessibility grant
-      # survives an update, because the grant is tied to the signature and an
-      # ad-hoc one differs every build. A Developer ID build that is not yet
-      # notarized is both blocked AND stable, so keying the permission warning
-      # on notarization alone told those users their grant would break when it
-      # would not — contradicting the README and the Homebrew cask.
+      # survives an update, because the grant is tied to the certificate and an
+      # ad-hoc signature differs every build. A build signed with a stable
+      # certificate but not notarized is therefore blocked AND stable, so keying
+      # the permission warning on notarization alone told those users their
+      # grant would break when it would not, contradicting the README and the
+      # Homebrew cask.
+      #
+      # `sign` means "the signing secrets are set", NOT "Developer ID": today
+      # that certificate is a self-signed one (Authority=AgentTracker Local,
+      # no TeamIdentifier), which is exactly why notarization is not possible
+      # yet. So this copy must not promise Apple's involvement — only
+      # NOTARIZED can, since Apple notarizes nothing else.
       - name: Compose release notes
         id: notes
         env:
@@ -272,7 +279,7 @@ jobs:
               fi
               if [ "$SIGNED" = "true" ]; then
                 echo
-                echo "Signed with a stable Developer ID certificate, so updating keeps"
+                echo "Every release is signed with the same certificate, so updating keeps"
                 echo "your Accessibility permission."
               fi
             fi
