@@ -8,11 +8,12 @@ final class RegistryEnrichmentTests {
         name: String? = "planner-e8",
         cwd: String? = "/Users/dev/Planner",
         status: ClaudeSessionRegistry.Status = .busy,
-        statusUpdatedAt: Date? = Date()
+        statusUpdatedAt: Date? = Date(),
+        waitingFor: String? = nil
     ) -> ClaudeSessionRegistry.Entry {
         ClaudeSessionRegistry.Entry(
             sessionId: "s1", pid: nil, cwd: cwd, name: name,
-            status: status, statusUpdatedAt: statusUpdatedAt)
+            status: status, statusUpdatedAt: statusUpdatedAt, waitingFor: waitingFor)
     }
 
     private func session(
@@ -35,9 +36,24 @@ final class RegistryEnrichmentTests {
     /// The reported bug: Claude backgrounds a shell, its turn ends so `Stop`
     /// fires, and the row sits red for as long as the shell runs — 46 minutes,
     /// in the report — while the harness is going to resume the session by
-    /// itself and nothing is wanted from the user. Claude's own registry says
-    /// `busy` throughout.
-    @Test func aTurnThatEndedWithWorkStillRunningIsNotWaitingOnYou() {
+    /// itself and nothing is wanted from the user.
+    ///
+    /// Claude publishes exactly this situation as `shell`. Reading it is the
+    /// whole fix: the earlier attempt looked for `busy`, which is only what a
+    /// resumed turn briefly reports, so the row flapped green each time one of
+    /// the background tasks came back and went red again in between.
+    @Test func aTurnThatEndedWithABackgroundShellIsNotWaitingOnYou() {
+        let enriched = RegistryEnrichment.apply(
+            to: stopped(), entry: entry(status: .shell, statusUpdatedAt: Date()))
+        #expect(enriched.state == .running)
+        #expect(enriched.reason == "Background work still running")
+    }
+
+    /// Delegated work counts the same way. Claude derives `busy` as
+    /// `isLoading || delegatedActive`, so a lead session whose subagents or
+    /// teammates are doing the work reports busy even though its own main
+    /// thread has nothing to do.
+    @Test func aTurnThatDelegatedItsWorkIsNotWaitingOnYouEither() {
         let enriched = RegistryEnrichment.apply(
             to: stopped(), entry: entry(status: .busy, statusUpdatedAt: Date()))
         #expect(enriched.state == .running)
@@ -66,22 +82,30 @@ final class RegistryEnrichmentTests {
         #expect(enriched.reason == "Claude needs your permission to use Bash")
     }
 
-    /// A registry entry older than the hook event proves nothing: the hook is
-    /// the more precise signal when it is fresher, both directions.
-    @Test func aLaggingRegistryNeverOverridesAFreshHookEvent() {
+    /// The measured shape of the registry, which the promotion rule depends on:
+    /// the file is written on change, so a status is current at any age, and the
+    /// write trails the hook by ~600ms. A `Stop` therefore always lands while
+    /// the freshest status on disk still describes the turn that just ended —
+    /// so demanding a newer timestamp would reject the promotion at exactly the
+    /// moment it is needed, and blink red at the end of every turn.
+    @Test func aStatusOlderThanTheStopStillCounts() {
         let now = Date()
-        let stale = entry(status: .busy, statusUpdatedAt: now.addingTimeInterval(-60))
+        let heldSince = entry(status: .busy, statusUpdatedAt: now.addingTimeInterval(-60))
         #expect(
-            RegistryEnrichment.apply(to: stopped(changedAt: now), entry: stale).state == .needsYou)
-        // …and a status the registry cannot express stays out of it.
-        #expect(
-            RegistryEnrichment.apply(
-                to: stopped(), entry: entry(status: .unknown, statusUpdatedAt: Date())
-            ).state == .needsYou)
-        #expect(
-            RegistryEnrichment.apply(
-                to: stopped(), entry: entry(status: .waiting, statusUpdatedAt: Date())
-            ).state == .needsYou)
+            RegistryEnrichment.apply(to: stopped(changedAt: now), entry: heldSince).state
+                == .running)
+    }
+
+    /// A status the registry cannot express, and one that says a human IS
+    /// wanted, both leave a red alone.
+    @Test func onlyAWorkingStatusClearsARed() {
+        for status in [ClaudeSessionRegistry.Status.unknown, .idle, .waiting] {
+            #expect(
+                RegistryEnrichment.apply(
+                    to: stopped(), entry: entry(status: status, statusUpdatedAt: Date())
+                ).state == .needsYou,
+                "status \(status) must not clear a red")
+        }
     }
 
     /// The registry name is joined in and stays searchable, but the row title
@@ -172,11 +196,85 @@ final class RegistryEnrichmentTests {
         #expect(enriched.reason == "Idle at prompt")
     }
 
-    @Test func waitingCountsAsNotRunning() {
+    /// `waiting` is written only while a dialog is blocking on a human —
+    /// permission, a sandbox request, an elicitation — so it belongs in red.
+    /// Grey means "open, nothing pending", which is the opposite. Claude's own
+    /// description of what it wants is quoted rather than paraphrased.
+    @Test func aDialogBlockingOnYouIsRedAndSaysWhat() {
         let enriched = RegistryEnrichment.apply(
             to: session(state: .running, changedAt: Date(timeIntervalSince1970: 1000)),
+            entry: entry(
+                status: .waiting, statusUpdatedAt: Date(timeIntervalSince1970: 2000),
+                waitingFor: "input needed"))
+        #expect(enriched.state == .needsYou)
+        #expect(enriched.reason == "Waiting on you — input needed")
+        // Not every dialog names itself.
+        let unnamed = RegistryEnrichment.apply(
+            to: session(state: .running), entry: entry(status: .waiting))
+        #expect(unnamed.reason == "Needs your attention")
+    }
+
+    /// A dialog that opens mid-turn is reported after the `PreToolUse` that
+    /// triggered it, so an undated `waiting` is still evidence — unlike an
+    /// undated `idle`, which never demotes.
+    @Test func aDialogIsRedEvenWithNoTimestampAtAll() {
+        let enriched = RegistryEnrichment.apply(
+            to: session(state: .running, changedAt: Date()),
+            entry: entry(status: .waiting, statusUpdatedAt: nil))
+        #expect(enriched.state == .needsYou)
+    }
+
+    /// A `waiting` the row's own event has overtaken is a dialog that is gone.
+    /// Tool calls cannot run while something blocks on a human, so a newer hook
+    /// event proves it was answered — and `waiting` covers any local dialog,
+    /// including `/config` left open over a session whose background work
+    /// resumes behind it.
+    @Test func aWaitingOlderThanTheRowsOwnEventDoesNotRaiseIt() {
+        let overtaken = RegistryEnrichment.apply(
+            to: session(state: .running, changedAt: Date(timeIntervalSince1970: 2000)),
+            entry: entry(status: .waiting, statusUpdatedAt: Date(timeIntervalSince1970: 1000)))
+        #expect(overtaken.state == .running)
+        #expect(overtaken.reason == nil)
+        // The dialog that is genuinely up still wins.
+        let live = RegistryEnrichment.apply(
+            to: session(state: .running, changedAt: Date(timeIntervalSince1970: 1000)),
             entry: entry(status: .waiting, statusUpdatedAt: Date(timeIntervalSince1970: 2000)))
-        #expect(enriched.state == .idle)
+        #expect(live.state == .needsYou)
+    }
+
+    /// The user's own click has to win. Acknowledging a row writes idle, and
+    /// re-deriving it from the registry would undo that on the next reload.
+    @Test func anAcknowledgedRowIsNeverReRaisedByTheRegistry() {
+        for status in [ClaudeSessionRegistry.Status.waiting, .busy, .shell, .idle] {
+            var acknowledged = session(state: .idle)
+            acknowledged.reason = "Seen"
+            let enriched = RegistryEnrichment.apply(
+                to: acknowledged, entry: entry(status: status, statusUpdatedAt: Date()))
+            #expect(enriched.state == .idle, "status \(status) reopened an acknowledged row")
+            #expect(enriched.reason == "Seen")
+        }
+    }
+
+    /// The reported flapping, as the sequence that produced it: a turn ends
+    /// with two background tasks outstanding, and the harness resumes the
+    /// session as each one lands. Every step has to read as one continuous
+    /// stretch of work, because that is what it is.
+    @Test func aTurnWaitingOnBackgroundWorkNeverBlinksRed() {
+        let sequence: [(ClaudeSessionRegistry.Status, String)] = [
+            (.busy, "the turn is still going"),
+            (.shell, "turn ended, two background tasks running"),
+            (.busy, "the first task landed and resumed the turn"),
+            (.shell, "that turn ended too, one task still running"),
+            (.busy, "the second task landed"),
+        ]
+        for (status, step) in sequence {
+            let enriched = RegistryEnrichment.apply(
+                to: stopped(), entry: entry(status: status, statusUpdatedAt: Date()))
+            #expect(enriched.state == .running, "flapped to \(enriched.state): \(step)")
+        }
+        // …and red once, when everything really is done.
+        let settled = RegistryEnrichment.apply(to: stopped(), entry: entry(status: .idle))
+        #expect(settled.state == .needsYou)
     }
 
     /// The hook is the more precise signal when it is fresher; a lagging
@@ -198,8 +296,8 @@ final class RegistryEnrichmentTests {
         #expect(enriched.state == .needsYou)
     }
 
-    @Test func busyOrUnknownStatusLeavesTheStateAlone() {
-        for status in [ClaudeSessionRegistry.Status.busy, .unknown] {
+    @Test func aWorkingOrUnknownStatusLeavesTheStateAlone() {
+        for status in [ClaudeSessionRegistry.Status.busy, .shell, .unknown] {
             let enriched = RegistryEnrichment.apply(
                 to: session(state: .running, changedAt: Date(timeIntervalSince1970: 1000)),
                 entry: entry(status: status, statusUpdatedAt: Date(timeIntervalSince1970: 9000)))

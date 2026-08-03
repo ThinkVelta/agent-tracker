@@ -43,6 +43,7 @@ final class ClaudeSessionRegistryTests {
         #expect(entry?.cwd == nil)
         #expect(entry?.status == .unknown)
         #expect(entry?.statusUpdatedAt == nil)
+        #expect(entry?.waitingFor == nil)
     }
 
     @Test func emptyStringsReadAsAbsent() {
@@ -52,15 +53,33 @@ final class ClaudeSessionRegistryTests {
         #expect(entry?.cwd == nil)
     }
 
-    /// The status vocabulary is Claude's, not ours: an unrecognized value has
-    /// to express no opinion rather than being forced into a state.
-    @Test func statusVocabularyIsOpenEnded() {
-        #expect(ClaudeSessionRegistry.Status(raw: "busy").isBusy == true)
-        #expect(ClaudeSessionRegistry.Status(raw: "BUSY").isBusy == true)
-        #expect(ClaudeSessionRegistry.Status(raw: "idle").isBusy == false)
-        #expect(ClaudeSessionRegistry.Status(raw: "waiting").isBusy == false)
-        #expect(ClaudeSessionRegistry.Status(raw: "compacting").isBusy == nil)
-        #expect(ClaudeSessionRegistry.Status(raw: nil).isBusy == nil)
+    /// The whole vocabulary Claude validates against, `["busy","shell","idle",
+    /// "waiting"]`, and the guarantee for anything outside it: an unrecognized
+    /// value expresses no opinion rather than being forced into a state.
+    @Test func theWholeStatusVocabularyIsCovered() {
+        #expect(ClaudeSessionRegistry.Status(raw: "busy").isWorking == true)
+        #expect(ClaudeSessionRegistry.Status(raw: "BUSY").isWorking == true)
+        // Background work after the turn ended is still work — the case whose
+        // absence left a session red for as long as its shell ran.
+        #expect(ClaudeSessionRegistry.Status(raw: "shell") == .shell)
+        #expect(ClaudeSessionRegistry.Status(raw: "shell").isWorking == true)
+        #expect(ClaudeSessionRegistry.Status(raw: "idle").isWorking == false)
+        #expect(ClaudeSessionRegistry.Status(raw: "waiting").isWorking == false)
+        #expect(ClaudeSessionRegistry.Status(raw: "compacting").isWorking == nil)
+        #expect(ClaudeSessionRegistry.Status(raw: nil).isWorking == nil)
+    }
+
+    /// `waitingFor` is Claude's own description of what it is blocked on, and
+    /// the row's reason quotes it verbatim.
+    @Test func waitingForIsReadAlongsideTheStatus() {
+        let entry = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"abc","status":"waiting","waitingFor":"input needed"}"#.utf8))
+        #expect(entry?.status == .waiting)
+        #expect(entry?.waitingFor == "input needed")
+        // Absent for every other status, and an empty string is not a reason.
+        let busy = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"abc","status":"busy","waitingFor":""}"#.utf8))
+        #expect(busy?.waitingFor == nil)
     }
 
     @Test func nonsenseTimestampsAreDropped() {

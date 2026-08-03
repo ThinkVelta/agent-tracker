@@ -188,10 +188,16 @@ signal rather than a requirement.
   ("✳ &lt;task summary&gt;") and working-directory fragments remain as
   fallbacks when it is absent.
 - **A finished turn is not always "needs you".** Claude's `Stop` fires when the
-  assistant's turn ends, but a turn that left background shells running is
-  resumed when they finish. Claude publishes its own busy/idle status, so a red
-  row is re-derived as running while that status says the session is still
-  working, so no crying wolf for the length of a long build.
+  assistant's turn ends, which is not the same as the work being done: a turn
+  that backgrounded a shell is resumed when it finishes, and one that handed off
+  to subagents or teammates is not over either. Claude publishes its own status
+  for each of those (`shell` for background work, `busy` for delegated work), so
+  a red row is re-derived as running until the session genuinely settles. It
+  goes red once, at the end, instead of blinking on every hand-off.
+- **A dialog is "needs you", whatever the hooks said.** A session showing a
+  permission prompt, sandbox request or elicitation publishes `waiting`, and the
+  row turns red quoting what Claude is blocked on ("input needed"). Acknowledged
+  rows are left alone, so clearing a row by hand always sticks.
 
 ## Known limitations
 
