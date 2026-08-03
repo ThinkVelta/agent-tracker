@@ -84,7 +84,7 @@ The block comes from the quarantine attribute macOS attaches to downloads.
 Clearing it before the first launch avoids the dialog:
 
 ```sh
-xattr -d com.apple.quarantine /Applications/AgentTracker.app
+xattr -dr com.apple.quarantine -- /Applications/AgentTracker.app
 ```
 
 That is a real Gatekeeper check you are switching off for this app, so only do
