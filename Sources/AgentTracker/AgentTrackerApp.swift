@@ -222,7 +222,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func redrawIcon(emphasis: CGFloat = 0) {
         guard let button = statusItem?.button else { return }
         let rendering = StatusIconRenderer.render(
-            for: lastCounts, mode: Preferences.shared.iconMode, emphasis: emphasis)
+            for: lastCounts, mode: Preferences.shared.iconMode,
+            monochrome: Preferences.shared.monochromeIcon, emphasis: emphasis)
         button.image = rendering.image
         hitRegions = rendering.hitRegions
     }

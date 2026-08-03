@@ -3,6 +3,9 @@ import AppKit
 /// Draws the menu bar icon — by default three colored dots (red = needs you,
 /// green = running, grey = idle), each followed by its session count — in the
 /// user's chosen display mode. Zero-count groups are dimmed.
+///
+/// Mode and monochrome are independent axes: the mode decides what is drawn,
+/// monochrome decides how it is colored, and every combination is valid.
 enum StatusIconRenderer {
     /// How the icon spends its menu bar real estate. Every mode keeps the
     /// click→dot mapping intact: what is drawn is clickable, what isn't drawn
@@ -18,10 +21,6 @@ enum StatusIconRenderer {
         /// a single neutral placeholder. For users who only want to know when
         /// they are blocking something.
         case attentionOnly
-        /// Template rendering that inherits the menu bar's tint. Hue is
-        /// erased by tinting, so state is encoded by shape instead:
-        /// needs-you filled, running half-filled, idle hollow.
-        case monochrome
 
         var label: String {
             switch self {
@@ -29,12 +28,11 @@ enum StatusIconRenderer {
             case .countsWhenNonZero: return "Hide zero counts"
             case .dotsOnly: return "Dots only"
             case .attentionOnly: return "Needs-you only"
-            case .monochrome: return "Monochrome"
             }
         }
     }
 
-    /// Monochrome's state encoding. Color modes draw everything `.filled`.
+    /// Monochrome's state encoding. Color rendering draws everything `.filled`.
     enum DotShape: Equatable {
         case filled
         case half
@@ -85,36 +83,27 @@ enum StatusIconRenderer {
     /// What a mode draws for these counts, in menu bar order. Pure so every
     /// mode's layout is testable without rendering. An empty array means the
     /// neutral placeholder (attention-only with nothing needing attention).
-    static func elements(for counts: SessionCounts, mode: Mode) -> [Element] {
+    static func elements(
+        for counts: SessionCounts, mode: Mode, monochrome: Bool = false
+    ) -> [Element] {
+        func element(_ state: SessionState, showsCount: Bool) -> Element {
+            Element(
+                state: state, total: counts.count(for: state), showsCount: showsCount,
+                shape: monochrome ? shape(for: state) : .filled)
+        }
         switch mode {
         case .dotsAndCounts:
-            return SessionState.allCases.map {
-                Element(
-                    state: $0, total: counts.count(for: $0), showsCount: true, shape: .filled)
-            }
+            return SessionState.allCases.map { element($0, showsCount: true) }
         case .countsWhenNonZero:
             return SessionState.allCases.map {
                 let total = counts.count(for: $0)
-                return Element(
-                    state: $0, total: total, showsCount: total > 0, shape: .filled)
+                return element($0, showsCount: total > 0)
             }
         case .dotsOnly:
-            return SessionState.allCases.map {
-                Element(
-                    state: $0, total: counts.count(for: $0), showsCount: false, shape: .filled)
-            }
+            return SessionState.allCases.map { element($0, showsCount: false) }
         case .attentionOnly:
             guard counts.needsYou > 0 else { return [] }
-            return [
-                Element(
-                    state: .needsYou, total: counts.needsYou, showsCount: true, shape: .filled)
-            ]
-        case .monochrome:
-            return SessionState.allCases.map {
-                Element(
-                    state: $0, total: counts.count(for: $0), showsCount: true,
-                    shape: shape(for: $0))
-            }
+            return [element(.needsYou, showsCount: true)]
         }
     }
 
@@ -163,13 +152,17 @@ enum StatusIconRenderer {
 
     // MARK: - Rendering
 
+    /// - Parameter monochrome: draws a template image that inherits the menu
+    ///   bar's tint. Tinting erases hue, so state rides on shape instead
+    ///   (see `shape(for:)`).
     /// - Parameter emphasis: 0…1 attention-pulse phase; scales the needs-you
     ///   dot up to ~1.4× so a session flipping red registers in the corner of
     ///   the eye. Always passed as 0 outside the brief one-shot pulse.
     static func render(
-        for counts: SessionCounts, mode: Mode = .dotsAndCounts, emphasis: CGFloat = 0
+        for counts: SessionCounts, mode: Mode = .dotsAndCounts, monochrome: Bool = false,
+        emphasis: CGFloat = 0
     ) -> Rendering {
-        let elements = elements(for: counts, mode: mode)
+        let elements = elements(for: counts, mode: mode, monochrome: monochrome)
         guard !elements.isEmpty else { return renderPlaceholder(counts: counts) }
 
         let strings = elements.map { element in
@@ -180,7 +173,6 @@ enum StatusIconRenderer {
         }
         let regions = hitRegions(elements: elements, textWidths: textWidths)
         let width = (regions.last?.range.upperBound ?? 0) + edgePad
-        let monochrome = mode == .monochrome
 
         let image = NSImage(size: NSSize(width: ceil(width), height: height), flipped: false) {
             rect in

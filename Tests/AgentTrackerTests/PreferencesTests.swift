@@ -127,12 +127,15 @@ final class PreferencesTests {
         let defaults = makeDefaults()
         let first = Preferences(defaults: defaults)
         #expect(first.iconMode == .dotsAndCounts)
+        #expect(!first.monochromeIcon)
         #expect(first.attentionCue)
 
-        first.iconMode = .monochrome
+        first.iconMode = .dotsOnly
+        first.monochromeIcon = true
         first.attentionCue = false
         let second = Preferences(defaults: defaults)
-        #expect(second.iconMode == .monochrome)
+        #expect(second.iconMode == .dotsOnly)
+        #expect(second.monochromeIcon)
         #expect(!second.attentionCue)
 
         // Unknown mode string (a future build's mode, a typo): default, never
@@ -142,6 +145,24 @@ final class PreferencesTests {
         let corrupt = Preferences(defaults: defaults)
         #expect(corrupt.iconMode == .dotsAndCounts)
         #expect(corrupt.attentionCue)
+    }
+
+    /// 0.1.0 stored monochrome as an icon MODE. Upgrading must keep the icon
+    /// the user chose, which is now the default mode plus the switch.
+    @Test func monochromeModeUpgradesToTheSwitch() {
+        let defaults = makeDefaults()
+        defaults.set(Preferences.legacyMonochromeMode, forKey: "iconMode")
+
+        let upgraded = Preferences(defaults: defaults)
+        #expect(upgraded.iconMode == .dotsAndCounts)
+        #expect(upgraded.monochromeIcon)
+
+        // Rewritten, not translated on every read: turning the switch off must
+        // stick instead of being resurrected by the next launch.
+        upgraded.monochromeIcon = false
+        let relaunched = Preferences(defaults: defaults)
+        #expect(relaunched.iconMode == .dotsAndCounts)
+        #expect(!relaunched.monochromeIcon)
     }
 
     // MARK: - Dwell decision (pure)

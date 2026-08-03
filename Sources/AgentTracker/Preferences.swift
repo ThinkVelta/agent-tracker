@@ -123,9 +123,15 @@ final class Preferences: ObservableObject {
 
     // MARK: - Menu bar icon
 
-    /// How the menu bar icon draws (see `StatusIconRenderer.Mode`).
+    /// What the menu bar icon draws (see `StatusIconRenderer.Mode`).
     @Published var iconMode: StatusIconRenderer.Mode {
         didSet { defaults.set(iconMode.rawValue, forKey: Keys.iconMode) }
+    }
+
+    /// Whether it draws tinted-template instead of colored. Orthogonal to
+    /// `iconMode`: every mode has a monochrome rendering.
+    @Published var monochromeIcon: Bool {
+        didSet { defaults.set(monochromeIcon, forKey: Keys.monochromeIcon) }
     }
 
     /// The brief one-shot pulse when a session flips to needs-you.
@@ -150,8 +156,13 @@ final class Preferences: ObservableObject {
         static let refreshInterval = "refreshIntervalSeconds"
         static let confirmQuit = "confirmQuit"
         static let iconMode = "iconMode"
+        static let monochromeIcon = "monochromeIcon"
         static let attentionCue = "attentionCue"
     }
+
+    /// The mode 0.1.0 stored when monochrome was one of the icon modes rather
+    /// than a switch across all of them.
+    static let legacyMonochromeMode = "monochrome"
 
     private let defaults: UserDefaults
 
@@ -187,9 +198,26 @@ final class Preferences: ObservableObject {
             } ?? SessionStore.defaultRefreshInterval
 
         confirmQuit = defaults.object(forKey: Keys.confirmQuit) as? Bool ?? true
-        iconMode =
-            (defaults.string(forKey: Keys.iconMode))
+
+        // Monochrome used to BE a mode; it is now a switch crossed with every
+        // mode. Its old rendering was dots-and-counts, so mapping it onto the
+        // default mode with the switch on leaves an upgrader's menu bar looking
+        // exactly as it did. Rewritten here rather than translated on every
+        // read, or turning the switch off would be undone by the next launch.
+        let storedMode = defaults.string(forKey: Keys.iconMode)
+        let upgradingFromMonochromeMode = storedMode == Self.legacyMonochromeMode
+        let mode =
+            (upgradingFromMonochromeMode ? nil : storedMode)
             .flatMap(StatusIconRenderer.Mode.init(rawValue:)) ?? .dotsAndCounts
+        iconMode = mode
+        monochromeIcon =
+            upgradingFromMonochromeMode
+            || (defaults.object(forKey: Keys.monochromeIcon) as? Bool ?? false)
+        if upgradingFromMonochromeMode {
+            defaults.set(mode.rawValue, forKey: Keys.iconMode)
+            defaults.set(true, forKey: Keys.monochromeIcon)
+        }
+
         attentionCue = defaults.object(forKey: Keys.attentionCue) as? Bool ?? true
     }
 }

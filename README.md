@@ -132,8 +132,10 @@ working directory and title, via the Accessibility API.
 needs you. Clicking it again closes it. The chips at the top of the dropdown do
 the same thing.
 
-**A menu bar that stays out of the way.** Five icon modes, from counts on every
-dot down to a single dot that appears only when something needs you:
+**A menu bar that stays out of the way.** Four icon modes, from counts on every
+dot down to a single dot that appears only when something needs you, each of
+them available in monochrome — which takes the menu bar's tint like a system
+icon and tells the states apart by shape:
 
 <div align="center">
 <picture>

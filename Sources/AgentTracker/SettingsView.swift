@@ -154,10 +154,13 @@ private struct MenuBarSettingsTab: View {
                     Picker("", selection: $preferences.iconMode) {
                         ForEach(StatusIconRenderer.Mode.allCases, id: \.self) { mode in
                             HStack(spacing: 8) {
-                                Image(
-                                    nsImage: StatusIconRenderer.render(
-                                        for: Self.sampleCounts, mode: mode
-                                    ).image)
+                                // Monochrome output is a template — black
+                                // pixels awaiting the menu bar's tint — so it
+                                // has to be drawn as one here too, or every
+                                // row goes invisible in dark mode.
+                                Image(nsImage: preview(of: mode))
+                                    .renderingMode(
+                                        preferences.monochromeIcon ? .template : .original)
                                 Text(mode.label)
                                     .font(.system(size: 12))
                             }
@@ -171,6 +174,17 @@ private struct MenuBarSettingsTab: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+                SettingsRow(
+                    title: "Monochrome",
+                    detail: "Drop the colors and take the menu bar's tint, like a system "
+                        + "icon. Tinting erases hue, so the states read by shape instead: "
+                        + "needs-you filled, running half-filled, idle hollow.",
+                    divided: true
+                ) {
+                    Toggle("", isOn: $preferences.monochromeIcon)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
             }
             SettingsCard {
                 SettingsRow(
@@ -186,6 +200,14 @@ private struct MenuBarSettingsTab: View {
             }
         }
         .padding(20)
+    }
+
+    /// Every row previews the mode it selects in the colors it will actually
+    /// draw, so flipping the switch below restyles the whole list.
+    private func preview(of mode: StatusIconRenderer.Mode) -> NSImage {
+        StatusIconRenderer.render(
+            for: Self.sampleCounts, mode: mode, monochrome: preferences.monochromeIcon
+        ).image
     }
 }
 
