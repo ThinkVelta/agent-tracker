@@ -37,9 +37,12 @@ gh release view "v$DECLARED" --json tagName --jq .tagName 2>/dev/null || echo "n
 ```
 
 - **`v$DECLARED` already exists** (tag or release): the version on `main` is spent, so this is
-  **Phase A**, prepare the bump. Continue at Step 1.
+  **Phase A**, prepare the bump. Continue at Step 1, then Step 2.
 - **`v$DECLARED` does not exist**: a bump has already landed on `main`, so this is **Phase B**,
-  tag it. Skip to Step 5, releasing `$DECLARED`.
+  tag it. Continue at Step 1, then skip to Step 5, releasing `$DECLARED`.
+
+**Step 1 applies to both phases.** Phase B validates and then tags, and neither is meaningful
+against a tree that is not the commit being released.
 
 If Phase B and you did not prepare that bump yourself, say so and show the human the diff of
 `VERSION` and who landed it before going further. A stray bump in an unrelated PR is the one
@@ -50,9 +53,9 @@ way to reach Phase B by accident.
 All of these, before touching anything:
 
 ```bash
-git branch --show-current      # must be main
-git status --porcelain         # must be empty
-git rev-list --count origin/main..HEAD   # must be 0 (nothing unpushed)
+git branch --show-current                # must be main
+git status --porcelain                   # must be empty
+git rev-parse HEAD origin/main           # must print the same sha twice
 gh pr list --state open --json number,title,headRefName
 ```
 
@@ -60,9 +63,16 @@ gh pr list --state open --json number,title,headRefName
 - Dirty tree: **stop**, and tell the user:
   > You have uncommitted changes. Run `/commit` to land them (or `git stash` to set them
   > aside), then rerun `/release`. I will not fold unrelated work into a release commit.
-- An open PR whose branch starts with `chore/release-`: **stop**, that bump is already in
-  flight. Point at it and ask the human to merge it, then rerun `/release` for Phase B.
+- `HEAD` and `origin/main` differ: **stop**. Behind means `git pull --ff-only` (Phase B always
+  needs this, since the bump merged after your last pull); ahead means unpushed commits that
+  would silently not be in the release.
+- An open PR whose branch starts with `chore/release-`: in Phase A, **stop**, that bump is
+  already in flight, so point at it and ask the human to merge it. In Phase B it should be the
+  bump that just merged, so if one is still open, say so rather than tagging around it.
 - Other open PRs are fine. Mention them, since anything unmerged will not be in this release.
+
+These three together are what make `HEAD` **be** the commit you are about to release, which is
+what lets Step 5 validate it by running the suite here rather than in a scratch checkout.
 
 ## Step 2 — Derive the bump, then let the argument override it
 
@@ -148,11 +158,12 @@ You never merge it. `gh pr merge` is forbidden here and blocked by a hook.
 
 ## Step 5 — Pre-flight the exact commit you are about to tag
 
-Phase B. The tag is the point of no return, so verify against the **commit**, not the working
-tree. `SHA` is the tip of `origin/main`.
+Phase B. The tag is the point of no return, so every check has to describe the **commit** being
+tagged. `SHA` is the tip of `origin/main`.
 
 ```bash
 SHA=$(git rev-parse origin/main)
+test "$(git rev-parse HEAD)" = "$SHA" && test -z "$(git status --porcelain)"
 git show "$SHA:VERSION"                       # must equal $DECLARED, no leading v
 git merge-base --is-ancestor "$SHA" origin/main
 gh run list --commit "$SHA" --workflow ci.yml --limit 1     # must be success
@@ -161,9 +172,20 @@ git ls-tree "$SHA" integrations/agent-tracker-hook.py       # must show mode 100
 make lint && make test
 ```
 
-Every one of these mirrors a guard in `release.yml` that would otherwise fail the run, except
-the last two, which fail `make app` inside it (the bundle build asserts the hook script is
-executable) and lint, which `release.yml` does not run at all. `ci.yml` is the only lint gate,
+The first line is load-bearing, not a formality. `make lint` and `make test` run against the
+working tree, so they only say anything about `$SHA` while the tree *is* `$SHA`. Step 1 should
+have established that already; assert it again here, because this is the last check before an
+irreversible act and Step 1 may have run minutes ago. If it fails, fix the tree rather than
+reasoning about which files differ.
+
+If the human genuinely cannot clean the tree, validate in a scratch checkout instead of
+skipping it: `git worktree add --detach "$tmp" "$SHA"`, run `make lint && make test` in there,
+then `git worktree remove "$tmp"`. Slower, and it still leaves the tag push needing a clean
+`main`, so prefer fixing the tree.
+
+The other checks each mirror a guard in `release.yml` that would otherwise fail the run, except
+the mode bit, which fails `make app` inside it (the bundle build asserts the hook script is
+executable), and lint, which `release.yml` does not run at all. `ci.yml` is the only lint gate,
 which is why its run on this exact commit has to be green.
 
 Two more that the release itself will not tell you:
