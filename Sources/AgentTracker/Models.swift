@@ -56,8 +56,9 @@ struct TerminalIdentity: Codable, Equatable {
     /// `TERM`. The only thing that identifies kitty, which sets no
     /// `TERM_PROGRAM` at all.
     var term: String?
-    /// Set inside tmux, whose `TERM_PROGRAM=tmux` overwrites the host
-    /// terminal's own value.
+    /// Set inside tmux. The decisive "this is a multiplexer pane" signal: it
+    /// outranks `term` and `termProgram`, which a pane inherits from the tmux
+    /// server and which can therefore name the wrong host, or a dead one.
     var tmux: String?
     var tmuxPane: String?
     var weztermPane: String?

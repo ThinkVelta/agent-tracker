@@ -48,11 +48,18 @@ enum TerminalIdentification {
     }
 
     /// Pure, so the priority order is testable without a live process tree.
-    static func hint(termProgram: String?, term: String?) -> Hint {
+    static func hint(termProgram: String?, term: String?, tmux: String?) -> Hint {
         let program = termProgram?.lowercased()
         let terminalType = term?.lowercased()
-        // Checked before the lookup rather than after: tmux overwrites
-        // TERM_PROGRAM, so a hit here means the host is unknowable, not that we
+        // `TMUX` outranks everything, including a `TERM`/`TERM_PROGRAM` that
+        // names a real terminal. A pane inherits the tmux SERVER's environment,
+        // snapshotted from whichever client happened to create it — so those
+        // values can name a terminal that is not the one currently attached, or
+        // one that has since quit. Being inside tmux is the fact; what the
+        // inherited variables say about a host is not.
+        if let tmux, !tmux.isEmpty { return .multiplexer }
+        // Then tmux's own overwrite of TERM_PROGRAM, checked before the lookup
+        // rather than after: a hit means the host is unknowable, not that we
         // should keep reading the value it replaced.
         if program == "tmux" || program == "screen" { return .multiplexer }
         if let program, let bundleID = bundleIDsByTermProgram[program] { return .app(bundleID) }
@@ -80,7 +87,10 @@ enum TerminalIdentification {
         }
 
         // 2. What the hook captured from the session's environment.
-        switch hint(termProgram: session.termProgram, term: session.terminal?.term) {
+        switch hint(
+            termProgram: session.termProgram, term: session.terminal?.term,
+            tmux: session.terminal?.tmux)
+        {
         case .app(let bundleID):
             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
                 .first
