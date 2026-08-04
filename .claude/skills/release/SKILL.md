@@ -53,9 +53,9 @@ way to reach Phase B by accident.
 All of these, before touching anything:
 
 ```bash
-git branch --show-current                # must be main
-git status --porcelain                   # must be empty
-git rev-parse HEAD origin/main           # must print the same sha twice
+git branch --show-current                # main — or the Phase B exception below
+git status --porcelain                   # must be empty, no exceptions
+git rev-parse HEAD origin/main           # equal; behind is fixable, ahead stops
 gh pr list --state open --json number,title,headRefName
 ```
 
@@ -76,8 +76,10 @@ gh pr list --state open --json number,title,headRefName
   bump that just merged, so if one is still open, say so rather than tagging around it.
 - Other open PRs are fine. Mention them, since anything unmerged will not be in this release.
 
-These three together are what make `HEAD` **be** the commit you are about to release, which is
-what lets Step 5 validate it by running the suite here rather than in a scratch checkout.
+However you get there — already on `main`, or via the Phase B switch and fast-forward — Step 1
+ends with a clean tree on `main` at `origin/main`. That end state is what makes `HEAD` **be**
+the commit you are about to release, which is what lets Step 5 validate it by running the suite
+here rather than in a scratch checkout.
 
 ## Step 2 — Derive the bump, then let the argument override it
 
