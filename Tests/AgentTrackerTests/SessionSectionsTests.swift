@@ -41,13 +41,16 @@ final class SessionSectionsTests {
         #expect(built.first?.hiddenByBudget == 3)
     }
 
+    /// Expressed against the threshold rather than its value: the invariant is
+    /// "folds strictly past it", which must hold whatever the number is tuned to.
     @Test func idleCollapsesItselfOnlyOnceItIsLongEnough() {
-        let atThreshold = SessionSections.build(from: sessions(.idle, 3))
+        let threshold = Theme.Metrics.idleAutoCollapseThreshold
+        let atThreshold = SessionSections.build(from: sessions(.idle, threshold))
         #expect(atThreshold.first?.isCollapsed == false)
-        let overThreshold = SessionSections.build(from: sessions(.idle, 4))
+        let overThreshold = SessionSections.build(from: sessions(.idle, threshold + 1))
         #expect(overThreshold.first?.isCollapsed == true)
         #expect(overThreshold.first?.rows.isEmpty == true)
-        #expect(overThreshold.first?.total == 4)
+        #expect(overThreshold.first?.total == threshold + 1)
     }
 
     /// Hiding rows while the user is narrowing the list would be a lie about

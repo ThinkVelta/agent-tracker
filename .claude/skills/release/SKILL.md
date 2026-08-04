@@ -53,26 +53,33 @@ way to reach Phase B by accident.
 All of these, before touching anything:
 
 ```bash
-git branch --show-current                # must be main
-git status --porcelain                   # must be empty
-git rev-parse HEAD origin/main           # must print the same sha twice
+git branch --show-current                # main — or the Phase B exception below
+git status --porcelain                   # must be empty, no exceptions
+git rev-parse HEAD origin/main           # equal; behind is fixable, ahead stops
 gh pr list --state open --json number,title,headRefName
 ```
 
-- Not on `main`: **stop**, tell the user to `git switch main` first. A release describes `main`.
 - Dirty tree: **stop**, and tell the user:
   > You have uncommitted changes. Run `/commit` to land them (or `git stash` to set them
   > aside), then rerun `/release`. I will not fold unrelated work into a release commit.
-- `HEAD` and `origin/main` differ: **stop**. Behind means `git pull --ff-only` (Phase B always
-  needs this, since the bump merged after your last pull); ahead means unpushed commits that
+- Not on `main`, **with one exception**: **stop** and tell the user to `git switch main` first,
+  because a release describes `main`. The exception is the normal Phase B position — a clean
+  tree on the `chore/release-vX.Y.Z` branch whose PR just merged. There, switching to `main` and
+  fast-forwarding is mechanical rather than a decision, so just do it (and delete the merged
+  branch). What the gate protects is uncommitted work and releasing from a feature branch, and
+  neither is in play.
+- `HEAD` and `origin/main` differ: behind is expected in Phase B, since the bump merged after
+  your last pull, so `git pull --ff-only` and carry on. **Ahead means stop**: unpushed commits
   would silently not be in the release.
 - An open PR whose branch starts with `chore/release-`: in Phase A, **stop**, that bump is
   already in flight, so point at it and ask the human to merge it. In Phase B it should be the
   bump that just merged, so if one is still open, say so rather than tagging around it.
 - Other open PRs are fine. Mention them, since anything unmerged will not be in this release.
 
-These three together are what make `HEAD` **be** the commit you are about to release, which is
-what lets Step 5 validate it by running the suite here rather than in a scratch checkout.
+However you get there — already on `main`, or via the Phase B switch and fast-forward — Step 1
+ends with a clean tree on `main` at `origin/main`. That end state is what makes `HEAD` **be**
+the commit you are about to release, which is what lets Step 5 validate it by running the suite
+here rather than in a scratch checkout.
 
 ## Step 2 — Derive the bump, then let the argument override it
 
