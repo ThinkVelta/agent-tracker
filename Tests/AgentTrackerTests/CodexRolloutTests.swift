@@ -557,4 +557,37 @@ final class CodexRolloutTests {
         let after = accumulator.derivedState(now: resetsAt.addingTimeInterval(1))
         #expect(after.reason == "Turn complete — ready for you")
     }
+
+    /// The limit is account-wide, so sessions share a reset instant. One pass
+    /// takes `now` once, or two rows could straddle that instant and disagree
+    /// about whether the account is blocked.
+    @Test func onePassDerivesEverySessionAgainstOneInstant() {
+        let resetsAt = Date(timeIntervalSince1970: 1_786_177_907)
+        let limitLine = tokenCountLine(
+            usedPercent: 100, windowMinutes: 10080, resetsAt: 1_786_177_907)
+
+        func blockedThread(id: String) -> CodexThreadAccumulator {
+            var accumulator = CodexThreadAccumulator()
+            accumulator.apply(
+                .sessionMeta(
+                    CodexSessionMeta(
+                        sessionId: id, threadId: id, cwd: "/Users/dev/demo", isSubagent: false,
+                        timestamp: resetsAt.addingTimeInterval(-7200))))
+            accumulator.consume(line: eventLine("task_complete"))
+            accumulator.consume(line: limitLine)
+            return accumulator
+        }
+
+        let threads = [snapshot(blockedThread(id: "s1")), snapshot(blockedThread(id: "s2"))]
+
+        let during = CodexSessionGrouper.sessions(
+            from: threads, now: resetsAt.addingTimeInterval(-60))
+        #expect(during.count == 2)
+        #expect(during.allSatisfy { $0.reason?.hasPrefix("Usage limit reached") == true })
+
+        let after = CodexSessionGrouper.sessions(
+            from: threads, now: resetsAt.addingTimeInterval(60))
+        #expect(after.count == 2)
+        #expect(after.allSatisfy { $0.reason == "Turn complete — ready for you" })
+    }
 }

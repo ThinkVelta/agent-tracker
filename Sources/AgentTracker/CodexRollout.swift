@@ -295,7 +295,11 @@ enum CodexSessionGrouper {
     /// State/reason/stateChangedAt/cwd come from the non-subagent thread with
     /// the newest significant event; subagent threads contribute liveness (pid,
     /// updatedAt) only. Groups with only subagent threads produce no session.
-    static func sessions(from threads: [CodexThreadSnapshot]) -> [AgentSession] {
+    /// - Parameter now: one instant for the whole pass. Taken once rather than
+    ///   per row so two sessions sharing a reset time cannot disagree about
+    ///   whether it has passed.
+    static func sessions(from threads: [CodexThreadSnapshot], now: Date = Date()) -> [AgentSession]
+    {
         var groups: [String: [CodexThreadSnapshot]] = [:]
         for thread in threads {
             guard let meta = thread.accumulator.meta else { continue }
@@ -308,7 +312,7 @@ enum CodexSessionGrouper {
             guard let primary = primaries.max(by: { rank($0) < rank($1) }) else { continue }
 
             let accumulator = primary.accumulator
-            let (state, reason) = accumulator.derivedState()
+            let (state, reason) = accumulator.derivedState(now: now)
             let pid = primary.holderPid ?? group.compactMap(\.holderPid).first
             let updatedAt = group.compactMap(\.fileActivityAt).max()
             let stateChangedAt =
