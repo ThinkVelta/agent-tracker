@@ -142,16 +142,16 @@ final class CodexRolloutTests {
     @Test func noSignificantEventIsSessionOpen() {
         var accumulator = CodexThreadAccumulator()
         accumulator.consume(line: metaLine())
-        #expect(accumulator.derivedState.state == .idle)
-        #expect(accumulator.derivedState.reason == "Session open")
+        #expect(accumulator.derivedState().state == .idle)
+        #expect(accumulator.derivedState().reason == "Session open")
     }
 
     @Test func taskStartedIsRunning() {
         var accumulator = CodexThreadAccumulator()
         accumulator.consume(line: metaLine())
         accumulator.consume(line: eventLine("task_started"))
-        #expect(accumulator.derivedState.state == .running)
-        #expect(accumulator.derivedState.reason == "Working…")
+        #expect(accumulator.derivedState().state == .running)
+        #expect(accumulator.derivedState().reason == "Working…")
         #expect(accumulator.lastSignificant?.timestamp == date("2026-07-31T10:01:00.000Z"))
     }
 
@@ -164,8 +164,8 @@ final class CodexRolloutTests {
                 timestamp: "2026-07-31T10:05:00.000Z",
                 extra: ["last_agent_message": "All done"]
             ))
-        #expect(accumulator.derivedState.state == .needsYou)
-        #expect(accumulator.derivedState.reason == "Turn complete — ready for you")
+        #expect(accumulator.derivedState().state == .needsYou)
+        #expect(accumulator.derivedState().reason == "Turn complete — ready for you")
         #expect(accumulator.lastAgentMessage == "All done")
     }
 
@@ -177,8 +177,8 @@ final class CodexRolloutTests {
                 "turn_aborted", timestamp: "2026-07-31T10:02:00.000Z",
                 extra: ["reason": "interrupted"]
             ))
-        #expect(accumulator.derivedState.state == .needsYou)
-        #expect(accumulator.derivedState.reason == "Interrupted — ready for you")
+        #expect(accumulator.derivedState().state == .needsYou)
+        #expect(accumulator.derivedState().reason == "Interrupted — ready for you")
     }
 
     // MARK: - Unknown-input tolerance
@@ -207,7 +207,7 @@ final class CodexRolloutTests {
         }
         #expect(accumulator.meta == nil)
         #expect(accumulator.lastSignificant == nil)
-        #expect(accumulator.derivedState.reason == "Session open")
+        #expect(accumulator.derivedState().reason == "Session open")
     }
 
     // MARK: - Timestamps
@@ -271,7 +271,7 @@ final class CodexRolloutTests {
         ])
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url))
         #expect(result.accumulator.meta?.sessionId == "S1")
-        #expect(result.accumulator.derivedState.state == .running)
+        #expect(result.accumulator.derivedState().state == .running)
         #expect(result.offset == (try fileSize(of: url)))
     }
 
@@ -293,7 +293,7 @@ final class CodexRolloutTests {
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: chunkSize))
         #expect(result.accumulator.meta?.sessionId == "S-big")
         #expect(result.accumulator.meta?.cwd == "/big/project")
-        #expect(result.accumulator.derivedState.state == .needsYou)
+        #expect(result.accumulator.derivedState().state == .needsYou)
         #expect(result.accumulator.lastAgentMessage == "Big file done")
         #expect(result.accumulator.lastSignificant?.timestamp == date("2026-07-31T11:05:00.000Z"))
         #expect(result.offset == size)
@@ -309,7 +309,7 @@ final class CodexRolloutTests {
         let url = try makeTempFile(lines: lines)
 
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 4096))
-        #expect(result.accumulator.derivedState.state == .running)
+        #expect(result.accumulator.derivedState().state == .running)
         #expect(result.accumulator.lastSignificant?.timestamp == date("2026-07-31T11:00:00.000Z"))
     }
 
@@ -335,7 +335,7 @@ final class CodexRolloutTests {
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 4096))
         #expect(result.accumulator.meta?.sessionId == "S-huge")
         #expect(result.accumulator.meta?.cwd == "/huge/project")
-        #expect(result.accumulator.derivedState.state == .running)
+        #expect(result.accumulator.derivedState().state == .running)
     }
 
     @Test func bootstrapLargeFileStopsBeforePartialTrailingLine() throws {
@@ -347,7 +347,7 @@ final class CodexRolloutTests {
         let size = try fileSize(of: url)
 
         let result = try #require(CodexThreadAccumulator.bootstrap(url: url, chunkSize: 2048))
-        #expect(result.accumulator.derivedState.state == .running)
+        #expect(result.accumulator.derivedState().state == .running)
         // The unfinished trailing line stays unconsumed for the incremental reader.
         #expect(result.offset == size - UInt64(partial.utf8.count))
     }
@@ -453,5 +453,108 @@ final class CodexRolloutTests {
         #expect(sessions.first?.state == .idle)
         #expect(sessions.first?.reason == "Session open")
         #expect(sessions.last?.state == .running)
+    }
+
+    // MARK: - Usage limits
+
+    /// A `token_count` line exactly as Codex writes it, from a real rollout.
+    private func tokenCountLine(
+        usedPercent: Double, windowMinutes: Int, resetsAt: Int, reachedType: String = "null"
+    ) -> String {
+        """
+        {"timestamp":"2026-08-02T05:53:07.123Z","type":"event_msg","payload":{
+         "type":"token_count",
+         "info":{"total_token_usage":{},"last_token_usage":{},"model_context_window":258400},
+         "rate_limits":{"limit_id":"codex","limit_name":null,
+           "primary":{"used_percent":\(usedPercent),"window_minutes":\(windowMinutes),
+                      "resets_at":\(resetsAt)},
+           "secondary":null,
+           "credits":{"has_credits":false,"unlimited":false,"balance":"0"},
+           "individual_limit":null,"spend_control_reached":null,
+           "plan_type":"pro","rate_limit_reached_type":\(reachedType)}}}
+        """
+    }
+
+    /// The window is classified by its LENGTH, never by the slot it arrived in.
+    /// Codex has reported only the weekly window since around February 2026 —
+    /// and reports it as `primary` — so trusting the slot would announce a
+    /// weekly reset as a five-hour one.
+    @Test func theWindowIsClassifiedByItsLengthNotItsSlot() {
+        var weekly = CodexThreadAccumulator()
+        weekly.consume(
+            line: tokenCountLine(usedPercent: 100, windowMinutes: 10080, resetsAt: 1_786_177_907))
+        #expect(weekly.usageLimit?.window == .weekly)
+
+        var fiveHour = CodexThreadAccumulator()
+        fiveHour.consume(
+            line: tokenCountLine(usedPercent: 42, windowMinutes: 300, resetsAt: 1_786_177_907))
+        #expect(fiveHour.usageLimit?.window == .fiveHour)
+        #expect(fiveHour.usageLimit?.usedPercent == 42)
+
+        // Real corpora carry 299 and 10079 too, so classification tolerates
+        // neighbours rather than demanding equality.
+        var offByOne = CodexThreadAccumulator()
+        offByOne.consume(
+            line: tokenCountLine(usedPercent: 10, windowMinutes: 10079, resetsAt: 1_786_177_907))
+        #expect(offByOne.usageLimit?.window == .weekly)
+    }
+
+    /// The explicit flag was never once non-null across the local corpus, so
+    /// "100% used" has to count as reached on its own.
+    @Test func exhaustionIsRecognizedFromEitherSignal() {
+        var byPercent = CodexThreadAccumulator()
+        byPercent.consume(
+            line: tokenCountLine(usedPercent: 100, windowMinutes: 10080, resetsAt: 1_786_177_907))
+        #expect(byPercent.usageLimit?.isReached == true)
+
+        var byFlag = CodexThreadAccumulator()
+        byFlag.consume(
+            line: tokenCountLine(
+                usedPercent: 87, windowMinutes: 10080, resetsAt: 1_786_177_907,
+                reachedType: "\"rate_limit_reached\""))
+        #expect(byFlag.usageLimit?.isReached == true)
+
+        var plenty = CodexThreadAccumulator()
+        plenty.consume(
+            line: tokenCountLine(usedPercent: 40, windowMinutes: 10080, resetsAt: 1_786_177_907))
+        #expect(plenty.usageLimit?.isReached == false)
+    }
+
+    /// "100% used, resets at 13:50" stops being true at 13:50, and nothing
+    /// writes a correction — the file just goes quiet. So a reading is only
+    /// evidence while its reset is still ahead.
+    @Test func anExpiredReadingNoLongerBlocks() {
+        let resetsAt = Date(timeIntervalSince1970: 1_786_177_907)
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(
+            line: tokenCountLine(usedPercent: 100, windowMinutes: 10080, resetsAt: 1_786_177_907))
+        let limit = try? #require(accumulator.usageLimit)
+
+        #expect(limit?.isBlocking(now: resetsAt.addingTimeInterval(-60)) == true)
+        #expect(limit?.isBlocking(now: resetsAt.addingTimeInterval(60)) == false)
+        // No reset time is not evidence of blocking.
+        #expect(
+            UsageLimit(window: .weekly, usedPercent: 100, resetsAt: nil, isReached: true)
+                .isBlocking(now: resetsAt) == false)
+    }
+
+    /// A turn that ended because the account ran out of quota is not "ready for
+    /// you": there is nothing to do but wait, and sending the user to a terminal
+    /// that cannot proceed is worse than saying so.
+    @Test func aQuotaBlockedTurnSaysSoInsteadOfClaimingItIsReady() {
+        let resetsAt = Date(timeIntervalSince1970: 1_786_177_907)
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(line: eventLine("task_complete"))
+        accumulator.consume(
+            line: tokenCountLine(usedPercent: 100, windowMinutes: 10080, resetsAt: 1_786_177_907))
+
+        let blocked = accumulator.derivedState(now: resetsAt.addingTimeInterval(-3600))
+        #expect(blocked.state == .needsYou)
+        #expect(blocked.reason.hasPrefix("Usage limit reached"))
+
+        // Once the window has rolled over, the ordinary wording returns without
+        // anything having been written to the rollout.
+        let after = accumulator.derivedState(now: resetsAt.addingTimeInterval(1))
+        #expect(after.reason == "Turn complete — ready for you")
     }
 }

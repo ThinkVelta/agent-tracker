@@ -36,6 +36,9 @@ struct CodexSignificantEvent: Equatable {
 enum CodexRolloutLine {
     case sessionMeta(CodexSessionMeta)
     case significantEvent(CodexSignificantEvent)
+    /// Codex's account rate limits, which ride along on `token_count` events.
+    /// Not a state change of its own — it explains one.
+    case usageLimit(UsageLimit)
     /// Anything else — unknown line types, unparseable lines, ignorable events.
     /// Parsing never throws; unknown input degrades to this.
     case insignificant
@@ -99,8 +102,15 @@ enum CodexRolloutParser {
             case "turn_aborted":
                 return .significantEvent(
                     CodexSignificantEvent(kind: .turnAborted, timestamp: timestamp))
+            case "token_count":
+                // Roughly every third line carries one of these, so the state
+                // is cheap to keep current and pointless to hunt for.
+                guard let limits = payload["rate_limits"] as? [String: Any],
+                    let limit = CodexUsageLimit.parse(limits)
+                else { return .insignificant }
+                return .usageLimit(limit)
             default:
-                // agent_message, user_message, token_count, … — not state-relevant.
+                // agent_message, user_message, … — not state-relevant.
                 return .insignificant
             }
         default:
@@ -152,6 +162,7 @@ enum CodexRolloutParser {
             || line.contains("task_started")
             || line.contains("task_complete")
             || line.contains("turn_aborted")
+            || line.contains("rate_limits")
     }
 
     /// Splits `data` into complete lines (up to and including the last newline)
@@ -180,6 +191,9 @@ struct CodexThreadAccumulator: Equatable {
     private(set) var meta: CodexSessionMeta?
     private(set) var lastSignificant: CodexSignificantEvent?
     private(set) var lastAgentMessage: String?
+    /// The newest rate-limit reading seen in this rollout. Account-wide, so any
+    /// thread's reading is as good as another's — the newest simply wins.
+    private(set) var usageLimit: UsageLimit?
 
     mutating func consume(line: String) {
         guard CodexRolloutParser.mightBeSignificant(line) else { return }
@@ -204,15 +218,26 @@ struct CodexThreadAccumulator: Equatable {
             if case .taskComplete(let message) = event.kind, let message, !message.isEmpty {
                 lastAgentMessage = String(message.prefix(Self.agentMessageLimit))
             }
+        case .usageLimit(let limit):
+            usageLimit = limit
         case .insignificant:
             break
         }
     }
 
-    var derivedState: (state: SessionState, reason: String) {
+    /// - Parameter now: taken as a parameter so the usage-limit expiry below is
+    ///   testable, and so one reload derives every row against one instant.
+    func derivedState(now: Date = Date()) -> (state: SessionState, reason: String) {
         switch lastSignificant?.kind {
         case .taskStarted: return (.running, "Working…")
-        case .taskComplete: return (.needsYou, "Turn complete — ready for you")
+        case .taskComplete:
+            // A turn that ended because the account ran out of quota is not
+            // "ready for you" — there is nothing to do but wait, and sending the
+            // user to a terminal that cannot proceed is worse than saying so.
+            if let usageLimit, usageLimit.isBlocking(now: now) {
+                return (.needsYou, usageLimit.reason(now: now))
+            }
+            return (.needsYou, "Turn complete — ready for you")
         case .turnAborted: return (.needsYou, "Interrupted — ready for you")
         case nil: return (.idle, "Session open")
         }
@@ -283,7 +308,7 @@ enum CodexSessionGrouper {
             guard let primary = primaries.max(by: { rank($0) < rank($1) }) else { continue }
 
             let accumulator = primary.accumulator
-            let (state, reason) = accumulator.derivedState
+            let (state, reason) = accumulator.derivedState()
             let pid = primary.holderPid ?? group.compactMap(\.holderPid).first
             let updatedAt = group.compactMap(\.fileActivityAt).max()
             let stateChangedAt =
