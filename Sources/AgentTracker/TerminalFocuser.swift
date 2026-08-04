@@ -71,19 +71,6 @@ enum TerminalFocuser {
         }
     }
 
-    private static let bundleIdentifiers: [String: String] = [
-        "ghostty": "com.mitchellh.ghostty",
-        "iterm.app": "com.googlecode.iterm2",
-        "apple_terminal": "com.apple.Terminal",
-        "wezterm": "com.github.wez.wezterm",
-        "kitty": "net.kovidgoyal.kitty",
-    ]
-
-    /// Lowercased bundle ids of every terminal app the focuser knows, for
-    /// "is the frontmost app a terminal?" checks (TerminalFocusObserver).
-    static let knownTerminalBundleIDs: Set<String> = Set(
-        bundleIdentifiers.values.map { $0.lowercased() })
-
     /// True when the process can drive the Accessibility API. Does not prompt.
     static var hasAccessibilityPermission: Bool {
         AXIsProcessTrusted()
@@ -121,9 +108,9 @@ enum TerminalFocuser {
             return .needsPermission
         }
 
-        guard let app = terminalApp(for: session) else {
-            let known = bundleIdentifiers.values.sorted().joined(separator: ", ")
-            log("no known terminal app is running (looked for: \(known))")
+        guard let app = TerminalIdentification.app(for: session) else {
+            let known = TerminalIdentification.allTerminalBundleIDs.joined(separator: ", ")
+            log("could not identify this session's terminal app (knows: \(known))")
             return .noTerminalFound
         }
         log(
@@ -368,23 +355,6 @@ enum TerminalFocuser {
     }
 
     // MARK: - Matching
-
-    private static func terminalApp(for session: AgentSession) -> NSRunningApplication? {
-        if let termProgram = session.termProgram?.lowercased(),
-            let bundleID = bundleIdentifiers[termProgram],
-            let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
-        {
-            return app
-        }
-        for bundleID in bundleIdentifiers.values.sorted() {
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
-                .first
-            {
-                return app
-            }
-        }
-        return nil
-    }
 
     /// Ordered by reliability: the live window title (statusline-sourced) is
     /// exact per session, the Claude task summary near-unique, and path

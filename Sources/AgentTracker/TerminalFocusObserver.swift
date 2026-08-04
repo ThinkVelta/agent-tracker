@@ -52,7 +52,7 @@ final class TerminalFocusObserver {
 
     private func appActivated(_ app: NSRunningApplication?) {
         guard let app, let bundleID = app.bundleIdentifier?.lowercased(),
-            TerminalFocuser.knownTerminalBundleIDs.contains(bundleID)
+            TerminalIdentification.knownTerminalBundleIDs.contains(bundleID)
         else {
             frontTerminalPid = nil
             stableTitle = nil
