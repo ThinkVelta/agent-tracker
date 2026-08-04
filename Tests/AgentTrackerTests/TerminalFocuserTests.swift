@@ -8,6 +8,98 @@ final class TerminalFocuserTests {
         AgentSession(provider: "claude-code", sessionId: id, cwd: cwd, state: .needsYou)
     }
 
+    // MARK: - Which terminal owns a session
+
+    @Test func termProgramNamesMostTerminals() {
+        #expect(
+            TerminalIdentification.hint(termProgram: "ghostty", term: "xterm-ghostty", tmux: nil)
+                == .app("com.mitchellh.ghostty"))
+        #expect(
+            TerminalIdentification.hint(termProgram: "iTerm.app", term: nil, tmux: nil)
+                == .app("com.googlecode.iterm2"))
+        #expect(
+            TerminalIdentification.hint(termProgram: "Apple_Terminal", term: nil, tmux: nil)
+                == .app("com.apple.Terminal"))
+        #expect(
+            TerminalIdentification.hint(termProgram: "WezTerm", term: nil, tmux: nil)
+                == .app("com.github.wez.wezterm"))
+    }
+
+    /// kitty sets no `TERM_PROGRAM` whatsoever, so the entry that used to sit in
+    /// the `TERM_PROGRAM` table could never be reached. `TERM` is the only thing
+    /// that names it.
+    @Test func kittyIsFoundThroughTermBecauseItSetsNoTermProgram() {
+        #expect(
+            TerminalIdentification.hint(termProgram: nil, term: "xterm-kitty", tmux: nil)
+                == .app("net.kovidgoyal.kitty"))
+        // And it stays reachable when something else has claimed TERM_PROGRAM.
+        #expect(
+            TerminalIdentification.hint(termProgram: "", term: "xterm-kitty", tmux: nil)
+                == .app("net.kovidgoyal.kitty"))
+    }
+
+    /// tmux overwrites `TERM_PROGRAM` with its own name, so the host terminal is
+    /// not recoverable from the environment. Saying so beats reading the
+    /// overwritten value as if it named an app.
+    @Test func aMultiplexerIsReportedRatherThanGuessedAt() {
+        #expect(
+            TerminalIdentification.hint(termProgram: "tmux", term: "screen-256color", tmux: nil)
+                == .multiplexer)
+        #expect(
+            TerminalIdentification.hint(termProgram: "screen", term: nil, tmux: nil) == .multiplexer
+        )
+        // Even with the host's own value still in TERM, tmux wins: it is the
+        // layer the window actually belongs to.
+        #expect(
+            TerminalIdentification.hint(termProgram: "tmux", term: "xterm-ghostty", tmux: nil)
+                == .multiplexer)
+        // And TERM alone is enough when TERM_PROGRAM never survived.
+        #expect(
+            TerminalIdentification.hint(termProgram: nil, term: "tmux-256color", tmux: nil)
+                == .multiplexer)
+    }
+
+    /// `TMUX` outranks a `TERM`/`TERM_PROGRAM` that names a real terminal,
+    /// because a pane inherits the tmux server's environment — snapshotted from
+    /// whichever client created it — so those values can name a host that is not
+    /// attached any more, or never was this pane's.
+    @Test func beingInsideTmuxOutranksAnyInheritedHostTerminal() {
+        #expect(
+            TerminalIdentification.hint(
+                termProgram: nil, term: "xterm-ghostty", tmux: "/private/tmp/tmux-501/default,42,0")
+                == .multiplexer)
+        // Even when the inherited value would otherwise resolve cleanly.
+        #expect(
+            TerminalIdentification.hint(
+                termProgram: "ghostty", term: "xterm-ghostty", tmux: "/tmp/tmux-501/default,1,0")
+                == .multiplexer)
+        // An empty value is not a signal.
+        #expect(
+            TerminalIdentification.hint(termProgram: "ghostty", term: nil, tmux: "")
+                == .app("com.mitchellh.ghostty"))
+    }
+
+    @Test func anUnrecognizedTerminalIsUnknownRatherThanAGuess() {
+        #expect(TerminalIdentification.hint(termProgram: nil, term: nil, tmux: nil) == .unknown)
+        #expect(
+            TerminalIdentification.hint(termProgram: "WarpTerminal", term: nil, tmux: nil)
+                == .unknown)
+        #expect(
+            TerminalIdentification.hint(termProgram: "vscode", term: "xterm-256color", tmux: nil)
+                == .unknown)
+    }
+
+    /// The process walk is what makes the environment a fallback rather than the
+    /// only source. This checks the `sysctl` plumbing it rides on, against a
+    /// parent the test already knows.
+    @Test func parentPidReadsTheRealProcessTree() {
+        #expect(TerminalIdentification.parentPid(of: getpid()) == getppid())
+        // pid 1 is its own root; nothing above it to report.
+        #expect(TerminalIdentification.parentPid(of: 1) == nil)
+        // A pid that cannot exist yields nothing rather than a wrong answer.
+        #expect(TerminalIdentification.parentPid(of: -1) == nil)
+    }
+
     @Test func exactTitleLeadsCandidatesAtTopWeight() {
         let session = claudeSession(id: "s1", cwd: "/Users/dev/planner")
         let candidates = TerminalFocuser.titleCandidates(

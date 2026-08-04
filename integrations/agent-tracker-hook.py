@@ -12,6 +12,7 @@ Design constraints: must never block or break the agent session (always exits
 0, prints nothing on success) and must be dependency-free (stdlib only).
 """
 
+import functools
 import json
 import os
 import subprocess
@@ -22,6 +23,24 @@ SCHEMA_VERSION = 1
 
 # Process names that identify a long-lived agent CLI when walking up the tree.
 AGENT_PROCESS_HINTS = ("claude", "codex", "node", "bun")
+
+# Which terminal pane the session occupies, as the environment reports it.
+# Captured here because it is free at hook time and unrecoverable afterwards:
+# the app cannot ask a terminal "which pane holds pid N" unless the terminal
+# exposes that, and several of these ARE the pane handle. TERM_PROGRAM has
+# always worked, which is the proof that the hook inherits the session's
+# environment.
+TERMINAL_ENV_KEYS = {
+    "term": "TERM",
+    "tmux": "TMUX",
+    "tmuxPane": "TMUX_PANE",
+    "weztermPane": "WEZTERM_PANE",
+    "kittyWindowId": "KITTY_WINDOW_ID",
+    "kittyListenOn": "KITTY_LISTEN_ON",
+    "itermSessionId": "ITERM_SESSION_ID",
+    "termSessionId": "TERM_SESSION_ID",
+    "alacrittyWindowId": "ALACRITTY_WINDOW_ID",
+}
 
 
 def sessions_dir():
@@ -35,19 +54,27 @@ def now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def agent_pid():
-    """Walk up the process tree to find the agent CLI's pid.
+@functools.lru_cache(maxsize=1)
+def agent_process():
+    """Walk up the process tree to find the agent CLI's pid and its tty.
 
     The hook may be spawned via an intermediate shell, so the direct parent is
     not guaranteed to be the agent process. The app uses this pid to prune
     sessions whose agent died without a clean SessionEnd.
+
+    The tty comes from the same `ps` call rather than this process: the hook is
+    handed its payload on stdin, so its own fd 0 is a pipe and names no
+    terminal. The agent's tty is what identifies the pane it runs in.
+
+    Cached because one hook invocation resolves one process, and the callers
+    would otherwise repeat the whole walk.
     """
     pid = os.getppid()
-    fallback = pid
+    fallback = (pid, None)
     for _ in range(5):
         try:
             out = subprocess.run(
-                ["ps", "-o", "ppid=,comm=", "-p", str(pid)],
+                ["ps", "-o", "ppid=,tty=,comm=", "-p", str(pid)],
                 capture_output=True,
                 text=True,
                 timeout=5,
@@ -55,12 +82,12 @@ def agent_pid():
             ).stdout.strip()
             if not out:
                 break
-            parts = out.split(None, 1)
-            if len(parts) < 2:
+            parts = out.split(None, 2)
+            if len(parts) < 3:
                 break
-            comm = os.path.basename(parts[1].strip()).lower()
+            comm = os.path.basename(parts[2].strip()).lower()
             if any(hint in comm for hint in AGENT_PROCESS_HINTS):
-                return pid
+                return pid, device_path(parts[1])
             parent = int(parts[0])
             if parent <= 1:
                 break
@@ -68,6 +95,21 @@ def agent_pid():
         except Exception:  # noqa: BLE001 — the hook must never break a session
             break
     return fallback
+
+
+def device_path(tty):
+    """`ps` prints a bare `ttys003`, or `??` for a process with no terminal."""
+    name = (tty or "").strip()
+    if not name or name in ("??", "-"):
+        return None
+    return name if name.startswith("/") else "/dev/" + name
+
+
+def terminal_identity(tty):
+    """The pane handles this session can be recognized by, omitting the absent."""
+    identity = {key: os.environ.get(var) for key, var in TERMINAL_ENV_KEYS.items()}
+    identity["tty"] = tty
+    return {key: value for key, value in identity.items() if value}
 
 
 def state_path(provider, session_id):
@@ -93,8 +135,12 @@ def write_state(path, data):
 def update(provider, session_id, event, state, reason, extra):
     path = state_path(provider, session_id)
     current = load_state(path)
+    pid, tty = agent_process()
     data = {**current}
     data.update({k: v for k, v in extra.items() if v})
+    identity = terminal_identity(tty)
+    if identity:
+        data["terminal"] = identity
     data.update(
         {
             "schema": SCHEMA_VERSION,
@@ -102,7 +148,7 @@ def update(provider, session_id, event, state, reason, extra):
             "sessionId": session_id,
             "lastEvent": event,
             "updatedAt": now(),
-            "pid": agent_pid(),
+            "pid": pid,
         }
     )
     if state is not None:
@@ -167,7 +213,7 @@ def handle_codex(args):
 
     # thread-id is stable across turns; fall back to the agent pid so repeated
     # notifications from one Codex process collapse into a single session.
-    session_id = get("thread-id", "thread_id") or f"pid-{agent_pid()}"
+    session_id = get("thread-id", "thread_id") or f"pid-{agent_process()[0]}"
     last_message = get("last-assistant-message", "last_assistant_message")
     if last_message and len(last_message) > 200:
         last_message = last_message[:200] + "…"

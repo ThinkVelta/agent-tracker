@@ -215,6 +215,10 @@ signal rather than a requirement.
   transcript summaries and path fragments.
 - **Codex approval prompts don't surface as red yet**: rollouts don't record
   them; planned via Codex's native hooks engine.
+- **A session inside tmux or screen can't be traced back to its window.** The
+  multiplexer's server is not a child of the terminal that started it, and tmux
+  overwrites the variable that would otherwise name the host, so click-to-focus
+  only works there if exactly one terminal app is running.
 - Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
   kitty are wired up but untested.
 
