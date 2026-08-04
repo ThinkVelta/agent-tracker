@@ -29,7 +29,10 @@ enum Theme {
         static let maxVisibleRows = 14
         /// Idle sessions start folded away once there are more than this many —
         /// they are the least likely to be what the popover was opened for.
-        static let idleAutoCollapseThreshold = 3
+        /// Five rather than three: at three the fold triggered while the list
+        /// was still short enough to read at a glance, so it hid sessions
+        /// instead of the noise it exists to hide.
+        static let idleAutoCollapseThreshold = 5
         /// Search appears at this many sessions. Deliberately well below the
         /// row cap: waiting until the list overflows surprised the user, who
         /// had no idea the field existed.
