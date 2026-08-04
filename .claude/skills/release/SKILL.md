@@ -59,12 +59,17 @@ git rev-parse HEAD origin/main           # must print the same sha twice
 gh pr list --state open --json number,title,headRefName
 ```
 
-- Not on `main`: **stop**, tell the user to `git switch main` first. A release describes `main`.
 - Dirty tree: **stop**, and tell the user:
   > You have uncommitted changes. Run `/commit` to land them (or `git stash` to set them
   > aside), then rerun `/release`. I will not fold unrelated work into a release commit.
-- `HEAD` and `origin/main` differ: **stop**. Behind means `git pull --ff-only` (Phase B always
-  needs this, since the bump merged after your last pull); ahead means unpushed commits that
+- Not on `main`, **with one exception**: **stop** and tell the user to `git switch main` first,
+  because a release describes `main`. The exception is the normal Phase B position — a clean
+  tree on the `chore/release-vX.Y.Z` branch whose PR just merged. There, switching to `main` and
+  fast-forwarding is mechanical rather than a decision, so just do it (and delete the merged
+  branch). What the gate protects is uncommitted work and releasing from a feature branch, and
+  neither is in play.
+- `HEAD` and `origin/main` differ: behind is expected in Phase B, since the bump merged after
+  your last pull, so `git pull --ff-only` and carry on. **Ahead means stop**: unpushed commits
   would silently not be in the release.
 - An open PR whose branch starts with `chore/release-`: in Phase A, **stop**, that bump is
   already in flight, so point at it and ask the human to merge it. In Phase B it should be the
