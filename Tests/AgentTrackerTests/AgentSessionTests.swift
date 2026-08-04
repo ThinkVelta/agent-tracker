@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 
 @testable import AgentTracker
@@ -5,6 +6,39 @@ import Testing
 final class AgentSessionTests {
     private func session(cwd: String?) -> AgentSession {
         AgentSession(provider: "claude-code", sessionId: "s", cwd: cwd, state: .idle)
+    }
+
+    // MARK: - State file decoding
+
+    /// A state file exactly as the hook writes it, pane identity included.
+    @Test func terminalIdentityIsReadFromTheStateFile() throws {
+        let written = """
+            {"schema":1,"provider":"claude-code","sessionId":"s1","pid":84890,
+             "cwd":"/Users/dev/demo","state":"needsYou","lastEvent":"Stop",
+             "termProgram":"ghostty",
+             "terminal":{"tty":"/dev/ttys003","term":"xterm-ghostty","tmuxPane":"%3",
+                         "itermSessionId":"w0t0p0:ABC","kittyWindowId":"7"}}
+            """
+        let decoded = try JSONDecoder().decode(AgentSession.self, from: Data(written.utf8))
+        #expect(decoded.terminal?.tty == "/dev/ttys003")
+        #expect(decoded.terminal?.term == "xterm-ghostty")
+        #expect(decoded.terminal?.tmuxPane == "%3")
+        #expect(decoded.terminal?.itermSessionId == "w0t0p0:ABC")
+        #expect(decoded.terminal?.kittyWindowId == "7")
+        // Whatever the terminal did not report simply is not there.
+        #expect(decoded.terminal?.weztermPane == nil)
+    }
+
+    /// Sessions written by an older hook, and every Codex row the scanner
+    /// discovers, carry no `terminal` block at all. They must still load.
+    @Test func aStateFileWithoutPaneIdentityStillLoads() throws {
+        let written = """
+            {"schema":1,"provider":"claude-code","sessionId":"s1","state":"idle",
+             "cwd":"/Users/dev/demo","termProgram":"ghostty"}
+            """
+        let decoded = try JSONDecoder().decode(AgentSession.self, from: Data(written.utf8))
+        #expect(decoded.terminal == nil)
+        #expect(decoded.termProgram == "ghostty")
     }
 
     @Test func locationContextIsTheContainingDirectory() {

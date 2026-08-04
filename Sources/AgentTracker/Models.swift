@@ -42,6 +42,32 @@ enum SessionState: String, Codable, CaseIterable {
     }
 }
 
+/// How a session's terminal pane can be recognized, captured by the hook from
+/// the session's own environment.
+///
+/// Collected there because it is free at hook time and unrecoverable later: a
+/// terminal cannot generally be asked "which pane holds pid N", and several of
+/// these fields ARE the pane handle its own API takes. Whatever is absent stays
+/// absent — the shape differs per terminal, and none of it is guaranteed.
+struct TerminalIdentity: Codable, Equatable {
+    /// The agent process's controlling terminal, e.g. `/dev/ttys003`. The
+    /// bridge to every terminal that reports a per-pane tty.
+    var tty: String?
+    /// `TERM`. The only thing that identifies kitty, which sets no
+    /// `TERM_PROGRAM` at all.
+    var term: String?
+    /// Set inside tmux, whose `TERM_PROGRAM=tmux` overwrites the host
+    /// terminal's own value.
+    var tmux: String?
+    var tmuxPane: String?
+    var weztermPane: String?
+    var kittyWindowId: String?
+    var kittyListenOn: String?
+    var itermSessionId: String?
+    var termSessionId: String?
+    var alacrittyWindowId: String?
+}
+
 struct AgentSession: Codable, Identifiable, Equatable {
     var schema: Int?
     var provider: String
@@ -56,6 +82,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var transcriptPath: String?
     var termProgram: String?
     var lastMessage: String?
+    /// Which terminal pane the session occupies, as the hook found it. Every
+    /// field is optional: it depends on the terminal, and sessions the Codex
+    /// scanner discovers never had a hook run at all.
+    var terminal: TerminalIdentity?
 
     // Set by the store when loading; not part of the on-disk schema.
     var fileURL: URL?
@@ -69,6 +99,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schema, provider, sessionId, pid, cwd, state, reason, lastEvent
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
+        case terminal
     }
 
     var id: String { "\(provider)-\(sessionId)" }
