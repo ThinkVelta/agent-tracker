@@ -128,24 +128,32 @@ if not (isinstance(command, str) and "agent-tracker-statusline" in command):
     print("statusLine no longer points at the agent-tracker wrapper — left alone")
     sys.exit(0)
 
-# What the wrapper displaced, recorded at install time. Absent means we cannot
-# prove what was there, and inventing a command is worse than leaving the slot
-# empty — which is what Claude Code defaults to anyway.
-wrapped = None
+# What the wrapper displaced, recorded at install time. Three outcomes, and the
+# distinction matters: a record saying `null` is PROOF the slot was empty, while
+# no record at all proves nothing. Only the first two are safe to act on.
 try:
     with open(record_path) as f:
         record = json.load(f)
-    if isinstance(record, dict) and isinstance(record.get("wrapped"), dict):
-        wrapped = record["wrapped"]
-except (OSError, json.JSONDecodeError):
-    pass
+    if not isinstance(record, dict) or "wrapped" not in record:
+        raise ValueError("no 'wrapped' key")
+    wrapped = record["wrapped"]
+except (OSError, ValueError):
+    print(
+        f"{record_path} is missing or unreadable, so what the wrapper displaced "
+        "is unknown — leaving statusLine exactly as it is rather than guessing. "
+        "If you had your own statusline command it is in "
+        f"{settings_path}.agent-tracker-backup; putting that line back by hand "
+        "also clears the wrapper reference.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
-if wrapped is None:
-    del settings["statusLine"]
-    restored = "removed the statusLine entry (it was empty before agent-tracker)"
-else:
+if isinstance(wrapped, dict):
     settings["statusLine"] = wrapped
     restored = "restored your own statusLine command"
+else:
+    del settings["statusLine"]
+    restored = "removed the statusLine entry (it was empty before agent-tracker)"
 
 # open(), never a rename: settings.json may be a symlink into a dotfiles repo.
 with open(settings_path, "w") as f:
@@ -159,7 +167,7 @@ except OSError:
 
 print(f"Claude Code statusline: {restored}")
 PYEOF
-    echo "WARNING: statusline cleanup failed — fix $SETTINGS and re-run." >&2
+    echo "WARNING: statusline cleanup incomplete — see the reason above." >&2
     FAILED=1
   fi
 else
