@@ -540,6 +540,11 @@ struct SessionRow: View {
         preferences.scheduledContinues && session.state == .needsYou && arming.reason != nil
     }
 
+    /// Every case that draws a clock is clickable, including the greyed one. A
+    /// control the user can see and cannot press is worse than no control, and
+    /// the greyed clock exists precisely so the reason can be read — opening the
+    /// editor is how it is read. Only the plain jump arrow is inert, and that is
+    /// what it has always been.
     private var trailingAffordance: some View {
         Group {
             if armedSchedule != nil {
@@ -561,11 +566,7 @@ struct SessionRow: View {
     }
 
     private func armingButton(icon: String, tint: Color, alwaysVisible: Bool) -> some View {
-        // Interactive only where it can do something, and only while hovered:
-        // an invisible live control would carve a hole out of the row's own
-        // hit area, which is the other half of what #28 got wrong.
-        let interactive = armedSchedule != nil || arming.resetsAt != nil
-        return Button {
+        Button {
             draft = ContinueDraft(schedule: armedSchedule)
             editing.toggle()
         } label: {
@@ -576,9 +577,18 @@ struct SessionRow: View {
         .buttonStyle(.plain)
         .foregroundStyle(tint)
         .opacity(alwaysVisible || hovering ? 1 : 0)
-        .allowsHitTesting(hovering && interactive)
-        .accessibilityLabel(
-            armedSchedule == nil ? "Schedule a continue" : "Edit scheduled continue")
+        // Live exactly when visible, which is the same expression as the opacity
+        // above on purpose. An invisible live control would carve a hole out of
+        // the row's own hit area — the other half of what #28 got wrong — and a
+        // visible dead one is the defect this rule replaced.
+        .allowsHitTesting(alwaysVisible || hovering)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private var accessibilityLabel: String {
+        if armedSchedule != nil { return "Edit scheduled continue" }
+        if arming.resetsAt != nil { return "Schedule a continue" }
+        return "Why this session cannot be scheduled"
     }
 
     private var editorPanel: some View {
@@ -586,7 +596,11 @@ struct SessionRow: View {
             draft: $draft,
             resetsAt: arming.resetsAt ?? armedSchedule?.armedForResetAt,
             isArmed: armedSchedule != nil,
-            unavailableReason: arming.reason,
+            // Only when there is nothing armed. An armed schedule knows its own
+            // moment, so an armed row whose limit has since expired must still
+            // say when it sends rather than "available once this session is
+            // waiting on a usage limit".
+            unavailableReason: armedSchedule == nil ? arming.reason : nil,
             onArm: {
                 guard let moment = arming.resetsAt ?? armedSchedule?.armedForResetAt else { return }
                 continues.arm(
