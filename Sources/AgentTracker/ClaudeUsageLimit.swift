@@ -84,8 +84,11 @@ enum ClaudeUsageLimit {
     /// "the next occurrence" is unambiguous. A form this cannot read yields nil,
     /// which reads as "blocked, reset unknown" rather than a wrong time.
     static func resetDate(from text: String, anchor: Date) -> Date? {
-        let zone = timeZone(from: text) ?? .current
-        guard let time = wallClock(from: text) else { return nil }
+        // No zone, no reset — the same rule as no anchor. A wall-clock time is
+        // meaningless without one, and assuming local would put the reset hours
+        // out for anyone whose session reports a zone they are not in, which is
+        // exactly the case an unreadable zone signals.
+        guard let zone = timeZone(from: text), let time = wallClock(from: text) else { return nil }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = zone
         // `.nextTime` moves a nonexistent local time (spring-forward) to the

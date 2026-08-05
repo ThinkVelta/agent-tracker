@@ -169,7 +169,11 @@ final class ClaudeUsageLimitTests {
         let tokyo = try #require(
             ClaudeUsageLimit.resetDate(from: "resets 1:20am (Asia/Tokyo)", anchor: anchor))
         #expect(brussels != tokyo)
-        // An unreadable zone falls back to local rather than failing outright.
-        #expect(ClaudeUsageLimit.resetDate(from: "resets 1:20am (Narnia)", anchor: anchor) != nil)
+        // An unreadable zone yields no reset, for the same reason a missing
+        // anchor does: a wall-clock time without a zone is not a time, and
+        // assuming local would be hours out for a session reporting a zone the
+        // user is not in.
+        #expect(ClaudeUsageLimit.resetDate(from: "resets 1:20am (Narnia)", anchor: anchor) == nil)
+        #expect(ClaudeUsageLimit.resetDate(from: "resets 1:20am", anchor: anchor) == nil)
     }
 }
