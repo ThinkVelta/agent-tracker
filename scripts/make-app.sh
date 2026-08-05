@@ -108,6 +108,7 @@ plutil -lint "$CONTENTS/Info.plist" > /dev/null
 [ -x "$CONTENTS/MacOS/$APP_NAME" ]
 [ -f "$CONTENTS/Resources/AppIcon.icns" ]
 [ -x "$CONTENTS/Resources/integrations/agent-tracker-hook.py" ]
+[ -x "$CONTENTS/Resources/integrations/agent-tracker-statusline.py" ]
 codesign --verify --deep "$APP"
 echo "    OK: $APP_NAME.app v$VERSION ($BUILD_NUMBER), $(du -sh "$APP" | cut -f1 | tr -d ' ')"
 
