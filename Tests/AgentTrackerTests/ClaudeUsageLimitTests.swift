@@ -104,6 +104,35 @@ final class ClaudeUsageLimitTests {
         #expect(ClaudeUsageLimit.parse(entry: broken)?.resetsAt == nil)
     }
 
+    /// A bare wall-clock time locates a reset only for a window that cannot span
+    /// more than a day. A weekly reset could be any of six days at "1:20am", and
+    /// picking the nearest would clear the block days early.
+    @Test func aWeeklyResetIsNeverLocatedFromATimeAlone() {
+        let weekly = ClaudeUsageLimit.parse(
+            line: refusal(text: "You've hit your weekly limit · resets 1:20am (UTC)"))
+        #expect(weekly?.window == .weekly)
+        #expect(weekly?.isReached == true)
+        #expect(weekly?.resetsAt == nil)
+        #expect(weekly?.isBlocking(now: anchor) == false)
+
+        // The five-hour window is short enough for the next occurrence to be it.
+        let session = ClaudeUsageLimit.parse(
+            line: refusal(text: "You've hit your session limit · resets 1:20am (UTC)"))
+        #expect(session?.resetsAt != nil)
+    }
+
+    /// Claude renders a reset more than a day out as a date rather than a bare
+    /// time. Locking that in, because the window gate above and this parse both
+    /// have to hold for a far-future reset to stay unguessed.
+    @Test func aDateFormattedResetIsNotMistakenForATime() {
+        #expect(
+            ClaudeUsageLimit.resetDate(
+                from: "resets Aug 10, 1:20 AM (UTC)", anchor: anchor, window: .fiveHour) == nil)
+        #expect(
+            ClaudeUsageLimit.resetDate(
+                from: "resets Aug 10, 1 AM", anchor: anchor, window: .fiveHour) == nil)
+    }
+
     // MARK: - Reconstructing the reset
 
     private let anchor = Date(timeIntervalSince1970: 1_785_787_741)  // 2026-08-03T20:09:01Z

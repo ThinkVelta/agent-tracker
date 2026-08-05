@@ -60,7 +60,7 @@ enum ClaudeUsageLimit {
         return UsageLimit(
             window: match.window,
             usedPercent: 100,
-            resetsAt: anchor.flatMap { resetDate(from: text, anchor: $0) },
+            resetsAt: anchor.flatMap { resetDate(from: text, anchor: $0, window: match.window) },
             isReached: true
         )
     }
@@ -83,7 +83,17 @@ enum ClaudeUsageLimit {
     /// the five-hour window the reset is always within a day of the refusal, so
     /// "the next occurrence" is unambiguous. A form this cannot read yields nil,
     /// which reads as "blocked, reset unknown" rather than a wrong time.
-    static func resetDate(from text: String, anchor: Date) -> Date? {
+    static func resetDate(
+        from text: String, anchor: Date, window: UsageLimit.Window = .fiveHour
+    ) -> Date? {
+        // Reconstruction is only sound for a window that cannot span more than a
+        // day: then "the next 1:20am" is unambiguously the reset. Claude does
+        // render far-future resets as a date rather than a bare time, so the
+        // unsafe case is currently unreachable — but that is the regex below
+        // declining to match a format, which is accidental safety. This makes it
+        // structural: a weekly limit is never located from a time alone, whatever
+        // the wording turns out to be.
+        guard window.isLocatableFromTimeAlone else { return nil }
         // No zone, no reset — the same rule as no anchor. A wall-clock time is
         // meaningless without one, and assuming local would put the reset hours
         // out for anyone whose session reports a zone they are not in, which is
