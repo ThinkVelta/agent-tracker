@@ -20,6 +20,9 @@ final class CodexSessionScanner: ObservableObject {
     /// CodexSubagentLedger). SessionStore drops (and deletes) notify state
     /// files for these: they are internal fan-out, never user-facing sessions.
     @Published private(set) var subagentThreadIds: Set<String> = []
+    /// Rate-limit readings seen across the tracked rollouts. Account-wide, so
+    /// `SessionStore` folds them into one slot per provider.
+    @Published private(set) var usageLimits: [UsageLimit] = []
 
     static var defaultRootDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_CODEX_DIR"],
@@ -44,12 +47,13 @@ final class CodexSessionScanner: ObservableObject {
     init(rootDirectory: URL? = nil) {
         let worker = CodexScanWorker(root: rootDirectory ?? Self.defaultRootDirectory)
         self.worker = worker
-        worker.onUpdate = { [weak self] sessions, threadMap, subagentIds in
+        worker.onUpdate = { [weak self] sessions, threadMap, subagentIds, limits in
             Task { @MainActor in
                 guard let self else { return }
                 if self.sessions != sessions { self.sessions = sessions }
                 if self.threadIdToSession != threadMap { self.threadIdToSession = threadMap }
                 if self.subagentThreadIds != subagentIds { self.subagentThreadIds = subagentIds }
+                if self.usageLimits != limits { self.usageLimits = limits }
             }
         }
         worker.start()
@@ -91,7 +95,7 @@ final class CodexScanWorker: @unchecked Sendable {
 
     /// Called with fresh session rows + threadId→sessionId map + sticky
     /// subagent thread ids after every change.
-    var onUpdate: (([AgentSession], [String: String], Set<String>) -> Void)?
+    var onUpdate: (([AgentSession], [String: String], Set<String>, [UsageLimit]) -> Void)?
     private let subagentLedger = CodexSubagentLedger()
 
     init(root: URL) {
@@ -489,7 +493,10 @@ final class CodexScanWorker: @unchecked Sendable {
             if let threadId = meta.threadId { threadIdToSession[threadId] = meta.sessionId }
             if let fileThreadId { threadIdToSession[fileThreadId] = meta.sessionId }
         }
-        onUpdate?(sessions, threadIdToSession, subagentLedger.threadIds)
+        // Every thread's newest reading. Account-wide, so the store merges
+        // them into one slot per provider rather than attaching them to rows.
+        let usageLimits = snapshots.compactMap(\.accumulator.usageLimit)
+        onUpdate?(sessions, threadIdToSession, subagentLedger.threadIds, usageLimits)
     }
 
 }

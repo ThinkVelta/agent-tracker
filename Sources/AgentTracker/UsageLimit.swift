@@ -11,7 +11,7 @@ struct UsageLimit: Equatable {
     /// arrived in. Codex has reported only the weekly window since around
     /// February 2026, and reports it in the slot named `primary` — so trusting
     /// the slot would label a weekly reset as a five-hour one.
-    enum Window: Equatable {
+    enum Window: Equatable, Hashable {
         case fiveHour
         case weekly
         case other(minutes: Int)
@@ -63,6 +63,65 @@ struct UsageLimit: Equatable {
         formatter.timeStyle = .short
         formatter.dateStyle = Calendar.current.isDateInToday(resetsAt) ? .none : .medium
         return "Usage limit reached — resets \(formatter.string(from: resetsAt))"
+    }
+}
+
+/// What is known about each provider's account limits.
+///
+/// One slot per provider per window, because a usage limit is a property of the
+/// **account**, not of a session: whichever session happened to hit the wall is
+/// the only one that recorded it, but every session of that provider is equally
+/// blocked. Keeping it per-session meant a blocked account explained one row and
+/// left the rest claiming to be ready.
+struct AccountLimits: Equatable {
+    private var byProvider: [String: [UsageLimit.Window: UsageLimit]] = [:]
+
+    /// Merges a reading in. Later reset wins for the same window: readings carry
+    /// no observation time, but a later reset can only come from a newer window,
+    /// and anything stale expires on its own through `isBlocking(now:)`.
+    mutating func record(_ limit: UsageLimit, for provider: String) {
+        let existing = byProvider[provider]?[limit.window]
+        guard let existing else {
+            byProvider[provider, default: [:]][limit.window] = limit
+            return
+        }
+        let new = limit.resetsAt ?? .distantPast
+        let old = existing.resetsAt ?? .distantPast
+        if new > old { byProvider[provider, default: [:]][limit.window] = limit }
+    }
+
+    /// The window standing between this provider and progress, soonest reset
+    /// first — that is the one the user is waiting on.
+    func blockingLimit(for provider: String, now: Date = Date()) -> UsageLimit? {
+        byProvider[provider]?.values
+            .filter { $0.isBlocking(now: now) }
+            .min { ($0.resetsAt ?? .distantFuture) < ($1.resetsAt ?? .distantFuture) }
+    }
+
+    func limits(for provider: String) -> [UsageLimit] {
+        Array(byProvider[provider]?.values ?? [:].values)
+    }
+}
+
+/// Decides when an account limit is what a row should say, in one place for
+/// every provider.
+enum UsageLimitPresentation {
+    /// Turn-end events, i.e. the reds that mean "your turn, nothing is wrong".
+    /// A `Notification` red is a permission prompt: the user genuinely is
+    /// needed, and overwriting that with a quota message would hide the one
+    /// thing this app exists to surface.
+    private static let turnEndedEvents: Set<String> = ["Stop", "task_complete", "turn_aborted"]
+
+    static func apply(_ limit: UsageLimit?, to session: AgentSession, now: Date = Date())
+        -> AgentSession
+    {
+        guard let limit, limit.isBlocking(now: now),
+            session.state == .needsYou,
+            let event = session.lastEvent, turnEndedEvents.contains(event)
+        else { return session }
+        var explained = session
+        explained.reason = limit.reason(now: now)
+        return explained
     }
 }
 
