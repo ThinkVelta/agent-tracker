@@ -142,6 +142,48 @@ final class ClaudeUsageWatcherTests {
         #expect(watcher.check([missing]).isEmpty)
     }
 
+    /// A refusal as the final line with no trailing newline, in a session that
+    /// then stops writing: no later append ever completes the line, so waiting
+    /// for a newline would mean never noticing. Measured as a tail risk rather
+    /// than an observed one — 356 of 356 real transcripts do end in a newline.
+    @Test func aRefusalAtEofWithoutATrailingNewlineIsStillFound() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-usage-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        directories.append(directory)
+        let url = directory.appendingPathComponent("transcript.jsonl")
+        let contents = (0..<5).map { filler($0) + "\n" }.joined() + refusalLine
+        try #require(contents.data(using: .utf8)).write(to: url)
+
+        let watcher = ClaudeUsageWatcher()
+        #expect(watcher.check([session(url)]).count == 1)
+        // Consumed, so it is not re-announced on the next look.
+        #expect(watcher.check([session(url)]).isEmpty)
+    }
+
+    /// A genuinely half-written line must NOT be consumed: it does not parse, so
+    /// the offset stays behind it and the next read sees it whole.
+    @Test func aHalfWrittenTrailingLineIsLeftForTheNextRead() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-usage-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        directories.append(directory)
+        let url = directory.appendingPathComponent("transcript.jsonl")
+        let half = String(refusalLine.prefix(refusalLine.count / 2))
+        try #require((filler(0) + "\n" + half).data(using: .utf8)).write(to: url)
+
+        let watcher = ClaudeUsageWatcher()
+        #expect(watcher.check([session(url)]).isEmpty)
+
+        // The rest arrives; now it is a complete refusal.
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(
+            contentsOf: #require(String(refusalLine.dropFirst(half.count)).data(using: .utf8)))
+        try? handle.close()
+        #expect(watcher.check([session(url)]).count == 1)
+    }
+
     /// Offsets must not outlive their sessions, or a recycled id would resume at
     /// a stranger's byte position.
     @Test func pruningForgetsSessionsThatAreGone() throws {

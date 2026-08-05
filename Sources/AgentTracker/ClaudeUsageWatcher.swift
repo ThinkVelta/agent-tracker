@@ -89,13 +89,29 @@ final class ClaudeUsageWatcher {
         // what makes the next read resume on a line boundary, and what stops a
         // half-written trailing line from being parsed as garbage.
         let (lines, consumed) = CodexRolloutParser.completeLines(in: data)
-        positions[sessionId] = Position(path: path, offset: readFrom + UInt64(consumed))
 
         // Last one wins: a delta can hold a refusal and then a later resumption.
         var latest: UsageLimit?
         for line in lines {
             if let limit = ClaudeUsageLimit.parse(line: line) { latest = limit }
         }
+
+        var offset = readFrom + UInt64(consumed)
+        // Belt and braces for the one case that would otherwise never resolve: a
+        // refusal written as the final line with no trailing newline, in a
+        // session that then stops writing — so no later append ever completes
+        // the line. Every transcript measured (356 of 356) does end in a newline,
+        // so this is a tail risk rather than an observed one. Guarded on the
+        // remainder parsing as a refusal, which a genuinely half-written line
+        // cannot do, so a partial write is still left for the next read.
+        if consumed < data.count,
+            let remainder = String(data: data[(data.startIndex + consumed)...], encoding: .utf8),
+            let limit = ClaudeUsageLimit.parse(line: remainder)
+        {
+            latest = limit
+            offset = size
+        }
+        positions[sessionId] = Position(path: path, offset: offset)
         if let latest {
             DebugLog.log(
                 "[usage] \(DebugLog.timestamp()) Claude reported \(latest.window.label) reached"

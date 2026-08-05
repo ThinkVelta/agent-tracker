@@ -80,6 +80,30 @@ final class ClaudeUsageLimitTests {
         #expect(ClaudeUsageLimit.parse(line: #"{"type":"user","text":"rate_limit"}"#) == nil)
     }
 
+    /// Without a timestamp there is no anchor, and "the next 1:20am from now" for
+    /// an entry of unknown age is a plausible-looking time on quite possibly the
+    /// wrong day. Blocked-with-no-reset is the honest answer, and `isBlocking`
+    /// then declines to block on it.
+    @Test func aMissingTimestampYieldsNoResetRatherThanAGuess() throws {
+        let object: [String: Any] = [
+            "type": "assistant", "error": "rate_limit", "apiErrorStatus": 429,
+            "message": [
+                "content": [
+                    ["type": "text", "text": "You've hit your session limit · resets 1:20am (UTC)"]
+                ]
+            ],
+        ]
+        let limit = try #require(ClaudeUsageLimit.parse(entry: object))
+        #expect(limit.isReached)
+        #expect(limit.resetsAt == nil)
+        #expect(limit.isBlocking(now: Date()) == false)
+
+        // An unparseable timestamp is the same situation.
+        var broken = object
+        broken["timestamp"] = "yesterday afternoon"
+        #expect(ClaudeUsageLimit.parse(entry: broken)?.resetsAt == nil)
+    }
+
     // MARK: - Reconstructing the reset
 
     private let anchor = Date(timeIntervalSince1970: 1_785_787_741)  // 2026-08-03T20:09:01Z

@@ -51,11 +51,16 @@ enum ClaudeUsageLimit {
         guard let match = windowsByLabel.first(where: { lowered.contains($0.label) })
         else { return nil }
 
-        let anchor = (object["timestamp"] as? String).flatMap(timestamp) ?? Date()
+        // No anchor, no reset. Falling back to `Date()` would reconstruct "the
+        // next 1:20am from now", which for an entry of unknown age is a
+        // plausible-looking time on quite possibly the wrong day — worse than
+        // admitting the reset is unknown, which `isBlocking` then treats as not
+        // blocking at all.
+        let anchor = (object["timestamp"] as? String).flatMap(timestamp)
         return UsageLimit(
             window: match.window,
             usedPercent: 100,
-            resetsAt: resetDate(from: text, anchor: anchor),
+            resetsAt: anchor.flatMap { resetDate(from: text, anchor: $0) },
             isReached: true
         )
     }
