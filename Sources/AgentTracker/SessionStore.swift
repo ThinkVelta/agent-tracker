@@ -38,6 +38,7 @@ final class SessionStore: ObservableObject {
     /// and then that session goes quiet — so it has to be remembered rather
     /// than re-derived. Entries expire on their own reset time.
     private(set) var accountLimits = AccountLimits()
+    private let usageWatcher = ClaudeUsageWatcher()
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
@@ -182,6 +183,18 @@ final class SessionStore: ObservableObject {
             RegistryEnrichment.apply(
                 to: $0, entry: claudeRegistry.entry(forSessionId: $0.sessionId))
         }
+        // Claude reports a refusal only in the transcript of the session that hit
+        // the wall, so the trigger is that session stopping. A row that is still
+        // running cannot be blocked; the 30-second bucket sweeps the rest as a
+        // fallback, for the case where a refusal produces no hook at all.
+        let sweeping = lastClockBucket != Int(Date().timeIntervalSince1970 / 30)
+        let claudeCandidates = merged.filter {
+            $0.provider == "claude-code" && (sweeping || $0.state == .needsYou)
+        }
+        for limit in usageWatcher.check(claudeCandidates) {
+            accountLimits.record(limit, for: "claude-code")
+        }
+
         if let scanner = codexScanner {
             for limit in scanner.usageLimits { accountLimits.record(limit, for: "codex") }
             let scanned = scanner.sessions
@@ -255,6 +268,7 @@ final class SessionStore: ObservableObject {
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
+        usageWatcher.prune(liveSessionIds: Set(sorted.map(\.sessionId)))
         if !focusRotation.isEmpty {
             let live = Set(sorted.map(\.id))
             focusRotation = focusRotation.filter { live.contains($0.key) }
