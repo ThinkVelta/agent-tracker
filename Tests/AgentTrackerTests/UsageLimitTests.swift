@@ -62,6 +62,26 @@ final class UsageLimitTests {
         #expect(limits.limits(for: "codex").first?.usedPercent == 92)
     }
 
+    /// Equal resets are the COMMON case: every session on one account shares that
+    /// account's reset instant, so two sessions routinely report the same window
+    /// with different progress. Merging must therefore be commutative — the arrival
+    /// order is whatever order a dictionary of trackers iterated in, which is not
+    /// stable between runs.
+    @Test func conflictingReadingsForOneWindowMergeByStrength() {
+        let reached = limit(.weekly, used: 100, resetsAt: reset, reached: true)
+        let plenty = limit(.weekly, used: 88, resetsAt: reset, reached: false)
+
+        // Both orders must agree, and both must keep the block.
+        for readings in [[reached, plenty], [plenty, reached]] {
+            var limits = AccountLimits()
+            for reading in readings { limits.record(reading, for: "codex") }
+            let merged = limits.limits(for: "codex").first
+            #expect(merged?.isReached == true, "a real block was dropped")
+            #expect(merged?.usedPercent == 100)
+            #expect(limits.blockingLimit(for: "codex", now: reset.addingTimeInterval(-60)) != nil)
+        }
+    }
+
     /// Two windows can both be exhausted; the one the user is actually waiting
     /// on is the one that frees up first.
     @Test func theSoonestResetIsWhatTheUserIsWaitingOn() {

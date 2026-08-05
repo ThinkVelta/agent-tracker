@@ -76,18 +76,31 @@ struct UsageLimit: Equatable {
 struct AccountLimits: Equatable {
     private var byProvider: [String: [UsageLimit.Window: UsageLimit]] = [:]
 
-    /// Merges a reading in. Later reset wins for the same window: readings carry
-    /// no observation time, but a later reset can only come from a newer window,
-    /// and anything stale expires on its own through `isBlocking(now:)`.
+    /// Merges a reading in, commutatively — the order readings arrive in is
+    /// whatever order a dictionary of trackers iterated, so it must not matter.
+    ///
+    /// A later reset means a newer window and simply replaces. **Equal resets are
+    /// the common case, not an edge case**: every session on one account shares
+    /// that account's reset instant, so two sessions routinely report the same
+    /// window with different progress. Those merge by strength — usage only rises
+    /// within a window, and once reached it stays reached until the reset.
     mutating func record(_ limit: UsageLimit, for provider: String) {
-        let existing = byProvider[provider]?[limit.window]
-        guard let existing else {
+        guard let existing = byProvider[provider]?[limit.window] else {
             byProvider[provider, default: [:]][limit.window] = limit
             return
         }
         let new = limit.resetsAt ?? .distantPast
         let old = existing.resetsAt ?? .distantPast
-        if new > old { byProvider[provider, default: [:]][limit.window] = limit }
+        if new > old {
+            byProvider[provider, default: [:]][limit.window] = limit
+        } else if new == old {
+            byProvider[provider, default: [:]][limit.window] = UsageLimit(
+                window: limit.window,
+                usedPercent: [existing.usedPercent, limit.usedPercent].compactMap { $0 }.max(),
+                resetsAt: existing.resetsAt ?? limit.resetsAt,
+                isReached: existing.isReached || limit.isReached
+            )
+        }
     }
 
     /// The window standing between this provider and progress, soonest reset
