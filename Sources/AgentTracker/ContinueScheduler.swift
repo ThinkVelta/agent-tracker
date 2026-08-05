@@ -54,6 +54,17 @@ struct ScheduledContinue: Equatable, Codable {
         guard let settledThrough else { return false }
         return settledThrough >= armedForResetAt
     }
+
+    /// The moment this will fire at, if there is one at all.
+    ///
+    /// A settled repeating schedule has none: the next moment cannot be derived
+    /// from a five-hour window that walks around the clock, so it has to be
+    /// observed. `armedForResetAt` still holds the moment it *last* fired for,
+    /// which is a time in the past — displaying that as "sends at" would be a
+    /// promise about a moment that has already gone.
+    var pendingMoment: Date? {
+        isSettled ? nil : armedForResetAt
+    }
 }
 
 /// Decides *when* a scheduled continue fires, and nothing else.

@@ -594,7 +594,11 @@ struct SessionRow: View {
     private var editorPanel: some View {
         ContinueEditor(
             draft: $draft,
-            resetsAt: arming.resetsAt ?? armedSchedule?.armedForResetAt,
+            // `pendingMoment`, not `armedForResetAt`: a settled repeating schedule
+            // still holds the moment it last fired for, and the editor would
+            // present that past time as a promise. Nil is what makes it say it is
+            // waiting for the next reset to be reported.
+            resetsAt: arming.resetsAt ?? armedSchedule?.pendingMoment,
             isArmed: armedSchedule != nil,
             // Only when there is nothing armed. An armed schedule knows its own
             // moment, so an armed row whose limit has since expired must still
@@ -602,6 +606,11 @@ struct SessionRow: View {
             // waiting on a usage limit".
             unavailableReason: armedSchedule == nil ? arming.reason : nil,
             onArm: {
+                // `armedForResetAt` here, deliberately not `pendingMoment` as the
+                // display above uses. Committing an edit to a settled repeating
+                // schedule must keep the record's own moment — `settledThrough`
+                // travels with it, so it stays settled and does not fire — where
+                // `pendingMoment` would be nil and the edit would be dropped.
                 guard let moment = arming.resetsAt ?? armedSchedule?.armedForResetAt else { return }
                 continues.arm(
                     ScheduledContinue(

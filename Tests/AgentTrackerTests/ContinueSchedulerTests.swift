@@ -362,6 +362,27 @@ final class ContinueSchedulerTests {
             .message == "a")
     }
 
+    /// What the row is allowed to promise. A settled repeating schedule still
+    /// holds the moment it last fired for, so anything reading `armedForResetAt`
+    /// to display a fire time would present a moment that has already gone as
+    /// something about to happen.
+    @Test func aSettledScheduleHasNoMomentToShow() {
+        #expect(schedule().pendingMoment == reset)
+
+        let settled = schedule(repeats: true, settledThrough: reset)
+        #expect(settled.isSettled)
+        #expect(settled.pendingMoment == nil)
+        #expect(settled.armedForResetAt == reset, "the record keeps it; only the display drops it")
+
+        // Re-armed onto a later window, so there is a moment again.
+        let nextWindow = reset.addingTimeInterval(5 * 3600)
+        let rolled = ContinueScheduler.plan(
+            pass(
+                now: fireMoment.addingTimeInterval(60), schedules: [settled],
+                blockingResets: ["claude-code": nextWindow]))
+        #expect(rolled.schedules.first?.pendingMoment == nextWindow)
+    }
+
     // MARK: - Availability, which is what the row explains
 
     @Test func availabilityAlwaysGivesAReasonWhenItRefuses() {
