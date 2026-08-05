@@ -225,19 +225,13 @@ struct CodexThreadAccumulator: Equatable {
         }
     }
 
-    /// - Parameter now: taken as a parameter so the usage-limit expiry below is
-    ///   testable, and so one reload derives every row against one instant.
-    func derivedState(now: Date = Date()) -> (state: SessionState, reason: String) {
+    /// What this thread's own events say. A usage limit is deliberately NOT
+    /// consulted here: it belongs to the account, not the thread, so it is
+    /// applied once for every provider in `UsageLimitPresentation`.
+    var derivedState: (state: SessionState, reason: String) {
         switch lastSignificant?.kind {
         case .taskStarted: return (.running, "Working…")
-        case .taskComplete:
-            // A turn that ended because the account ran out of quota is not
-            // "ready for you" — there is nothing to do but wait, and sending the
-            // user to a terminal that cannot proceed is worse than saying so.
-            if let usageLimit, usageLimit.isBlocking(now: now) {
-                return (.needsYou, usageLimit.reason(now: now))
-            }
-            return (.needsYou, "Turn complete — ready for you")
+        case .taskComplete: return (.needsYou, "Turn complete — ready for you")
         case .turnAborted: return (.needsYou, "Interrupted — ready for you")
         case nil: return (.idle, "Session open")
         }
@@ -295,11 +289,7 @@ enum CodexSessionGrouper {
     /// State/reason/stateChangedAt/cwd come from the non-subagent thread with
     /// the newest significant event; subagent threads contribute liveness (pid,
     /// updatedAt) only. Groups with only subagent threads produce no session.
-    /// - Parameter now: one instant for the whole pass. Taken once rather than
-    ///   per row so two sessions sharing a reset time cannot disagree about
-    ///   whether it has passed.
-    static func sessions(from threads: [CodexThreadSnapshot], now: Date = Date()) -> [AgentSession]
-    {
+    static func sessions(from threads: [CodexThreadSnapshot]) -> [AgentSession] {
         var groups: [String: [CodexThreadSnapshot]] = [:]
         for thread in threads {
             guard let meta = thread.accumulator.meta else { continue }
@@ -312,7 +302,7 @@ enum CodexSessionGrouper {
             guard let primary = primaries.max(by: { rank($0) < rank($1) }) else { continue }
 
             let accumulator = primary.accumulator
-            let (state, reason) = accumulator.derivedState(now: now)
+            let (state, reason) = accumulator.derivedState
             let pid = primary.holderPid ?? group.compactMap(\.holderPid).first
             let updatedAt = group.compactMap(\.fileActivityAt).max()
             let stateChangedAt =

@@ -11,7 +11,7 @@ struct UsageLimit: Equatable {
     /// arrived in. Codex has reported only the weekly window since around
     /// February 2026, and reports it in the slot named `primary` — so trusting
     /// the slot would label a weekly reset as a five-hour one.
-    enum Window: Equatable {
+    enum Window: Equatable, Hashable {
         case fiveHour
         case weekly
         case other(minutes: Int)
@@ -63,6 +63,78 @@ struct UsageLimit: Equatable {
         formatter.timeStyle = .short
         formatter.dateStyle = Calendar.current.isDateInToday(resetsAt) ? .none : .medium
         return "Usage limit reached — resets \(formatter.string(from: resetsAt))"
+    }
+}
+
+/// What is known about each provider's account limits.
+///
+/// One slot per provider per window, because a usage limit is a property of the
+/// **account**, not of a session: whichever session happened to hit the wall is
+/// the only one that recorded it, but every session of that provider is equally
+/// blocked. Keeping it per-session meant a blocked account explained one row and
+/// left the rest claiming to be ready.
+struct AccountLimits: Equatable {
+    private var byProvider: [String: [UsageLimit.Window: UsageLimit]] = [:]
+
+    /// Merges a reading in, commutatively — the order readings arrive in is
+    /// whatever order a dictionary of trackers iterated, so it must not matter.
+    ///
+    /// A later reset means a newer window and simply replaces. **Equal resets are
+    /// the common case, not an edge case**: every session on one account shares
+    /// that account's reset instant, so two sessions routinely report the same
+    /// window with different progress. Those merge by strength — usage only rises
+    /// within a window, and once reached it stays reached until the reset.
+    mutating func record(_ limit: UsageLimit, for provider: String) {
+        guard let existing = byProvider[provider]?[limit.window] else {
+            byProvider[provider, default: [:]][limit.window] = limit
+            return
+        }
+        let new = limit.resetsAt ?? .distantPast
+        let old = existing.resetsAt ?? .distantPast
+        if new > old {
+            byProvider[provider, default: [:]][limit.window] = limit
+        } else if new == old {
+            byProvider[provider, default: [:]][limit.window] = UsageLimit(
+                window: limit.window,
+                usedPercent: [existing.usedPercent, limit.usedPercent].compactMap { $0 }.max(),
+                resetsAt: existing.resetsAt ?? limit.resetsAt,
+                isReached: existing.isReached || limit.isReached
+            )
+        }
+    }
+
+    /// The window standing between this provider and progress, soonest reset
+    /// first — that is the one the user is waiting on.
+    func blockingLimit(for provider: String, now: Date = Date()) -> UsageLimit? {
+        byProvider[provider]?.values
+            .filter { $0.isBlocking(now: now) }
+            .min { ($0.resetsAt ?? .distantFuture) < ($1.resetsAt ?? .distantFuture) }
+    }
+
+    func limits(for provider: String) -> [UsageLimit] {
+        Array(byProvider[provider]?.values ?? [:].values)
+    }
+}
+
+/// Decides when an account limit is what a row should say, in one place for
+/// every provider.
+enum UsageLimitPresentation {
+    /// Turn-end events, i.e. the reds that mean "your turn, nothing is wrong".
+    /// A `Notification` red is a permission prompt: the user genuinely is
+    /// needed, and overwriting that with a quota message would hide the one
+    /// thing this app exists to surface.
+    private static let turnEndedEvents: Set<String> = ["Stop", "task_complete", "turn_aborted"]
+
+    static func apply(_ limit: UsageLimit?, to session: AgentSession, now: Date = Date())
+        -> AgentSession
+    {
+        guard let limit, limit.isBlocking(now: now),
+            session.state == .needsYou,
+            let event = session.lastEvent, turnEndedEvents.contains(event)
+        else { return session }
+        var explained = session
+        explained.reason = limit.reason(now: now)
+        return explained
     }
 }
 

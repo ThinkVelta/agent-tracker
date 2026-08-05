@@ -33,6 +33,11 @@ struct SessionCounts: Equatable {
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
+    /// What is known about each provider's account limits. Sticky across
+    /// reloads: the evidence appears once, in whichever session hit the wall,
+    /// and then that session goes quiet — so it has to be remembered rather
+    /// than re-derived. Entries expire on their own reset time.
+    private(set) var accountLimits = AccountLimits()
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
@@ -178,6 +183,7 @@ final class SessionStore: ObservableObject {
                 to: $0, entry: claudeRegistry.entry(forSessionId: $0.sessionId))
         }
         if let scanner = codexScanner {
+            for limit in scanner.usageLimits { accountLimits.record(limit, for: "codex") }
             let scanned = scanner.sessions
             let threadMap = scanner.threadIdToSession
             // Notify rows for subagent threads are internal fan-out, never
@@ -230,6 +236,14 @@ final class SessionStore: ObservableObject {
                     }
                     return applyAcknowledgement(session)
                 })
+        }
+
+        // One instant for the whole pass: the limit is account-wide, so two rows
+        // must not straddle its reset and disagree about whether it has passed.
+        let now = Date()
+        merged = merged.map {
+            UsageLimitPresentation.apply(
+                accountLimits.blockingLimit(for: $0.provider, now: now), to: $0, now: now)
         }
 
         let sorted = merged.sorted { lhs, rhs in
