@@ -60,7 +60,11 @@ final class ContinueSchedules: ObservableObject {
     /// last 22.2 days, which is why a plain `deadline:` timer is unusable.
     private var lastReading:
         (continuous: ContinuousClock.Instant, suspending: SuspendingClock.Instant)?
-    private var observers: [NSObjectProtocol] = []
+    /// Each token with the center that issued it. Two centers are in play —
+    /// wake arrives on `NSWorkspace.shared.notificationCenter` and the clock
+    /// notifications on `NotificationCenter.default` — and a token can only be
+    /// removed from the one it came from.
+    private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
     init(defaults: UserDefaults = .standard, launchedAt: Date = Date()) {
         self.defaults = defaults
@@ -76,6 +80,11 @@ final class ContinueSchedules: ObservableObject {
 
     deinit {
         timer?.cancel()
+        // Block observers are retained by the notification center, so leaving
+        // them registered leaks a block per instance. Harmless for the shared
+        // instance, which outlives the process; not harmless for tests, which
+        // build a fresh store per case.
+        for observer in observers { observer.center.removeObserver(observer.token) }
     }
 
     // MARK: - Arming
@@ -213,26 +222,33 @@ final class ContinueSchedules: ObservableObject {
         guard !Self.isPreviewProcess else { return }
         let workspace = NSWorkspace.shared.notificationCenter
         observers.append(
-            workspace.addObserver(
-                forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
-            ) { [weak self] _ in
-                Task { @MainActor in
-                    self?.log("woke — re-evaluating")
-                    self?.timerNeedsRebuilding()
+            (
+                workspace,
+                workspace.addObserver(
+                    forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor in
+                        self?.log("woke — re-evaluating")
+                        self?.timerNeedsRebuilding()
+                    }
                 }
-            })
+            ))
         for name in [
             NSNotification.Name.NSSystemClockDidChange,
             NSNotification.Name.NSSystemTimeZoneDidChange,
         ] {
             observers.append(
-                NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) {
-                    [weak self] _ in
-                    Task { @MainActor in
-                        self?.log("clock or timezone changed — re-evaluating")
-                        self?.timerNeedsRebuilding()
+                (
+                    .default,
+                    NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main)
+                    {
+                        [weak self] _ in
+                        Task { @MainActor in
+                            self?.log("clock or timezone changed — re-evaluating")
+                            self?.timerNeedsRebuilding()
+                        }
                     }
-                })
+                ))
         }
     }
 
