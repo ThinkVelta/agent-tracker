@@ -38,10 +38,10 @@ final class SessionStore: ObservableObject {
     /// and then that session goes quiet — so it has to be remembered rather
     /// than re-derived. Entries expire on their own reset time.
     private(set) var accountLimits = AccountLimits()
-    /// The reset per provider for rows a limit actually explains — what a row may
-    /// be armed against. Kept beside the sessions it was derived from so the
-    /// arming affordance and the row's own wording can never disagree.
-    private(set) var armableResets: [String: Date] = [:]
+    /// The reset each row may be armed against, keyed by session id. Only rows
+    /// a limit actually explains appear here, so the arming affordance and the
+    /// row's own wording can never disagree.
+    private(set) var armableResetBySession: [String: Date] = [:]
     private let usageWatcher = ClaudeUsageWatcher()
     private let continueSchedules: ContinueSchedules
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
@@ -283,20 +283,25 @@ final class SessionStore: ObservableObject {
 
         // The limit is account-wide, so two rows must not straddle its reset and
         // disagree about whether it has passed.
-        var blockingResets: [String: Date] = [:]
+        // Two maps, deliberately keyed differently, because they answer different
+        // questions. The provider one is for the scheduler: a usage limit is
+        // account-wide, so re-arming a repeating schedule looks up the account's
+        // reset. The session one is for the UI: only a row the limit actually
+        // explains may be armed, and a provider-keyed lookup would offer the
+        // clock on every Claude row the moment any one of them was blocked.
+        var blockingResetByProvider: [String: Date] = [:]
+        var armableBySession: [String: Date] = [:]
         merged = merged.map { session in
             let limit = accountLimits.blockingLimit(for: session.provider, now: now)
-            // Only for a row the limit actually explains, which is the same
-            // predicate the arming affordance uses — so a row cannot be armable
-            // while saying nothing about why it stopped.
-            if let moment = limit?.resetsAt,
-                UsageLimitPresentation.explains(session, limit: limit, now: now)
-            {
-                blockingResets[session.provider] = moment
+            if let moment = limit?.resetsAt {
+                blockingResetByProvider[session.provider] = moment
+                if UsageLimitPresentation.explains(session, limit: limit, now: now) {
+                    armableBySession[session.sessionId] = moment
+                }
             }
             return UsageLimitPresentation.apply(limit, to: session, now: now)
         }
-        armableResets = blockingResets
+        armableResetBySession = armableBySession
 
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
@@ -317,7 +322,8 @@ final class SessionStore: ObservableObject {
         // its own clock here would let the schedule pass and the session pass
         // disagree about the present, which is the bug class that bit this
         // feature's predecessors three times.
-        continueSchedules.reconcile(sessions: sessions, blockingResets: blockingResets, now: now)
+        continueSchedules.reconcile(
+            sessions: sessions, blockingResets: blockingResetByProvider, now: now)
         // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
         // report from the installed app useful, and rebuilds fire on every
         // hook event and timer tick so the change filter is what keeps the

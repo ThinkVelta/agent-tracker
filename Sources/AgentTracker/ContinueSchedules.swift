@@ -32,13 +32,18 @@ final class ContinueSchedules: ObservableObject {
     /// `MenuContentView(dismiss:)`) and has no injection protocol anywhere, and
     /// there is exactly one implementation.
     ///
-    /// `async` from the start even though the stub returns immediately. PR C's
-    /// `AEDeterminePermissionToAutomateTarget` preflight was measured not
-    /// returning within 100 seconds for a running-but-ungranted target, so a
-    /// synchronous main-actor seam would freeze the menu bar — and its return
-    /// value deliberately feeds only the receipt, never the schedule state, so
-    /// a hung or refused delivery cannot make a settled schedule look owed again.
-    var deliver: (ContinueScheduler.Fire) async -> String
+    /// `@Sendable` and `async`, and run from a detached task, all three on
+    /// purpose. PR C's `AEDeterminePermissionToAutomateTarget` preflight was
+    /// measured not returning within 100 seconds for a running-but-ungranted
+    /// target, so this must not run on the main actor — and an `async` type alone
+    /// does not achieve that: a plain closure literal written inside this
+    /// `@MainActor` type inherits its isolation and would run there anyway.
+    /// `@Sendable` makes it non-isolated, and the detached task keeps it that way.
+    ///
+    /// Its return value deliberately feeds only the receipt, never the schedule
+    /// state, so a hung or refused delivery cannot make a settled schedule look
+    /// owed again.
+    var deliver: @Sendable (ContinueScheduler.Fire) async -> String
 
     /// A docs render builds a real `SessionStore` over synthetic sessions
     /// (`scripts/make-docs-images.sh` drives `--render-preview`). Nothing armed
@@ -132,14 +137,18 @@ final class ContinueSchedules: ObservableObject {
         if plan.schedules != schedules { persist(plan.schedules) }
         arrangeWakeUp(at: plan.nextWakeUp, now: now)
 
+        // Detached, and the closure is read here on the main actor and then
+        // captured by value. Anything inheriting this actor's isolation would put
+        // a delivery — and PR C's 100-second permission preflight — on the thread
+        // that draws the menu bar. Only the log line hops back.
+        let deliver = deliver
         for fire in plan.fires {
-            Task { @MainActor [weak self] in
+            Task.detached { [weak self] in
                 if fire.delay > 0 {
                     try? await Task.sleep(for: .seconds(fire.delay))
                 }
-                guard let self else { return }
-                let outcome = await self.deliver(fire)
-                self.log("\(fire.sessionId) — \(outcome)")
+                let outcome = await deliver(fire)
+                await self?.log("\(fire.sessionId) — \(outcome)")
             }
         }
     }

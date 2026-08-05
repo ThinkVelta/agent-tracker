@@ -365,23 +365,44 @@ final class ContinueSchedulerTests {
     // MARK: - Availability, which is what the row explains
 
     @Test func availabilityAlwaysGivesAReasonWhenItRefuses() {
-        let resets = ["claude-code": reset]
+        let resets = ["s1": reset]
 
         let off = ContinueScheduler.availability(
-            for: session(), blockingResets: resets, enabled: false)
+            for: session(), armableResetBySession: resets, enabled: false)
         #expect(off.reason?.contains("Settings") == true)
 
         let codex = ContinueScheduler.availability(
-            for: session("c", provider: "codex"), blockingResets: ["codex": reset], enabled: true)
+            for: session("c", provider: "codex"), armableResetBySession: ["c": reset], enabled: true
+        )
         #expect(codex.reason?.contains("Only Claude Code") == true)
 
         let notBlocked = ContinueScheduler.availability(
-            for: session(), blockingResets: [:], enabled: true)
+            for: session(), armableResetBySession: [:], enabled: true)
         #expect(notBlocked.reason?.contains("waiting on a usage limit") == true)
 
         let ready = ContinueScheduler.availability(
-            for: session(), blockingResets: resets, enabled: true)
+            for: session(), armableResetBySession: resets, enabled: true)
         #expect(ready == .available(resetsAt: reset))
         #expect(ready.reason == nil)
+    }
+
+    /// Regression: availability used to be keyed by *provider*. A usage limit is
+    /// account-wide, so one blocked row made every Claude row offer the clock —
+    /// including rows that were running, or sitting at a permission prompt.
+    @Test func onlyTheBlockedRowIsArmableNotEveryRowOnThatAccount() {
+        let armable = ["blocked": reset]
+
+        let blocked = ContinueScheduler.availability(
+            for: session("blocked"), armableResetBySession: armable, enabled: true)
+        #expect(blocked == .available(resetsAt: reset))
+
+        // Same provider, same account, same reset — but this row is not the one
+        // waiting on it.
+        for other in ["running", "prompted", "idle"] {
+            let unavailable = ContinueScheduler.availability(
+                for: session(other), armableResetBySession: armable, enabled: true)
+            #expect(unavailable.resetsAt == nil, "\(other) must not be armable")
+            #expect(unavailable.reason?.contains("waiting on a usage limit") == true)
+        }
     }
 }

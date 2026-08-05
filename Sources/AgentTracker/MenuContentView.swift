@@ -255,7 +255,7 @@ struct MenuContentView: View {
             clockTick: store.clockTick,
             onAcknowledge: { store.acknowledge(session) },
             arming: ContinueScheduler.availability(
-                for: session, blockingResets: store.armableResets,
+                for: session, armableResetBySession: store.armableResetBySession,
                 enabled: preferences.scheduledContinues),
             onSelect: {
                 let exactTitle = store.exactWindowTitle(for: session)

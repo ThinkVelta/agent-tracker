@@ -132,7 +132,7 @@ enum ContinueScheduler {
         var nextWakeUp: Date?
     }
 
-    struct Fire: Equatable {
+    struct Fire: Equatable, Sendable {
         var sessionId: String
         var message: String
         /// Waited before this one is sent, staggering a fan-out.
@@ -141,7 +141,7 @@ enum ContinueScheduler {
     }
 
     /// Why a fire is late, which decides whether it happens at all.
-    enum Lateness: Equatable {
+    enum Lateness: Equatable, Sendable {
         case onTime
         /// The machine slept through the moment.
         case slept(seconds: TimeInterval)
@@ -205,14 +205,18 @@ enum ContinueScheduler {
         }
     }
 
-    /// Deliberately gated on the same condition that makes a row say "Usage
-    /// limit reached": `AccountLimits` is not published, so the only thing that
-    /// redraws a row when a limit appears or expires is `sessions` republishing.
-    /// Tying arming to that predicate makes the armable row and the redrawn row
-    /// the same row.
+    /// Gated on the same condition that makes a row say "Usage limit reached":
+    /// `AccountLimits` is not published, so the only thing that redraws a row
+    /// when a limit appears or expires is `sessions` republishing. Tying arming
+    /// to that predicate makes the armable row and the redrawn row the same row.
+    ///
+    /// Keyed **per session**, not per provider. A usage limit is account-wide, so
+    /// a provider-keyed lookup would offer the clock on every Claude row the
+    /// moment any one of them was blocked — including rows that are running, or
+    /// sitting at a permission prompt.
     static func availability(
         for session: AgentSession,
-        blockingResets: [String: Date],
+        armableResetBySession: [String: Date],
         enabled: Bool
     ) -> Availability {
         guard enabled else {
@@ -221,7 +225,7 @@ enum ContinueScheduler {
         guard session.provider == supportedProvider else {
             return .unavailable(reason: "Only Claude Code sessions can be resumed automatically")
         }
-        guard let moment = blockingResets[session.provider] else {
+        guard let moment = armableResetBySession[session.sessionId] else {
             return .unavailable(reason: "Available once this session is waiting on a usage limit")
         }
         return .available(resetsAt: moment)

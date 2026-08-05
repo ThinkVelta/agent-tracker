@@ -138,6 +138,56 @@ final class ContinueSchedulesTests {
         #expect(ContinueSchedules(defaults: store).schedules.count == 1)
     }
 
+    /// Regression: delivery has to run OFF the main actor. An `async` closure
+    /// type is not enough — a closure literal written inside a `@MainActor` type
+    /// inherits that isolation, so the first version ran deliveries on the thread
+    /// that draws the menu bar. PR C's permission preflight was measured taking
+    /// over 100 seconds, which would have frozen the dropdown.
+    @Test func deliveryRunsOffTheMainActor() async throws {
+        let observed = ThreadObservation()
+        let schedules = ContinueSchedules(defaults: defaults())
+        schedules.deliver = { _ in
+            observed.record(isMainThread: Thread.isMainThread)
+            return "stubbed"
+        }
+        Preferences.shared.scheduledContinues = true
+        defer { Preferences.shared.scheduledContinues = false }
+
+        var due = schedule("a")
+        due.armedForResetAt = Date().addingTimeInterval(-ContinueScheduler.resetSafetyPad - 1)
+        schedules.arm(due)
+
+        var session = AgentSession(
+            provider: "claude-code", sessionId: "a", cwd: "/Users/dev/demo", state: .needsYou)
+        session.lastEvent = "Stop"
+        schedules.reconcile(sessions: [session], blockingResets: [:], now: Date())
+
+        // Bounded wait rather than a continuation, so a seam that never delivers
+        // fails the test instead of hanging CI.
+        for _ in 0..<200 where observed.value == nil {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(observed.value == false, "delivery ran on the main thread")
+    }
+
+    /// Shared between a detached delivery task and the test body.
+    private final class ThreadObservation: @unchecked Sendable {
+        private let lock = NSLock()
+        private var observed: Bool?
+
+        func record(isMainThread: Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            observed = isMainThread
+        }
+
+        var value: Bool? {
+            lock.lock()
+            defer { lock.unlock() }
+            return observed
+        }
+    }
+
     @Test func updatingAnUnknownSessionIsANoOp() {
         let schedules = ContinueSchedules(defaults: defaults())
         schedules.arm(schedule("a"))
