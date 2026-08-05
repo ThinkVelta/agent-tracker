@@ -48,16 +48,23 @@ def capture(payload):
     payload. The temporary name carries the pid because the writers are
     concurrent processes sharing one destination — a fixed `.tmp` would let two
     sessions interleave their bytes into the same file before either renamed it.
+
+    Every step is inside the guard, `os.makedirs` included: an unwritable or
+    occupied `~/.agent-tracker` would otherwise raise past the caller and cost
+    the user their statusline, which is the one thing this script must never do.
     """
-    directory = base_dir()
-    os.makedirs(directory, exist_ok=True)
-    path = os.path.join(directory, CAPTURE_NAME)
-    tmp = f"{path}.{os.getpid()}.tmp"
+    tmp = None
     try:
+        directory = base_dir()
+        os.makedirs(directory, exist_ok=True)
+        path = os.path.join(directory, CAPTURE_NAME)
+        tmp = f"{path}.{os.getpid()}.tmp"
         with open(tmp, "wb") as f:
             f.write(payload)
         os.replace(tmp, path)
     except OSError:
+        if tmp is None:
+            return
         try:
             os.unlink(tmp)
         except OSError:
@@ -89,18 +96,36 @@ def become(command, payload):
     onto fd 0 through an unlinked temporary file — the exec keeps the descriptor
     and the file has no name to clean up.
 
+    The exec is outside the guard on purpose. If there is nowhere to stage the
+    payload the previous statusline still runs, it just reads an empty stdin —
+    a degraded line beats a vanished one, and a machine with no writable temp
+    directory has larger problems than this.
+
     Returns only if the exec failed, in which case the caller exits quietly.
     """
-    with tempfile.TemporaryFile() as stdin:
-        stdin.write(payload)
-        stdin.seek(0)
-        os.dup2(stdin.fileno(), 0)
-        os.execv("/bin/sh", ["/bin/sh", "-c", command])
+    try:
+        # Not a context manager: the descriptor has to outlive this block and
+        # survive into the exec, which closing it would defeat. The file is
+        # already unlinked, so there is nothing to clean up either way.
+        staged = tempfile.TemporaryFile()  # noqa: SIM115
+        staged.write(payload)
+        staged.seek(0)
+        os.dup2(staged.fileno(), 0)
+    except OSError:
+        pass
+    os.execv("/bin/sh", ["/bin/sh", "-c", command])
 
 
 def main():
     payload = sys.stdin.buffer.read()
-    capture(payload)
+    # The invariant, stated where the ordering lives: whatever capturing does,
+    # the statusline this wrapper displaced still gets to run. Swallowed rather
+    # than logged because anything this script writes lands on Claude's status
+    # line, so silence is the only safe report.
+    try:
+        capture(payload)
+    except Exception:  # noqa: BLE001, S110 — never at the cost of the statusline
+        pass
     command = wrapped_command()
     if command:
         become(command, payload)

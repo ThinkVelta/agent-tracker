@@ -151,9 +151,19 @@ except (OSError, ValueError):
 if isinstance(wrapped, dict):
     settings["statusLine"] = wrapped
     restored = "restored your own statusLine command"
-else:
+elif wrapped is None:
     del settings["statusLine"]
     restored = "removed the statusLine entry (it was empty before agent-tracker)"
+else:
+    # Neither an object nor a recorded null, so it is not a shape this ever
+    # wrote. Anything else here is a guess, and the whole point above is not to.
+    print(
+        f"{record_path} records a 'wrapped' value of an unexpected type "
+        f"({type(wrapped).__name__}), so what the wrapper displaced cannot be "
+        "trusted — leaving statusLine exactly as it is.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 # open(), never a rename: settings.json may be a symlink into a dotfiles repo.
 with open(settings_path, "w") as f:
