@@ -43,18 +43,23 @@ final class SessionStore: ObservableObject {
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
 
-    nonisolated static let sessionsDirectory: URL = {
-        let base: URL
+    nonisolated static let baseDirectory: URL = {
         if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_DIR"],
             !override.isEmpty
         {
-            base = URL(fileURLWithPath: override)
-        } else {
-            base = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
-                ".agent-tracker")
+            return URL(fileURLWithPath: override)
         }
-        return base.appendingPathComponent("sessions")
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
+            ".agent-tracker")
     }()
+
+    nonisolated static let sessionsDirectory = baseDirectory.appendingPathComponent("sessions")
+
+    /// Where the statusline wrapper leaves Claude's session payload. Outside
+    /// `sessions/` deliberately: anything with a `.json` extension in there is
+    /// decoded as a session state file.
+    nonisolated static let claudeStatuslineURL = baseDirectory.appendingPathComponent(
+        "claude-statusline.json")
 
     /// Default cadence of the safety-net reload. Hook/rollout watchers already
     /// deliver state changes instantly; the tick bounds how stale a *derived*
@@ -149,6 +154,14 @@ final class SessionStore: ObservableObject {
         // directory event).
         titleDirectory.refresh()
         claudeRegistry.refresh()
+        // The proactive half of Claude's usage picture, and the only one that
+        // exists before a request is refused. Polled rather than watched: the
+        // wrapper rewrites this file every few hundred milliseconds per live
+        // session, so a watcher would fire far more often than the display can
+        // use, and re-reading ~1.5 KB on the tick we already run is cheaper.
+        for limit in ClaudeStatusline.limits(at: Self.claudeStatuslineURL) {
+            accountLimits.record(limit, for: "claude-code")
+        }
         // Codex has no hook to write a state file, and FSEvents does not
         // reliably report appends to its rollouts — so the scanner's cheap
         // re-read rides this same tick. Without it, a Codex turn starting or

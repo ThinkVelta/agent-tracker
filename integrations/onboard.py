@@ -9,6 +9,7 @@ from the repo root.
 Usage:
   onboard.py                              # interactive checkbox picker
   onboard.py --agents claude,codex --yes  # non-interactive (CI, scripts)
+  onboard.py --agents claude --statusline --yes   # …and capture usage windows
 
 Design constraints: dependency-free (stdlib only) and must degrade gracefully
 when stdin is not a TTY — no hangs, no tracebacks, flag-driven fallback.
@@ -95,6 +96,41 @@ AGENTS = [
 ]
 
 
+STATUSLINE_PLAN = [
+    "copy the statusline wrapper to ~/.agent-tracker/bin/",
+    (
+        "point statusLine in settings.json at it — your own statusline keeps "
+        "running behind it, unchanged, and is recorded so uninstall puts it back"
+    ),
+]
+
+# Everything that makes this less than absolute, said before it is installed
+# rather than discovered later.
+STATUSLINE_CAVEATS = [
+    (
+        "Claude only reports the usage windows to a statusline script — there is "
+        "no other place to read them before a request is actually refused."
+    ),
+    (
+        "A statusLine set in a project's .claude/settings.json silently shadows "
+        "the user-level one, so sessions in those projects report nothing."
+    ),
+    (
+        "Nothing runs for -p/--print, --bg background agents, SDK sessions, "
+        "--safe-mode, an untrusted workspace, or disableAllHooks."
+    ),
+    (
+        "The numbers appear for Claude.ai subscription sessions, after the first "
+        "response. When they are absent the app says it cannot tell, never that "
+        "you have room left."
+    ),
+    (
+        "If you have no statusline of your own, the line stays blank — the "
+        "wrapper prints nothing by itself."
+    ),
+]
+
+
 def print_banner():
     print()
     print(f"  {red('●')} {green('●')} {grey('●')}  {bold('Agent Tracker')}")
@@ -176,16 +212,45 @@ def parse_agents_flag(value):
     return selected
 
 
-def show_plan(selected):
+def wrap_bullet(item, indent="    • ", subsequent="      "):
+    return textwrap.fill(
+        item, width=78, initial_indent=indent, subsequent_indent=subsequent
+    )
+
+
+def ask_statusline():
+    """Offer the statusline wrapper, with its limits stated first."""
+    print(bold("Track how much of your Claude usage window is left?"))
+    print(
+        wrap_bullet(
+            "Claude hands its status line a payload that says how much of the "
+            "5-hour and 7-day windows you have used and when each resets. "
+            "Capturing it means occupying the statusLine slot in "
+            "~/.claude/settings.json, which is why this is a separate question.",
+            indent="  ",
+            subsequent="  ",
+        )
+    )
+    print()
+    for caveat in STATUSLINE_CAVEATS:
+        print(wrap_bullet(caveat, indent="  - ", subsequent="    "))
+    print()
+    try:
+        answer = input(bold("Capture the usage windows?") + " [y/N] ")
+    except EOFError:
+        return False
+    return answer.strip().lower() in ("y", "yes")
+
+
+def show_plan(selected, statusline=False):
     print(bold("This will:"))
     for agent in selected:
         print(f"\n  {agent['name']}:")
-        for item in agent["plan"]:
-            print(
-                textwrap.fill(
-                    item, width=78, initial_indent="    • ", subsequent_indent="      "
-                )
-            )
+        plan = list(agent["plan"])
+        if agent["key"] == "claude" and statusline:
+            plan += STATUSLINE_PLAN
+        for item in plan:
+            print(wrap_bullet(item))
     print()
     print("  Nothing else on the system is touched.")
     print("  Uninstall any time with integrations/uninstall.sh.")
@@ -200,19 +265,33 @@ def confirm():
     return answer.strip().lower() in ("y", "yes")
 
 
-def run_installer(agent):
+def run_installer(agent, statusline=False):
     """Run one install script, prefixing its output. Returns True on success.
 
-    Special case: install-codex.sh exits 1 when an unrelated notify handler is
-    already configured — that is a warning, not a failure, because Codex
-    tracking works via read-only session monitoring regardless.
+    Two exit codes are warnings rather than failures, because the tracking that
+    matters still works: install-codex.sh exits 1 when an unrelated notify
+    handler is already configured (Codex is tracked by read-only session
+    monitoring regardless), and install-claude-code.sh exits 3 when it refuses
+    to clobber an unrecognized statusLine (the hooks are registered either way).
     """
     print(f"\n{bold(agent['name'])}")
     script = os.path.join(SCRIPT_DIR, agent["script"])
-    proc = subprocess.run(["bash", script], capture_output=True, text=True, check=False)
+    command = ["bash", script]
+    if agent["key"] == "claude" and statusline:
+        command.append("--statusline")
+    proc = subprocess.run(command, capture_output=True, text=True, check=False)
     if proc.returncode == 0:
         for line in proc.stdout.strip().splitlines():
             print(f"  {green('✓')} {line}")
+        return True
+    if agent["key"] == "claude" and proc.returncode == 3:
+        for line in proc.stdout.strip().splitlines():
+            print(f"  {green('✓')} {line}")
+        print(f"  {yellow('!')} Left your statusLine setting alone — it is set to")
+        print("    something the wrapper cannot forward. The usage windows stay")
+        print("    unknown; everything else is installed.")
+        for line in proc.stderr.strip().splitlines():
+            print(dim(f"    {line}"))
         return True
     if (
         agent["key"] == "codex"
@@ -273,6 +352,19 @@ def main():
         action="store_true",
         help="skip the confirmation prompt",
     )
+    parser.add_argument(
+        "--statusline",
+        action="store_true",
+        default=None,
+        help="also capture Claude's usage windows by wrapping the statusLine "
+        "setting (asked interactively when neither flag is given)",
+    )
+    parser.add_argument(
+        "--no-statusline",
+        dest="statusline",
+        action="store_false",
+        help="leave the statusLine setting alone without being asked",
+    )
     args = parser.parse_args()
 
     print_banner()
@@ -299,12 +391,25 @@ def main():
         print("No agents selected — nothing to install.")
         return 0
 
-    show_plan(selected)
+    claude_selected = any(agent["key"] == "claude" for agent in selected)
+    statusline = args.statusline
+    if statusline and not claude_selected:
+        print(dim("--statusline only applies to Claude Code, which is not selected."))
+        print()
+        statusline = False
+    elif claude_selected and statusline is None:
+        # Off unless asked for: it takes over a settings.json slot that may
+        # already be someone's own script, so silence must not mean consent.
+        statusline = ask_statusline() if interactive else False
+        print()
+
+    show_plan(selected, statusline=bool(statusline))
     if not args.yes:
         if not interactive:
             print("stdin is not a TTY — re-run with --yes to proceed, e.g.:")
             keys = ",".join(agent["key"] for agent in selected)
-            print(f"  ./install.sh --agents {keys} --yes")
+            extra = " --statusline" if statusline else ""
+            print(f"  ./install.sh --agents {keys} --yes{extra}")
             return 1
         if not confirm():
             print("Aborted — nothing was changed.")
@@ -312,7 +417,7 @@ def main():
 
     ok = True
     for agent in selected:
-        ok = run_installer(agent) and ok
+        ok = run_installer(agent, statusline=bool(statusline)) and ok
     if not ok:
         print(red("\nSome integrations failed to install — see output above."))
         return 1

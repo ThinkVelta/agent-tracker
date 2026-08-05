@@ -26,13 +26,23 @@ done
 
 SETTINGS="$HOME/.claude/settings.json"
 CONFIG="$HOME/.codex/config.toml"
-DATA_DIR="$HOME/.agent-tracker"
+DATA_DIR="${AGENT_TRACKER_DIR:-$HOME/.agent-tracker}"
 FAILED=0
+
+# Backed up at most once: the hook and statusline sections both edit
+# settings.json, and a second copy would capture the first one's output.
+BACKED_UP=0
+backup_settings() {
+  if [ "$BACKED_UP" -eq 0 ]; then
+    cp "$SETTINGS" "$SETTINGS.agent-tracker-uninstall-backup"
+    echo "Backed up $SETTINGS to $SETTINGS.agent-tracker-uninstall-backup"
+    BACKED_UP=1
+  fi
+}
 
 # --- Claude Code: remove agent-tracker hook commands -------------------------
 if [ -f "$SETTINGS" ] && grep -q "agent-tracker-hook" "$SETTINGS"; then
-  cp "$SETTINGS" "$SETTINGS.agent-tracker-uninstall-backup"
-  echo "Backed up $SETTINGS to $SETTINGS.agent-tracker-uninstall-backup"
+  backup_settings
   if ! python3 - << 'PYEOF'; then
 import json
 import os
@@ -90,6 +100,88 @@ PYEOF
   fi
 else
   echo "Claude Code: no agent-tracker hooks in $SETTINGS — nothing to do"
+fi
+
+# --- Claude Code: give the statusLine slot back -------------------------------
+if [ -f "$SETTINGS" ] && grep -q "agent-tracker-statusline" "$SETTINGS"; then
+  backup_settings
+  if ! python3 - << 'PYEOF'; then
+import json
+import os
+import sys
+
+base = os.environ.get("AGENT_TRACKER_DIR") or os.path.expanduser("~/.agent-tracker")
+settings_path = os.path.expanduser("~/.claude/settings.json")
+record_path = os.path.join(base, "claude-statusline-wrapped.json")
+
+try:
+    with open(settings_path) as f:
+        settings = json.load(f)
+except (OSError, json.JSONDecodeError) as error:
+    print(f"Cannot parse {settings_path}: {error}", file=sys.stderr)
+    sys.exit(1)
+
+current = settings.get("statusLine")
+command = current.get("command") if isinstance(current, dict) else None
+if not (isinstance(command, str) and "agent-tracker-statusline" in command):
+    # Someone has since pointed statusLine elsewhere; that choice is theirs.
+    print("statusLine no longer points at the agent-tracker wrapper — left alone")
+    sys.exit(0)
+
+# What the wrapper displaced, recorded at install time. Three outcomes, and the
+# distinction matters: a record saying `null` is PROOF the slot was empty, while
+# no record at all proves nothing. Only the first two are safe to act on.
+try:
+    with open(record_path) as f:
+        record = json.load(f)
+    if not isinstance(record, dict) or "wrapped" not in record:
+        raise ValueError("no 'wrapped' key")
+    wrapped = record["wrapped"]
+except (OSError, ValueError):
+    print(
+        f"{record_path} is missing or unreadable, so what the wrapper displaced "
+        "is unknown — leaving statusLine exactly as it is rather than guessing. "
+        "If you had your own statusline command it is in "
+        f"{settings_path}.agent-tracker-backup; putting that line back by hand "
+        "also clears the wrapper reference.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if isinstance(wrapped, dict):
+    settings["statusLine"] = wrapped
+    restored = "restored your own statusLine command"
+elif wrapped is None:
+    del settings["statusLine"]
+    restored = "removed the statusLine entry (it was empty before agent-tracker)"
+else:
+    # Neither an object nor a recorded null, so it is not a shape this ever
+    # wrote. Anything else here is a guess, and the whole point above is not to.
+    print(
+        f"{record_path} records a 'wrapped' value of an unexpected type "
+        f"({type(wrapped).__name__}), so what the wrapper displaced cannot be "
+        "trusted — leaving statusLine exactly as it is.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+# open(), never a rename: settings.json may be a symlink into a dotfiles repo.
+with open(settings_path, "w") as f:
+    json.dump(settings, f, indent=2)
+    f.write("\n")
+
+try:
+    os.unlink(record_path)
+except OSError:
+    pass
+
+print(f"Claude Code statusline: {restored}")
+PYEOF
+    echo "WARNING: statusline cleanup incomplete — see the reason above." >&2
+    FAILED=1
+  fi
+else
+  echo "Claude Code: no agent-tracker statusline wrapper in $SETTINGS — nothing to do"
 fi
 
 # --- Codex: remove the agent-tracker notify setting --------------------------

@@ -41,8 +41,8 @@ stops asking for attention. Click a *dot* to open the list already filtered to
 that state. Visit a session's terminal yourself and it clears on its own after a
 few seconds.
 
-No daemon, no telemetry, no account. It reads what your agent CLIs already write
-to disk.
+No daemon, no telemetry, no account. Your agent CLIs report through the hook
+mechanisms they already support, and the app reads plain JSON off disk.
 
 ## Install
 
@@ -179,14 +179,23 @@ signal rather than a requirement.
 - **Click-to-focus** uses the Accessibility API: it matches the session to a
   terminal window by title, then raises the window. macOS switches to its
   Space automatically. For Claude Code the exact window title is learned live
-  from `~/.claude/statusline-last.json`: it carries `session_id` +
-  `session_name`, and the terminal titles the window with that name behind a
-  status glyph, which the matcher strips before comparing. The file is not
-  produced by default; it appears when your Claude Code statusline script
-  dumps its stdin payload there (e.g. a `tee ~/.claude/statusline-last.json`
-  at the top of `statusline.sh`). Transcript task summaries
-  ("✳ &lt;task summary&gt;") and working-directory fragments remain as
-  fallbacks when it is absent.
+  from Claude's statusline payload: it carries `session_id` + `session_name`,
+  and the terminal titles the window with that name behind a status glyph,
+  which the matcher strips before comparing. Claude hands that payload to a
+  statusline script and nowhere else, so the app reads it from either of two
+  files — `~/.claude/statusline-last.json`, if your own script dumps its stdin
+  there, or the copy the optional statusline wrapper below saves. Transcript
+  task summaries ("✳ &lt;task summary&gt;") and working-directory fragments
+  remain as fallbacks when neither exists.
+- **A session waiting on a usage limit says so** instead of claiming it is
+  ready. Codex reports its windows in the rollouts the app already tails;
+  Claude reports a refusal into its transcript, and — if you opt into the
+  statusline wrapper (`./install.sh --statusline`) — how much of the 5-hour and
+  7-day windows is used and when each resets, *before* anything is refused.
+  The wrapper occupies the single `statusLine` slot in `settings.json` and runs
+  whatever was there before behind it, unchanged, recording it so uninstall
+  puts it back. When the numbers are absent the app says it cannot tell, never
+  that you have room left.
 - **A finished turn is not always "needs you".** Claude's `Stop` fires when the
   assistant's turn ends, which is not the same as the work being done: a turn
   that backgrounded a shell is resumed when it finishes, and one that handed off
@@ -210,9 +219,16 @@ signal rather than a requirement.
   Ghostty nor Codex exposes a per-window identity that would settle it;
   `WindowIdentity` documents the four routes that were tried and closed.
 - **Window matching is exact only when a title source exists.** Claude Code
-  sessions get exact titles when a statusline script dumps its payload to
-  `~/.claude/statusline-last.json`; without it, matching falls back to
-  transcript summaries and path fragments.
+  sessions get exact titles from the statusline payload, which means either your
+  own script dumping it to `~/.claude/statusline-last.json` or the optional
+  statusline wrapper; without one, matching falls back to transcript summaries
+  and path fragments.
+- **Claude's usage numbers come from the statusline and nowhere else.** Without
+  the wrapper the app only learns of a limit once a request has already been
+  refused, and most refusals do not say when the window resets. A `statusLine`
+  set in a project's own settings shadows the user-level one, and nothing runs
+  for `-p`, background agents, SDK sessions or an untrusted workspace, so those
+  sessions report no usage at all.
 - **Codex approval prompts don't surface as red yet**: rollouts don't record
   them; planned via Codex's native hooks engine.
 - **A session inside tmux or screen can't be traced back to its window.** The
@@ -252,9 +268,17 @@ onboarding as a checkbox picker (non-interactive:
 `./install.sh --agents claude,codex --yes`), orchestrating
 `./integrations/install-claude-code.sh` and `./integrations/install-codex.sh`.
 Everything is idempotent and configs are backed up before editing. To remove it
-all again (hooks, the installed app, its preferences), run
-`./integrations/uninstall.sh` (add `--purge` to also delete
+all again (hooks, the statusline wrapper, the installed app, its preferences),
+run `./integrations/uninstall.sh` (add `--purge` to also delete
 `~/.agent-tracker`).
+
+Claude's usage windows are a separate opt-in, because capturing them means
+occupying the one `statusLine` slot in `~/.claude/settings.json`: the picker
+asks, or pass `--statusline` (`--no-statusline` to skip the question). The
+wrapper saves the payload and then runs your previous statusline command with
+the same bytes on its stdin, so what you see is unchanged; the displaced setting
+is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
+`statusLine` is left alone rather than replaced.
 
 ## Roadmap
 
