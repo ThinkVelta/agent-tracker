@@ -33,6 +33,20 @@ struct UsageLimit: Equatable {
             case .other(let minutes): return "\(minutes)-minute limit"
             }
         }
+
+        /// Whether a bare wall-clock time is enough to locate this window's reset.
+        ///
+        /// It is only enough when the window cannot span more than one day: then
+        /// "the next 1:20am" is unambiguously the reset. For a longer window the
+        /// same string could mean any of several days, and picking the nearest
+        /// would clear a block days early.
+        var isLocatableFromTimeAlone: Bool {
+            switch self {
+            case .fiveHour: return true
+            case .weekly: return false
+            case .other(let minutes): return minutes < 24 * 60
+            }
+        }
     }
 
     var window: Window

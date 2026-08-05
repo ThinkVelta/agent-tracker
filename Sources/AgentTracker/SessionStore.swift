@@ -38,6 +38,7 @@ final class SessionStore: ObservableObject {
     /// and then that session goes quiet — so it has to be remembered rather
     /// than re-derived. Entries expire on their own reset time.
     private(set) var accountLimits = AccountLimits()
+    private let usageWatcher = ClaudeUsageWatcher()
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
@@ -178,10 +179,27 @@ final class SessionStore: ObservableObject {
     /// Merges hook-written state-file sessions with scanner-derived codex
     /// sessions, deduping the codex state-file rows the scanner supersedes.
     private func rebuild() {
+        // One clock read for the whole pass. Every decision below is time-based —
+        // which sweep window this is, whether a usage limit has expired, whether
+        // the row timestamps need republishing — and reading the clock separately
+        // for each let them disagree about what "now" is.
+        let now = Date()
         var merged = fileSessions.map {
             RegistryEnrichment.apply(
                 to: $0, entry: claudeRegistry.entry(forSessionId: $0.sessionId))
         }
+        // Claude reports a refusal only in the transcript of the session that hit
+        // the wall, so the trigger is that session stopping. A row that is still
+        // running cannot be blocked; the 30-second bucket sweeps the rest as a
+        // fallback, for the case where a refusal produces no hook at all.
+        let sweeping = lastClockBucket != Self.clockBucket(at: now)
+        let claudeCandidates = merged.filter {
+            $0.provider == "claude-code" && (sweeping || $0.state == .needsYou)
+        }
+        for limit in usageWatcher.check(claudeCandidates) {
+            accountLimits.record(limit, for: "claude-code")
+        }
+
         if let scanner = codexScanner {
             for limit in scanner.usageLimits { accountLimits.record(limit, for: "codex") }
             let scanned = scanner.sessions
@@ -238,9 +256,8 @@ final class SessionStore: ObservableObject {
                 })
         }
 
-        // One instant for the whole pass: the limit is account-wide, so two rows
-        // must not straddle its reset and disagree about whether it has passed.
-        let now = Date()
+        // The limit is account-wide, so two rows must not straddle its reset and
+        // disagree about whether it has passed.
         merged = merged.map {
             UsageLimitPresentation.apply(
                 accountLimits.blockingLimit(for: $0.provider, now: now), to: $0, now: now)
@@ -255,11 +272,12 @@ final class SessionStore: ObservableObject {
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
+        usageWatcher.prune(liveSessionIds: Set(sorted.map(\.sessionId)))
         if !focusRotation.isEmpty {
             let live = Set(sorted.map(\.id))
             focusRotation = focusRotation.filter { live.contains($0.key) }
         }
-        advanceClockIfNeeded()
+        advanceClockIfNeeded(at: now)
         // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
         // report from the installed app useful, and rebuilds fire on every
         // hook event and timer tick so the change filter is what keeps the
@@ -278,10 +296,16 @@ final class SessionStore: ObservableObject {
 
     private var lastLoggedSummary = ""
 
-    /// Row timestamps read "now/3m/2h/1d", so they only ever change on a
-    /// 30-second boundary — republish on that boundary rather than every tick.
-    private func advanceClockIfNeeded() {
-        let bucket = Int(Date().timeIntervalSince1970 / 30)
+    /// The 30-second boundary two things hang off: row timestamps read
+    /// "now/3m/2h/1d" and so only change on it, and the usage-limit fallback
+    /// sweep runs on it. Both must agree on which bucket a rebuild is in, or the
+    /// sweep can be marked done for a window it never ran in.
+    static func clockBucket(at instant: Date) -> Int {
+        Int(instant.timeIntervalSince1970 / 30)
+    }
+
+    private func advanceClockIfNeeded(at now: Date) {
+        let bucket = Self.clockBucket(at: now)
         guard bucket != lastClockBucket else { return }
         lastClockBucket = bucket
         clockTick &+= 1
