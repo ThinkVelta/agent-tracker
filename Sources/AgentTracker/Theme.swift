@@ -21,6 +21,10 @@ enum Theme {
         static let tileCornerRadius: CGFloat = 7
         /// Width of the state-colored bar down a row's leading edge.
         static let accentBarWidth: CGFloat = 2.5
+        /// The trailing affordance's slot AND its hit box, deliberately one
+        /// number. A control drawn wider than the space reserved for it is what
+        /// produced the overlapping-glyph bug #28 had to remove.
+        static let rowTrailingControl: CGFloat = 18
         static let sectionHeaderHeight: CGFloat = 24
         static let searchFieldHeight: CGFloat = 24
         static let searchCornerRadius: CGFloat = 6

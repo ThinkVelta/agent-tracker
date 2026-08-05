@@ -139,6 +139,20 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(attentionCue, forKey: Keys.attentionCue) }
     }
 
+    // MARK: - Scheduled continues
+
+    /// Whether a session may be armed to resume itself when its usage window
+    /// resets. Off by default and deliberately its own switch: everything else
+    /// here changes what the app *shows*, and this is the only one that lets it
+    /// act on a session while nobody is watching.
+    ///
+    /// Only the gate lives here. The armed schedules do not: `objectWillChange`
+    /// on this object re-renders the menu bar icon, so an editable message would
+    /// redraw it on every keystroke. They live in `ContinueSchedules`.
+    @Published var scheduledContinues: Bool {
+        didSet { defaults.set(scheduledContinues, forKey: Keys.scheduledContinues) }
+    }
+
     // MARK: - Quit confirmation
 
     /// Ask before quitting from the panel's power button. Turned off by the
@@ -158,6 +172,7 @@ final class Preferences: ObservableObject {
         static let iconMode = "iconMode"
         static let monochromeIcon = "monochromeIcon"
         static let attentionCue = "attentionCue"
+        static let scheduledContinues = "scheduledContinues"
     }
 
     /// The mode 0.1.0 stored when monochrome was one of the icon modes rather
@@ -219,5 +234,6 @@ final class Preferences: ObservableObject {
         }
 
         attentionCue = defaults.object(forKey: Keys.attentionCue) as? Bool ?? true
+        scheduledContinues = defaults.object(forKey: Keys.scheduledContinues) as? Bool ?? false
     }
 }

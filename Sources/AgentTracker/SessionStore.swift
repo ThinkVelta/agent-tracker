@@ -38,7 +38,12 @@ final class SessionStore: ObservableObject {
     /// and then that session goes quiet — so it has to be remembered rather
     /// than re-derived. Entries expire on their own reset time.
     private(set) var accountLimits = AccountLimits()
+    /// The reset each row may be armed against, keyed by session id. Only rows
+    /// a limit actually explains appear here, so the arming affordance and the
+    /// row's own wording can never disagree.
+    private(set) var armableResetBySession: [String: Date] = [:]
     private let usageWatcher = ClaudeUsageWatcher()
+    private let continueSchedules: ContinueSchedules
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
@@ -103,9 +108,16 @@ final class SessionStore: ObservableObject {
     init() {
         titleDirectory = TitleDirectory()
         claudeRegistry = ClaudeSessionRegistry()
+        // The shared instance rather than an injected one: the dropdown observes
+        // it directly, so a second instance here would arm one set of schedules
+        // and display another.
+        continueSchedules = ContinueSchedules.shared
         try? FileManager.default.createDirectory(
             at: Self.sessionsDirectory, withIntermediateDirectories: true
         )
+        // A pass always comes from here, never from the scheduler itself, so
+        // there is exactly one place that reads the clock for both.
+        continueSchedules.requestPass = { [weak self] in self?.reload() }
         reload()
         watcher = DirectoryWatcher(url: Self.sessionsDirectory) { [weak self] in
             self?.reload()
@@ -271,10 +283,25 @@ final class SessionStore: ObservableObject {
 
         // The limit is account-wide, so two rows must not straddle its reset and
         // disagree about whether it has passed.
-        merged = merged.map {
-            UsageLimitPresentation.apply(
-                accountLimits.blockingLimit(for: $0.provider, now: now), to: $0, now: now)
+        // Two maps, deliberately keyed differently, because they answer different
+        // questions. The provider one is for the scheduler: a usage limit is
+        // account-wide, so re-arming a repeating schedule looks up the account's
+        // reset. The session one is for the UI: only a row the limit actually
+        // explains may be armed, and a provider-keyed lookup would offer the
+        // clock on every Claude row the moment any one of them was blocked.
+        var blockingResetByProvider: [String: Date] = [:]
+        var armableBySession: [String: Date] = [:]
+        merged = merged.map { session in
+            let limit = accountLimits.blockingLimit(for: session.provider, now: now)
+            if let moment = limit?.resetsAt {
+                blockingResetByProvider[session.provider] = moment
+                if UsageLimitPresentation.explains(session, limit: limit, now: now) {
+                    armableBySession[session.sessionId] = moment
+                }
+            }
+            return UsageLimitPresentation.apply(limit, to: session, now: now)
         }
+        armableResetBySession = armableBySession
 
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
@@ -291,6 +318,12 @@ final class SessionStore: ObservableObject {
             focusRotation = focusRotation.filter { live.contains($0.key) }
         }
         advanceClockIfNeeded(at: now)
+        // The tail of the pass, sharing its single `now`. A scheduler that read
+        // its own clock here would let the schedule pass and the session pass
+        // disagree about the present, which is the bug class that bit this
+        // feature's predecessors three times.
+        continueSchedules.reconcile(
+            sessions: sessions, blockingResets: blockingResetByProvider, now: now)
         // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
         // report from the installed app useful, and rebuilds fire on every
         // hook event and timer tick so the change filter is what keeps the

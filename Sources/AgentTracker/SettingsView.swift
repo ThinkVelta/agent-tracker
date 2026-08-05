@@ -109,6 +109,23 @@ private struct GeneralSettingsTab: View {
                     .frame(width: 150)
                 }
             }
+            // Its own card, and off by default. Everything above changes what the
+            // app shows; this is the only switch that lets it act on a session
+            // while nobody is watching, so it does not belong grouped with the
+            // display preferences.
+            SettingsCard {
+                SettingsRow(
+                    title: "Scheduled continues",
+                    detail: "Lets a Claude Code session that stopped on a usage limit be armed "
+                        + "to resume itself when the window resets — a clock appears on those "
+                        + "rows. Nothing is sent yet in this version: an armed schedule is "
+                        + "worked out and written to the log instead. Never wakes the Mac."
+                ) {
+                    Toggle("", isOn: $preferences.scheduledContinues)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
         }
         .padding(20)
         .onReceive(statusTick) { _ in launchAtLogin = LoginItem.isEnabled }
