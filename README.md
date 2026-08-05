@@ -283,6 +283,15 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 ## Roadmap
 
 - [ ] Homebrew tap: `brew install --cask agent-tracker`
+- [ ] **Scheduled continues** — arm a Claude Code session that stopped on a usage
+      limit to resume itself when the window resets, from the clock on its row.
+      Off by default (Settings › General). The scheduling half is in: it works
+      out exactly when a "Continue" would be sent, writes that to
+      `~/.agent-tracker/logs/agent-tracker.log`, and **types nothing anywhere
+      yet** — delivery into a terminal is a separate change, because a keystroke
+      sent into the wrong pane, or a Return at an open permission prompt, is not
+      a bug you get to undo. It never wakes the Mac: a schedule fires if the Mac
+      is awake, or when it next wakes, and is abandoned after 12 hours.
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [ ] Migrate the Codex integration to its native hooks engine (approval-request
       red states)

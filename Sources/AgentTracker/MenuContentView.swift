@@ -254,6 +254,9 @@ struct MenuContentView: View {
             session: session,
             clockTick: store.clockTick,
             onAcknowledge: { store.acknowledge(session) },
+            arming: ContinueScheduler.availability(
+                for: session, blockingResets: store.armableResets,
+                enabled: preferences.scheduledContinues),
             onSelect: {
                 let exactTitle = store.exactWindowTitle(for: session)
                 let roster = store.sessions.map { ($0, store.exactWindowTitle(for: $0)) }
@@ -471,30 +474,139 @@ struct SessionRow: View {
     var clockTick = 0
     /// Clears a needs-you row without jumping to its terminal.
     var onAcknowledge: () -> Void = {}
+    /// Whether this row can be armed to resume itself, or why it cannot.
+    /// Defaulted so the row keeps its single-argument construction sites.
+    var arming: ContinueScheduler.Availability = .unavailable(reason: "")
     let onSelect: () -> Void
 
     @State private var hovering = false
     @State private var showsPath = false
 
-    // This used to be a checkmark button drawn over the row. It read as a
-    // rendering glitch — trailing-aligned, it landed on top of the jump arrow
-    // instead of the slot reserved for it — and it was a second visible control
-    // for something the row click already does.
-    //
-    // Kept as a context menu rather than deleted outright, because clicking a
-    // row only acknowledges when focus SUCCEEDS: without Accessibility
-    // permission every attempt returns `.needsPermission`, so every red row
-    // would be permanently stuck with no way out. That is the state a user is
-    // in before granting the permission, and again after an update invalidates
-    // it. Hidden until right-click, so it costs the row nothing.
+    /// The trailing control is a SIBLING of the row button, never inside its
+    /// label. #28 (`99608db`) removed exactly such a nested control with the
+    /// reason written down: a button within a button is unreliable in SwiftUI,
+    /// and a click landing on the row action would focus the terminal and
+    /// dismiss the panel — which for an arming control would mean arming
+    /// something and being thrown out of the list.
+    ///
+    /// One `contextMenu` with conditional items rather than two branches. The
+    /// previous shape attached it only to needs-you rows, and adding a second
+    /// branch here would have dropped "Mark as seen" from exactly the rows this
+    /// feature targets.
     var body: some View {
-        if session.state == .needsYou {
-            rowButton.contextMenu {
+        VStack(spacing: 3) {
+            ZStack(alignment: .trailing) {
+                rowButton
+                trailingAffordance
+            }
+            if editing { editorPanel }
+        }
+        .contextMenu {
+            if session.state == .needsYou {
+                // Kept because clicking a row only acknowledges when focus
+                // SUCCEEDS: without Accessibility permission every attempt
+                // returns `.needsPermission`, so every red row would be stuck
+                // with no way out.
                 Button("Mark as seen", action: onAcknowledge)
             }
-        } else {
-            rowButton
+            if armedSchedule != nil {
+                Button("Cancel scheduled continue") {
+                    continues.disarm(sessionId: session.sessionId)
+                }
+            }
         }
+    }
+
+    // MARK: - Scheduled continues
+
+    /// The shared store, observed directly rather than passed in: `SessionRow`'s
+    /// parent has two construction sites and a new required parameter would break
+    /// `RenderPreview`.
+    @ObservedObject private var continues = ContinueSchedules.shared
+    @ObservedObject private var preferences = Preferences.shared
+
+    @State private var editing = false
+    @State private var draft = ContinueDraft()
+
+    private var armedSchedule: ScheduledContinue? {
+        continues.schedule(for: session.sessionId)
+    }
+
+    /// Shown greyed with its reason only where a user would plausibly reach for
+    /// it — a stopped row, with the feature on. Everywhere else the row keeps the
+    /// decorative jump arrow it has always had, rather than growing a permanently
+    /// disabled control.
+    private var explainsUnavailability: Bool {
+        preferences.scheduledContinues && session.state == .needsYou && arming.reason != nil
+    }
+
+    private var trailingAffordance: some View {
+        Group {
+            if armedSchedule != nil {
+                armingButton(icon: "clock.fill", tint: .accentColor, alwaysVisible: true)
+            } else if arming.resetsAt != nil {
+                armingButton(icon: "clock", tint: .secondary, alwaysVisible: false)
+            } else if explainsUnavailability {
+                armingButton(
+                    icon: "clock", tint: Color.secondary.opacity(0.5), alwaysVisible: false)
+            } else {
+                Image(systemName: "arrow.up.forward.app")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                    .opacity(hovering ? 1 : 0)
+                    .frame(width: Theme.Metrics.rowTrailingControl)
+            }
+        }
+        .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
+    }
+
+    private func armingButton(icon: String, tint: Color, alwaysVisible: Bool) -> some View {
+        // Interactive only where it can do something, and only while hovered:
+        // an invisible live control would carve a hole out of the row's own
+        // hit area, which is the other half of what #28 got wrong.
+        let interactive = armedSchedule != nil || arming.resetsAt != nil
+        return Button {
+            draft = ContinueDraft(schedule: armedSchedule)
+            editing.toggle()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .frame(width: Theme.Metrics.rowTrailingControl)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(tint)
+        .opacity(alwaysVisible || hovering ? 1 : 0)
+        .allowsHitTesting(hovering && interactive)
+        .accessibilityLabel(
+            armedSchedule == nil ? "Schedule a continue" : "Edit scheduled continue")
+    }
+
+    private var editorPanel: some View {
+        ContinueEditor(
+            draft: $draft,
+            resetsAt: arming.resetsAt ?? armedSchedule?.armedForResetAt,
+            isArmed: armedSchedule != nil,
+            unavailableReason: arming.reason,
+            onArm: {
+                guard let moment = arming.resetsAt ?? armedSchedule?.armedForResetAt else { return }
+                continues.arm(
+                    ScheduledContinue(
+                        sessionId: session.sessionId,
+                        provider: session.provider,
+                        message: draft.message,
+                        armedForResetAt: moment,
+                        repeats: draft.repeats,
+                        sendsOnWake: draft.sendsOnWake,
+                        // Preserved, so editing the text of a schedule that has
+                        // already fired cannot make it owe that moment again.
+                        settledThrough: armedSchedule?.settledThrough))
+                editing = false
+            },
+            onCancel: {
+                continues.disarm(sessionId: session.sessionId)
+                editing = false
+            },
+            onDismiss: { editing = false })
     }
 
     private var rowButton: some View {
@@ -526,10 +638,12 @@ struct SessionRow: View {
                 Text(relativeTime)
                     .font(Theme.Typography.timestamp)
                     .foregroundStyle(.tertiary)
-                Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .opacity(hovering ? 1 : 0)
+                // The slot the trailing control draws into, and the LAST element
+                // of the HStack. #28's bug was reserving it before the arrow
+                // while the control was trailing-aligned, so the control painted
+                // on top of the glyph instead of into the gap left for it.
+                Color.clear
+                    .frame(width: Theme.Metrics.rowTrailingControl, height: 12)
             }
             .padding(.horizontal, Theme.Metrics.rowHorizontalPadding)
             .padding(.vertical, Theme.Metrics.rowVerticalPadding)

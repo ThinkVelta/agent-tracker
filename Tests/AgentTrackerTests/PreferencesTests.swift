@@ -18,6 +18,9 @@ final class PreferencesTests {
         #expect(preferences.appearanceOverride == .system)
         #expect(preferences.idleFolding == .past(Theme.Metrics.idleAutoCollapseThreshold))
         #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
+        // Off by default: the only switch here that lets the app act on a
+        // session rather than just display it.
+        #expect(preferences.scheduledContinues == false)
     }
 
     @Test func everyPreferenceRoundTrips() {
@@ -26,12 +29,14 @@ final class PreferencesTests {
         first.appearanceOverride = .dark
         first.idleFolding = .always
         first.autoAckDwell = 10
+        first.scheduledContinues = true
 
         // A second instance over the same suite is "relaunch the app".
         let second = Preferences(defaults: defaults)
         #expect(second.appearanceOverride == .dark)
         #expect(second.idleFolding == .always)
         #expect(second.autoAckDwell == 10)
+        #expect(second.scheduledContinues)
     }
 
     @Test func idleFoldingStorageCoversAllShapes() {
