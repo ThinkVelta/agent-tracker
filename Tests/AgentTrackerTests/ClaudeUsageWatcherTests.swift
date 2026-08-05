@@ -55,8 +55,12 @@ final class ClaudeUsageWatcherTests {
 
     /// Non-throwing fixture builder: a failed encode yields an empty line, which
     /// parses as nothing and fails the test visibly.
+    ///
+    /// `.sortedKeys` because unordered output makes any fixture that is compared
+    /// or split byte-wise nondeterministic between runs.
     private func jsonLine(_ object: [String: Any]) -> String {
-        let data = (try? JSONSerialization.data(withJSONObject: object)) ?? Data()
+        let data =
+            (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])) ?? Data()
         return String(data: data, encoding: .utf8) ?? ""
     }
 
@@ -169,7 +173,12 @@ final class ClaudeUsageWatcherTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         directories.append(directory)
         let url = directory.appendingPathComponent("transcript.jsonl")
-        let half = String(refusalLine.prefix(refusalLine.count / 2))
+        // Serialize ONCE and split that: `refusalLine` re-encodes a dictionary on
+        // every access, and JSON key order is not guaranteed, so reading it twice
+        // can hand back two different orderings — whose halves concatenate into
+        // invalid JSON. (Caught by CI; it passed locally only by luck.)
+        let line = refusalLine
+        let half = String(line.prefix(line.count / 2))
         try #require((filler(0) + "\n" + half).data(using: .utf8)).write(to: url)
 
         let watcher = ClaudeUsageWatcher()
@@ -179,7 +188,7 @@ final class ClaudeUsageWatcherTests {
         let handle = try FileHandle(forWritingTo: url)
         try handle.seekToEnd()
         try handle.write(
-            contentsOf: #require(String(refusalLine.dropFirst(half.count)).data(using: .utf8)))
+            contentsOf: #require(String(line.dropFirst(half.count)).data(using: .utf8)))
         try? handle.close()
         #expect(watcher.check([session(url)]).count == 1)
     }
