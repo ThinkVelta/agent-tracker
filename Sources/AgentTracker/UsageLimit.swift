@@ -90,14 +90,26 @@ struct UsageLimit: Equatable {
 struct AccountLimits: Equatable {
     private var byProvider: [String: [UsageLimit.Window: UsageLimit]] = [:]
 
+    /// How far apart two resets can be and still be the same window.
+    ///
+    /// The sources do not agree to the second. A refusal message prints the reset
+    /// as a wall-clock time ("resets 1:20am"), so reconstructing it truncates to
+    /// the minute, while the statusline reports the exact epoch second. Treating
+    /// those as different windows would let the *proactive* reading — which says
+    /// nothing is wrong — outrank the refusal that says work has stopped, and the
+    /// row would go quiet exactly when it mattered. Two minutes is far more than
+    /// the truncation and far less than the shortest window.
+    private static let sameWindowTolerance: TimeInterval = 120
+
     /// Merges a reading in, commutatively — the order readings arrive in is
     /// whatever order a dictionary of trackers iterated, so it must not matter.
     ///
-    /// A later reset means a newer window and simply replaces. **Equal resets are
-    /// the common case, not an edge case**: every session on one account shares
-    /// that account's reset instant, so two sessions routinely report the same
-    /// window with different progress. Those merge by strength — usage only rises
-    /// within a window, and once reached it stays reached until the reset.
+    /// A materially later reset means a newer window and simply replaces.
+    /// **Matching resets are the common case, not an edge case**: every session
+    /// on one account shares that account's reset instant, and the same window is
+    /// reported by the statusline and by a refusal. Those merge by strength —
+    /// usage only rises within a window, once reached it stays reached until the
+    /// reset, and the later of two near-identical resets is the unrounded one.
     mutating func record(_ limit: UsageLimit, for provider: String) {
         guard let existing = byProvider[provider]?[limit.window] else {
             byProvider[provider, default: [:]][limit.window] = limit
@@ -105,13 +117,13 @@ struct AccountLimits: Equatable {
         }
         let new = limit.resetsAt ?? .distantPast
         let old = existing.resetsAt ?? .distantPast
-        if new > old {
+        if new > old.addingTimeInterval(Self.sameWindowTolerance) {
             byProvider[provider, default: [:]][limit.window] = limit
-        } else if new == old {
+        } else if old <= new.addingTimeInterval(Self.sameWindowTolerance) {
             byProvider[provider, default: [:]][limit.window] = UsageLimit(
                 window: limit.window,
                 usedPercent: [existing.usedPercent, limit.usedPercent].compactMap { $0 }.max(),
-                resetsAt: existing.resetsAt ?? limit.resetsAt,
+                resetsAt: [existing.resetsAt, limit.resetsAt].compactMap { $0 }.max(),
                 isReached: existing.isReached || limit.isReached
             )
         }

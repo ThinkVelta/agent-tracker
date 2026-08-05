@@ -82,6 +82,44 @@ final class UsageLimitTests {
         }
     }
 
+    /// The two Claude sources do not agree to the second: a refusal prints
+    /// "resets 1:20am", so reconstructing it truncates to the minute, while the
+    /// statusline reports the exact epoch. Without a tolerance the proactive
+    /// reading looks like a *newer* window and replaces the refusal, and the row
+    /// falls silent at the one moment it has something to say.
+    @Test func nearIdenticalResetsAreOneWindowSoTheBlockSurvives() {
+        let truncated = limit(.fiveHour, used: 100, resetsAt: reset, reached: true)
+        let exact = limit(
+            .fiveHour, used: 61, resetsAt: reset.addingTimeInterval(37), reached: false)
+
+        for readings in [[truncated, exact], [exact, truncated]] {
+            var limits = AccountLimits()
+            for reading in readings { limits.record(reading, for: "claude-code") }
+            let merged = limits.limits(for: "claude-code").first
+            #expect(merged?.isReached == true, "the refusal was outranked by a stale percentage")
+            #expect(merged?.usedPercent == 100)
+            // The unrounded instant is the one worth keeping.
+            #expect(merged?.resetsAt == reset.addingTimeInterval(37))
+            #expect(limits.limits(for: "claude-code").count == 1)
+        }
+    }
+
+    /// The tolerance must not swallow a real rollover — a five-hour window is
+    /// hours away from the next one, so nothing legitimate lands inside it.
+    @Test func aGenuineNewWindowStillReplacesTheOldOne() {
+        var limits = AccountLimits()
+        limits.record(
+            limit(.fiveHour, used: 100, resetsAt: reset, reached: true), for: "claude-code")
+        limits.record(
+            limit(
+                .fiveHour, used: 3, resetsAt: reset.addingTimeInterval(5 * 3600), reached: false),
+            for: "claude-code")
+        let current = limits.limits(for: "claude-code").first
+        #expect(current?.isReached == false)
+        #expect(current?.usedPercent == 3)
+        #expect(limits.blockingLimit(for: "claude-code", now: reset.addingTimeInterval(60)) == nil)
+    }
+
     /// Two windows can both be exhausted; the one the user is actually waiting
     /// on is the one that frees up first.
     @Test func theSoonestResetIsWhatTheUserIsWaitingOn() {

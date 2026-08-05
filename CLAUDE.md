@@ -31,8 +31,10 @@ rollout files. See README for the full picture.
   - `TerminalFocusObserver.swift` — auto-acknowledges sessions whose terminal
     the user visits directly (3s dwell, exact unambiguous matches only)
   - `MenuContentView.swift` — dropdown UI
-- `integrations/` — hook script + onboarding CLI (Python, stdlib only) +
-  idempotent installers + uninstaller
+- `integrations/` — hook script + statusline wrapper + onboarding CLI (Python,
+  stdlib only) + idempotent installers + uninstaller. The statusline wrapper is
+  opt-in: it occupies Claude's single `statusLine` slot to capture the usage
+  windows, then `exec`s whatever command it displaced
 
 ## Commands
 
@@ -45,7 +47,8 @@ rollout files. See README for the full picture.
   `CODESIGN_IDENTITY` overrides); `make install` places it in /Applications.
   First-run onboarding shows once (`--onboarding` re-opens it on demand)
 - Onboard: `./install.sh` (interactive picker; `--agents claude,codex --yes`
-  for automation; `integrations/uninstall.sh` reverses it)
+  for automation, `--statusline`/`--no-statusline` for Claude's usage windows;
+  `integrations/uninstall.sh` reverses it)
 - Docs images: `./scripts/make-docs-images.sh` renders the README's assets from
   synthetic sessions (`scripts/demo-sessions.py`) via the app's own
   `--render-preview`. Never screenshot the real app for docs — that publishes

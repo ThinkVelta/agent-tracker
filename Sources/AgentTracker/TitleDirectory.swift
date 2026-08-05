@@ -4,20 +4,22 @@ import Foundation
 /// Resolves a Claude Code session id to its exact terminal window title.
 ///
 /// Claude Code hook payloads carry no session name (verified against
-/// v2.1.220), but the statusline payload does: a statusline script that dumps
-/// its stdin to `~/.claude/statusline-last.json` leaves behind
+/// v2.1.220), but the statusline payload does: it holds
 /// `{session_id, session_name, …}` where `session_name` is the window title
-/// minus its leading status glyph. The file is last-writer-wins across
-/// sessions — one session's payload at a time — so this directory watches it
-/// and accumulates an id → name map; every active session's statusline
-/// refreshes constantly, so the map fills within a minute of launch. Sessions
-/// without statusline data simply stay absent and `TerminalFocuser` falls
-/// back to its path-based candidates.
+/// minus its leading status glyph. Two files can hold one, and both are read:
+/// `~/.claude/statusline-last.json`, which appears only if the user's own
+/// statusline script dumps its stdin there, and the payload agent-tracker's own
+/// statusline wrapper saves, which needs no cooperation from anyone's script.
+/// Either is last-writer-wins across sessions — one session's payload at a
+/// time — so this directory accumulates an id → name map rather than reading a
+/// snapshot; every active session's statusline refreshes constantly, so the map
+/// fills within a minute of launch. Sessions with neither file simply stay
+/// absent and `TerminalFocuser` falls back to its path-based candidates.
 @MainActor
 final class TitleDirectory {
     private(set) var titles: [String: String] = [:]
     private let directory: URL
-    private let fileURL: URL
+    private let sources: [URL]
     private var watcher: DirectoryWatcher?
     private var watchedInode: UInt64?
 
@@ -30,9 +32,13 @@ final class TitleDirectory {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
     }()
 
-    init(directory: URL = defaultDirectory) {
+    init(directory: URL = defaultDirectory, capture: URL = SessionStore.claudeStatuslineURL) {
         self.directory = directory
-        fileURL = directory.appendingPathComponent("statusline-last.json")
+        // Read in order, so the last one wins for a session both describe. The
+        // capture goes last because it is the one we know is current: a
+        // `statusline-last.json` can be a leftover from a tee the user has since
+        // removed, and it would then hold a name that never updates again.
+        sources = [directory.appendingPathComponent("statusline-last.json"), capture]
         refresh()
     }
 
@@ -46,7 +52,8 @@ final class TitleDirectory {
     /// die silently (directory deleted and recreated; the vnode source tracks
     /// the original inode), or never fire (statusline scripts that rewrite
     /// the file in place instead of atomic-renaming into it). Polling bounds
-    /// all three failure modes to one tick.
+    /// all three failure modes to one tick, and it is the only thing covering
+    /// the wrapper's capture, which lives outside the watched directory.
     func refresh() {
         armWatcherIfNeeded()
         absorbLatest()
@@ -71,10 +78,12 @@ final class TitleDirectory {
     }
 
     func absorbLatest() {
-        guard let data = try? Data(contentsOf: fileURL),
-            let entry = Self.parse(data)
-        else { return }
-        titles[entry.sessionId] = entry.name
+        for url in sources {
+            guard let data = try? Data(contentsOf: url), let entry = Self.parse(data) else {
+                continue
+            }
+            titles[entry.sessionId] = entry.name
+        }
     }
 
     /// Pure: extracts (session_id, session_name) from one statusline payload.
