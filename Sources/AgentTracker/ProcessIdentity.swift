@@ -12,7 +12,7 @@ import Foundation
 ///
 /// So identity here is pid **plus start time**, and the same call answers the
 /// other question delivery needs — whether the agent still owns its terminal.
-struct ProcessIdentity: Equatable, Codable {
+struct ProcessIdentity: Equatable, Codable, Sendable {
     var pid: Int32
     /// Start time to the microsecond. This is what makes the pair unique: the
     /// kernel will reissue a pid, but not with the same start instant.

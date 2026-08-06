@@ -63,7 +63,7 @@ enum ContinueDelivery {
     /// `terminalPid` is recorded alongside it because the id namespace does not
     /// outlive the app. A restarted Ghostty can mint the same id for a different
     /// surface, and "the id still resolves" would then be a stranger's pane.
-    struct Target: Equatable, Codable {
+    struct Target: Equatable, Codable, Sendable {
         var surfaceId: String
         /// The window title that identified this surface when it was armed.
         var title: String

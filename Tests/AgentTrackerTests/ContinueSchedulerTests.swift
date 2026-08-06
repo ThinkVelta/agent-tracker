@@ -383,6 +383,53 @@ final class ContinueSchedulerTests {
         #expect(rolled.schedules.first?.pendingMoment == nextWindow)
     }
 
+    // MARK: - What arming recorded travels to delivery untouched
+
+    /// The pane and the agent process are pure passthrough. The planner must
+    /// decide nothing with them — delivery re-verifies them, and a planner that
+    /// started reasoning about panes would be deciding *where* as well as *when*,
+    /// which is the split this whole design rests on.
+    @Test func theArmedPaneReachesTheFireWithoutInfluencingIt() throws {
+        let target = ContinueDelivery.Target(
+            surfaceId: "SURFACE-1", title: "✳ demo", terminalPid: 1419)
+        let agent = ProcessIdentity(
+            pid: 5150, startedAt: reset.addingTimeInterval(-9000), comm: "claude",
+            pgid: 5150, tpgid: 5150, tty: "ttys006")
+        var armed = schedule()
+        armed.target = target
+        armed.agent = agent
+
+        let plan = ContinueScheduler.plan(pass(now: fireMoment, schedules: [armed]))
+        let fire = try #require(plan.fires.first)
+        #expect(fire.target == target)
+        #expect(fire.agent == agent)
+
+        // And the same pass without them decides identically.
+        let bare = ContinueScheduler.plan(pass(now: fireMoment, schedules: [schedule()]))
+        #expect(bare.fires.count == plan.fires.count)
+        #expect(bare.fires.first?.lateness == fire.lateness)
+        #expect(bare.fires.first?.delay == fire.delay)
+        #expect(bare.fires.first?.target == nil)
+    }
+
+    /// Records written by the version that shipped the scheduler have no pane at
+    /// all. A non-optional field would have silently dropped every one of them on
+    /// decode — losing a schedule quietly is the worst outcome this feature has.
+    @Test func aRecordFromBeforeDeliveryExistedStillDecodes() throws {
+        let legacy = """
+            {"sessionId":"s1","provider":"claude-code","message":"Continue",\
+            "armedForResetAt":"2026-08-05T09:00:00Z","repeats":false,"sendsOnWake":true}
+            """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(
+            ScheduledContinue.self, from: try #require(legacy.data(using: .utf8)))
+        #expect(decoded.sessionId == "s1")
+        #expect(decoded.target == nil)
+        #expect(decoded.agent == nil)
+        #expect(decoded.message == "Continue")
+    }
+
     // MARK: - Availability, which is what the row explains
 
     @Test func availabilityAlwaysGivesAReasonWhenItRefuses() {
