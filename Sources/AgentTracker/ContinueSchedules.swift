@@ -23,6 +23,17 @@ final class ContinueSchedules: ObservableObject {
 
     @Published private(set) var schedules: [ScheduledContinue] = []
 
+    /// What happened on past deliveries, newest first.
+    ///
+    /// Stored separately from the schedules on purpose: a one-shot schedule is
+    /// deleted the moment it fires, before its outcome exists, so an outcome kept
+    /// on the record would only ever survive for repeating schedules.
+    @Published private(set) var receipts: [ContinueReceipt] = []
+
+    /// Enough to answer "did it fire last night, and what happened", not a
+    /// history. This is a menu bar app.
+    static let receiptsKept = 20
+
     /// Asks for a pass. Set by `SessionStore`, because a pass has to come from
     /// the place that reads the clock and the sessions together.
     var requestPass: () -> Void = {}
@@ -75,6 +86,7 @@ final class ContinueSchedules: ObservableObject {
             "would send \"\(fire.message)\" (delivery not implemented yet)"
         }
         schedules = Self.load(from: defaults)
+        receipts = Self.loadReceipts(from: defaults)
         observeSystemChanges()
     }
 
@@ -157,9 +169,40 @@ final class ContinueSchedules: ObservableObject {
                     try? await Task.sleep(for: .seconds(fire.delay))
                 }
                 let outcome = await deliver(fire)
-                await self?.log("\(fire.sessionId) — \(outcome)")
+                await self?.record(fire: fire, outcome: outcome)
             }
         }
+    }
+
+    /// Files a receipt, logs it, and tells the user. Called after the send has
+    /// already happened, so nothing here can undo or retry it — a notification
+    /// that fails to post must not turn a delivered message into a pending one.
+    private func record(fire: ContinueScheduler.Fire, outcome: String) {
+        let receipt = ContinueReceipt(
+            sessionId: fire.sessionId,
+            project: projectName(for: fire.sessionId),
+            message: fire.message,
+            at: Date(),
+            outcome: .sent,
+            detail: outcome)
+        file(receipt)
+    }
+
+    /// The public seam for a receipt, so delivery and its refusals file the same
+    /// kind of record through one path.
+    func file(_ receipt: ContinueReceipt) {
+        var updated = [receipt] + receipts
+        if updated.count > Self.receiptsKept { updated = Array(updated.prefix(Self.receiptsKept)) }
+        receipts = updated
+        persistReceipts(updated)
+        log("\(receipt.sessionId) — \(receipt.summary)")
+        Task { await ContinueNotifier.post(receipt) }
+    }
+
+    /// Best effort: a schedule can outlive the row it was armed from, and a
+    /// receipt is more useful with a name than with an opaque id.
+    private func projectName(for sessionId: String) -> String {
+        schedules.first { $0.sessionId == sessionId }?.target?.title ?? sessionId
     }
 
     /// Seconds asleep since the previous pass, from the divergence between a
@@ -281,6 +324,27 @@ final class ContinueSchedules: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         return (encoder, decoder)
     }()
+
+    /// Its own key, for the same reason the schedules have one: two values in
+    /// one `UserDefaults` key overwrite each other, which is a bug this feature
+    /// has already shipped once.
+    static let receiptsKey = "continueReceipts"
+
+    static func loadReceipts(from defaults: UserDefaults) -> [ContinueReceipt] {
+        guard let stored = defaults.object(forKey: receiptsKey) as? [String] else { return [] }
+        return stored.compactMap { entry in
+            guard let data = entry.data(using: .utf8) else { return nil }
+            return try? coder.decoder.decode(ContinueReceipt.self, from: data)
+        }
+    }
+
+    private func persistReceipts(_ updated: [ContinueReceipt]) {
+        let encoded = updated.compactMap { receipt -> String? in
+            guard let data = try? Self.coder.encoder.encode(receipt) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        defaults.set(encoded, forKey: Self.receiptsKey)
+    }
 
     static func load(from defaults: UserDefaults) -> [ScheduledContinue] {
         guard let stored = defaults.object(forKey: storageKey) as? [String] else { return [] }

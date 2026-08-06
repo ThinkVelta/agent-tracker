@@ -188,6 +188,101 @@ final class ContinueSchedulesTests {
         }
     }
 
+    // MARK: - Receipts
+
+    private func receipt(_ session: String, outcome: ContinueReceipt.Outcome = .sent)
+        -> ContinueReceipt
+    {
+        ContinueReceipt(
+            sessionId: session, project: "demo", message: "Continue", at: reset,
+            outcome: outcome, detail: "because")
+    }
+
+    /// A one-shot schedule is deleted the moment it fires, before its outcome
+    /// exists — so a receipt kept on the record would only ever survive for
+    /// repeating schedules. It has to outlive the thing that caused it.
+    @Test func aReceiptOutlivesTheScheduleThatProducedIt() throws {
+        let store = defaults()
+        let schedules = ContinueSchedules(defaults: store)
+        schedules.arm(schedule("gone"))
+        schedules.file(receipt("gone"))
+        schedules.disarm(sessionId: "gone")
+
+        #expect(schedules.schedules.isEmpty)
+        #expect(schedules.receipts.count == 1)
+
+        // And across a relaunch.
+        let reloaded = ContinueSchedules(defaults: store)
+        #expect(reloaded.schedules.isEmpty)
+        #expect(reloaded.receipts.first?.sessionId == "gone")
+        #expect(reloaded.receipts.first?.outcome == .sent)
+    }
+
+    @Test func receiptsAreNewestFirstAndBounded() {
+        let schedules = ContinueSchedules(defaults: defaults())
+        for index in 0..<(ContinueSchedules.receiptsKept + 5) {
+            schedules.file(receipt("s\(index)"))
+        }
+        #expect(schedules.receipts.count == ContinueSchedules.receiptsKept)
+        // Newest first, and the oldest fell off rather than the newest being
+        // dropped — a log that stops recording once it is full is worse than none.
+        #expect(schedules.receipts.first?.sessionId == "s\(ContinueSchedules.receiptsKept + 4)")
+        #expect(schedules.receipts.contains { $0.sessionId == "s0" } == false)
+    }
+
+    /// Receipts and schedules share a defaults domain, and this feature has
+    /// already shipped one key collision.
+    @Test func receiptsAndSchedulesDoNotShareAKey() {
+        #expect(ContinueSchedules.receiptsKey != ContinueSchedules.storageKey)
+        #expect(ContinueSchedules.receiptsKey != "scheduledContinues")
+
+        let store = defaults()
+        let schedules = ContinueSchedules(defaults: store)
+        schedules.arm(schedule("a"))
+        schedules.file(receipt("a"))
+
+        let reloaded = ContinueSchedules(defaults: store)
+        #expect(reloaded.schedules.count == 1)
+        #expect(reloaded.receipts.count == 1)
+    }
+
+    @Test func oneCorruptReceiptDoesNotLoseTheOthers() throws {
+        let store = defaults()
+        let schedules = ContinueSchedules(defaults: store)
+        schedules.file(receipt("kept-1"))
+        schedules.file(receipt("kept-2"))
+
+        var stored = try #require(store.object(forKey: ContinueSchedules.receiptsKey) as? [String])
+        stored.insert("{ not json", at: 1)
+        store.set(stored, forKey: ContinueSchedules.receiptsKey)
+
+        let reloaded = ContinueSchedules(defaults: store)
+        #expect(reloaded.receipts.map(\.sessionId).sorted() == ["kept-1", "kept-2"])
+    }
+
+    /// A refusal is a receipt too. The point of the log is that a schedule which
+    /// deliberately did nothing is as visible as one that fired.
+    @Test func aRefusalIsRecordedJustLikeASend() throws {
+        let schedules = ContinueSchedules(defaults: defaults())
+        schedules.file(receipt("blocked", outcome: .refused))
+        let filed = try #require(schedules.receipts.first)
+        #expect(filed.outcome == .refused)
+        #expect(filed.summary.contains("Not sent"))
+        #expect(filed.summary.contains("because"))
+    }
+
+    /// `UNUserNotificationCenter.current()` traps in a process with no bundle
+    /// identifier, which is what `swift run` and this test runner both are. The
+    /// guard is what keeps a development build from crashing on the first fire.
+    @Test func notifyingIsSkippedWhereThereIsNoBundle() async {
+        #expect(ContinueNotifier.isAvailable == (Bundle.main.bundleIdentifier != nil))
+        guard !ContinueNotifier.isAvailable else { return }
+        // Must be safe to call anyway — reaching UNUserNotificationCenter here
+        // would abort the whole test run rather than fail a case.
+        #expect(await ContinueNotifier.requestAuthorization() == false)
+        await ContinueNotifier.post(receipt("s1"))
+    }
+
     @Test func updatingAnUnknownSessionIsANoOp() {
         let schedules = ContinueSchedules(defaults: defaults())
         schedules.arm(schedule("a"))
