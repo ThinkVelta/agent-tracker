@@ -250,6 +250,11 @@ def handle_hook(provider, states):
         # view of the same session (rollout files), and it needs to know which
         # rows came from something that watched the whole lifecycle.
         "origin": "hook",
+        # Whether this session acts without asking. Both providers put it on
+        # every payload, which for Codex is the only way to get it at all —
+        # there is no transcript to read it out of, and the gate that refuses an
+        # unrecognized mode treats "absent" as permitted.
+        "permissionMode": payload.get("permission_mode"),
     }
 
     if event == "SessionEnd":

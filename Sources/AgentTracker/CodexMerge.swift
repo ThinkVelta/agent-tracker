@@ -92,6 +92,7 @@ enum CodexMerge {
             session.cwd = hook.cwd ?? session.cwd
             session.lastMessage = hook.lastMessage ?? session.lastMessage
             session.origin = hook.origin
+            session.permissionMode = hook.permissionMode
             // pid stays the scanner's: it comes from whichever process holds the
             // rollout open, which is what the store's liveness prune asks about.
             session.pid = session.pid ?? hook.pid

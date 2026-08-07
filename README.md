@@ -216,8 +216,11 @@ files, so a session that predates the hooks still shows up.
 
 ## Scheduled continues
 
-A Claude Code session that stops on a usage limit can be armed, from the clock on
-its row, to resume itself when the window resets. **Off by default** — it is the
+A session that stops on a usage limit — Claude Code or Codex — can be armed, from
+the clock on its row, to resume itself when the window resets. Codex's window is
+weekly rather than five-hourly, which changes nothing here: both providers report
+the moment their window resets, and that moment is what gets scheduled.
+**Off by default** — it is the
 only thing this app does that acts on a session rather than reporting on one, so
 it has its own switch in Settings › General.
 
@@ -252,11 +255,12 @@ delivery refuses far more often than it fires, and always says why:
   re-resolved before writing, and any disagreement aborts — a closed window, a
   reused one, a restarted Ghostty (surface ids are only meaningful within one run)
   or a recycled pid all refuse.
-- **Only Ghostty, only Claude Code.** Terminal.app is excluded permanently: its
-  entire scripting dictionary has one text-injecting command, `do script`, which
-  *runs* what you give it. Codex is not armable yet — its native hooks do
-  distinguish "turn complete" from "approval prompt open", which is what the
-  gate needs, but wiring that into the scheduler is still to come.
+- **Only Ghostty.** Terminal.app is excluded permanently: its entire scripting
+  dictionary has one text-injecting command, `do script`, which *runs* what you
+  give it. Claude Code and Codex are both armable, on the same terms — each
+  reports a finished turn through its own hooks, and a session tracked only by
+  reading Codex's rollout files is refused, because a rollout cannot say
+  "waiting on you" and a send at a prompt would answer it.
 
 Every attempt is recorded — sent, refused or failed. The most recent outcome for a
 session shows in its scheduling panel (click the clock), and every one is written
@@ -270,13 +274,19 @@ are still in the log and the panel.
 
 ### Permission modes
 
-Every mode Claude Code is known to run in is allowed, **including
+Every mode either agent is known to run in is allowed, **including
 `bypassPermissions`**. Auto-resume adds no capability such a session did not
 already have — typing "Continue" yourself has exactly the same effect — so the
 only thing that changes is that you are not at the keyboard when it starts. The
 arming panel says so plainly for those modes rather than refusing. A mode this
 version does not recognise *is* refused, because a mode nobody has seen cannot be
 reasoned about.
+
+Where the mode comes from differs. Claude writes it into its transcript, which is
+read on arming; Codex publishes no transcript, so the mode arrives on its hook
+payloads instead. That matters more than it sounds: an absent mode counts as
+permitted, so a Codex session with no source at all would have slipped this gate
+rather than been stopped by it.
 
 ## Known limitations
 
@@ -362,9 +372,9 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 ## Roadmap
 
 - [ ] Homebrew tap: `brew install --cask agent-tracker`
-- [x] **Scheduled continues** — arm a Claude Code session that stopped on a usage
-      limit to resume itself when the window resets, from the clock on its row.
-      Off by default (Settings › General). See below.
+- [x] **Scheduled continues** — arm a session that stopped on a usage limit to
+      resume itself when the window resets, from the clock on its row. Claude
+      Code and Codex. Off by default (Settings › General). See below.
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [x] Migrate the Codex integration to its native hooks engine (approval-request
       red states)

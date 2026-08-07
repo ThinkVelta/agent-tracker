@@ -88,6 +88,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// `CodexMerge` reads it — a hook watched the whole session, so its state
     /// outranks anything derived from a rollout file after the fact.
     var origin: String?
+    /// The mode the agent is running in, as its hook reported it. For Codex
+    /// this is the only source: it publishes no transcript for the app to read
+    /// one out of, and `ContinueDelivery` treats an absent mode as permitted.
+    var permissionMode: String?
     /// Which terminal pane the session occupies, as the hook found it. Every
     /// field is optional: it depends on the terminal, and sessions the Codex
     /// scanner discovers never had a hook run at all.
@@ -105,7 +109,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schema, provider, sessionId, pid, cwd, state, reason, lastEvent
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
-        case terminal, origin
+        case terminal, origin, permissionMode
     }
 
     var id: String { "\(provider)-\(sessionId)" }

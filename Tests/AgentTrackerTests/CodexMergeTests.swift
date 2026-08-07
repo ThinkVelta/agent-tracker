@@ -166,6 +166,21 @@ struct CodexMergeTests {
         #expect(resolution.scannerRows[0].pid == 999)
     }
 
+    /// The scanner has no permission mode to offer, and an absent one is treated
+    /// as permitted — so losing the hook's would quietly disarm that gate.
+    @Test("the hook's permission mode reaches the row the scheduler reads")
+    func permissionModeIsCarried() {
+        var hook = row("s1", origin: "hook")
+        hook.permissionMode = "bypassPermissions"
+        let resolution = CodexMerge.resolve(
+            fileRows: [hook],
+            scanned: [scannerRow("s1")],
+            threadMap: ["s1": "s1"],
+            subagentThreads: [])
+
+        #expect(resolution.scannerRows[0].permissionMode == "bypassPermissions")
+    }
+
     @Test("a hook without a working directory does not blank the scanner's")
     func hookDoesNotBlankScannerFields() {
         let hook = row("s1", origin: "hook", cwd: nil)

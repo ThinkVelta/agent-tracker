@@ -628,11 +628,14 @@ struct SessionRow: View {
         let sessionId = session.sessionId
         Task {
             let mode = await Task.detached { () -> String? in
-                guard
-                    let path = SessionStore.loadSessionFromDisk(sessionId: sessionId)?
-                        .transcriptPath
-                else { return nil }
-                return ContinueSender.permissionMode(inTranscriptAt: path)
+                guard let row = SessionStore.loadSessionFromDisk(sessionId: sessionId) else {
+                    return nil
+                }
+                // Same order as the delivery gate reads it, so the panel cannot
+                // promise one thing and the send decide another.
+                return row.transcriptPath.flatMap {
+                    ContinueSender.permissionMode(inTranscriptAt: $0)
+                } ?? row.permissionMode
             }.value
             unattendedWarning = ContinueDelivery.unattendedWarning(for: mode)
         }

@@ -135,6 +135,12 @@ final class ContinueSenderTests {
             ("kill switch off", context(enabled: false), fire()),
             ("not at a finished turn", context(lastEvent: "Notification"), fire()),
             ("state unknown", context(lastEvent: nil), fire()),
+            // The Codex pair. "PermissionRequest" is a prompt waiting, and
+            // "task_complete" is what the rollout scanner writes when no hook
+            // covered the session — a row that cannot distinguish the two, so
+            // it must never be sent into.
+            ("codex prompt open", context(lastEvent: "PermissionRequest"), fire()),
+            ("codex seen only by the scanner", context(lastEvent: "task_complete"), fire()),
             ("unknown permission mode", context(mode: "yoloMode"), fire()),
             ("agent gone", context(live: agent(pgid: 0, tpgid: 0)), fire()),
             (
