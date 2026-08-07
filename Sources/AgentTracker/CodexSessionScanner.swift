@@ -3,8 +3,18 @@ import Darwin
 import Foundation
 
 /// Derives live Codex session state by watching rollout files under
-/// `~/.codex/sessions` directly (Codex has no turn-start hook, so state files
-/// alone can never show "running"). Read-only: never writes under ~/.codex.
+/// `~/.codex/sessions` directly. Read-only: never writes under ~/.codex.
+///
+/// The fallback rather than the primary source since Codex moved onto its
+/// native hooks, and still load-bearing for three cases the hooks cannot cover:
+/// a session that started before they were installed, a Codex too old to have
+/// them, and hooks registered but not yet trusted — Codex runs a hook only once
+/// the user accepts its review prompt, and skips untrusted ones silently.
+///
+/// It also remains the only source of Codex usage limits, which arrive on
+/// `token_count` lines and in no hook payload. What it cannot see is an open
+/// approval prompt: no rollout line means "waiting on you", which is why
+/// `CodexMerge` lets a hook overrule it.
 @MainActor
 final class CodexSessionScanner: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []

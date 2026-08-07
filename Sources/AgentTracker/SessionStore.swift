@@ -139,8 +139,12 @@ final class SessionStore: ObservableObject {
                 Task { @MainActor in self?.scheduleRefreshTimer(interval: interval) }
             }
 
-        // Codex has no turn-start hook; live state comes from watching rollout
-        // files directly.
+        // Kept now that Codex reports through its own hooks, because three
+        // kinds of session still have nothing else: one that started before the
+        // hooks were installed, a Codex too old to have them, and hooks that
+        // are registered but not yet trusted — which `codex exec` skips
+        // silently. It is also the only source of Codex usage limits, which no
+        // hook payload carries. `CodexMerge` decides where the two overlap.
         let scanner = CodexSessionScanner()
         codexScanner = scanner
         scannerSubscription = scanner.$sessions
@@ -174,10 +178,10 @@ final class SessionStore: ObservableObject {
         for limit in ClaudeStatusline.limits(at: Self.claudeStatuslineURL) {
             accountLimits.record(limit, for: "claude-code")
         }
-        // Codex has no hook to write a state file, and FSEvents does not
-        // reliably report appends to its rollouts — so the scanner's cheap
-        // re-read rides this same tick. Without it, a Codex turn starting or
-        // finishing stayed invisible until the scanner's 30s liveness pass.
+        // FSEvents does not reliably report appends to Codex's rollouts, so the
+        // scanner's cheap re-read rides this same tick. Without it, a turn
+        // starting or finishing in a session the hooks do not cover stayed
+        // invisible until the scanner's 30s liveness pass.
         codexScanner?.refreshFiles()
         let fileManager = FileManager.default
         var loaded: [AgentSession] = []
