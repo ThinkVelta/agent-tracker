@@ -14,11 +14,13 @@ final class ContinueSchedulerTests {
     private func session(
         _ id: String = "s1",
         provider: String = "claude-code",
-        lastEvent: String? = "Stop"
+        lastEvent: String? = "Stop",
+        origin: String? = "hook"
     ) -> AgentSession {
         var session = AgentSession(
             provider: provider, sessionId: id, cwd: "/Users/dev/demo", state: .needsYou)
         session.lastEvent = lastEvent
+        session.origin = origin
         return session
     }
 
@@ -460,6 +462,20 @@ final class ContinueSchedulerTests {
             for: session("c", provider: "codex"), armableResetBySession: ["c": reset], enabled: true
         )
         #expect(codex == .available(resetsAt: reset))
+
+        // A Codex row the rollout scanner produced can never satisfy R1, so
+        // offering the clock would promise a send that is held every pass and
+        // then abandoned. Refused while there is still someone reading.
+        let scannerOnly = ContinueScheduler.availability(
+            for: session("c2", provider: "codex", lastEvent: "task_complete", origin: nil),
+            armableResetBySession: ["c2": reset], enabled: true)
+        #expect(scannerOnly.reason?.contains("hook review prompt") == true)
+
+        // Claude has no hookless row to refuse — a Claude row exists because a
+        // hook wrote it — so the same absence must not lock Claude out.
+        let claudeWithoutOrigin = ContinueScheduler.availability(
+            for: session(origin: nil), armableResetBySession: resets, enabled: true)
+        #expect(claudeWithoutOrigin == .available(resetsAt: reset))
 
         let notBlocked = ContinueScheduler.availability(
             for: session(), armableResetBySession: [:], enabled: true)

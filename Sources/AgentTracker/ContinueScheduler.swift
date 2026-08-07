@@ -134,6 +134,18 @@ enum ContinueScheduler {
     /// untrusted refuses rather than firing into the dark.
     static let supportedProviders: Set<String> = ["claude-code", "codex"]
 
+    /// Providers the app can also describe *without* their hooks, and whose
+    /// hookless description is not good enough to arm on.
+    ///
+    /// Only Codex: a Claude row exists because a hook wrote it, so there is no
+    /// hookless Claude row to refuse. Asking `origin` rather than asking Codex
+    /// whether the hooks are trusted, because `origin` is the same evidence one
+    /// step later — it says a hook actually ran for *this* session, which is the
+    /// thing that has to be true.
+    static func requiresHookCoverage(_ provider: String) -> Bool {
+        provider == "codex"
+    }
+
     /// Everything a decision depends on, as one value.
     struct Pass: Equatable {
         var now: Date
@@ -266,6 +278,18 @@ enum ContinueScheduler {
         guard supportedProviders.contains(session.provider) else {
             return .unavailable(
                 reason: "\(session.providerDisplayName) cannot be resumed automatically")
+        }
+        // Refused at arming rather than at delivery, though delivery would catch
+        // it too. A row the rollout scanner produced can never satisfy R1 — its
+        // `lastEvent` is `task_complete`, never `Stop` — so arming one would
+        // offer a clock that is held on every pass and then abandoned twelve
+        // hours later, which reads as the feature simply not working. Say no
+        // while there is still someone to read the reason.
+        guard requiresHookCoverage(session.provider) == false || session.origin == "hook" else {
+            return .unavailable(
+                reason: "Accept Codex's hook review prompt first — until then it is tracked by "
+                    + "reading its session files, which cannot tell an approval prompt from a "
+                    + "finished turn")
         }
         guard let moment = armableResetBySession[session.sessionId] else {
             return .unavailable(reason: "Available once this session is waiting on a usage limit")
