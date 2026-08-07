@@ -181,6 +181,9 @@ enum ContinueScheduler {
 
     struct Fire: Equatable, Sendable {
         var sessionId: String
+        /// Carried so delivery re-reads the row this schedule was armed against,
+        /// rather than the first row on disk wearing the same session id.
+        var provider: String
         var message: String
         /// Waited before this one is sent, staggering a fan-out.
         var delay: TimeInterval
@@ -444,6 +447,7 @@ enum ContinueScheduler {
             fires.append(
                 Fire(
                     sessionId: schedule.sessionId,
+                    provider: schedule.provider,
                     message: schedule.message,
                     delay: Double(dueCount) * deliveryStagger,
                     lateness: lateness,

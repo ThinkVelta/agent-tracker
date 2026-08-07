@@ -280,7 +280,8 @@ final class ContinueSchedules: ObservableObject {
         -> ContinueDeliveryResult
     {
         let enabled = await MainActor.run { Preferences.shared.scheduledContinues }
-        let session = SessionStore.loadSessionFromDisk(sessionId: fire.sessionId)
+        let session = SessionStore.loadSessionFromDisk(
+            provider: fire.provider, sessionId: fire.sessionId)
         let context = SendContext(
             enabled: enabled,
             lastEvent: session?.lastEvent,

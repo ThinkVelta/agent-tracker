@@ -409,7 +409,14 @@ final class SessionStore: ObservableObject {
     /// one "the turn had finished" is a claim about the past. Reading the file
     /// rather than the published array is also what keeps this callable from the
     /// detached delivery task without hopping to the main actor.
-    nonisolated static func loadSessionFromDisk(sessionId: String) -> AgentSession? {
+    /// - Parameter provider: narrows the search when the caller knows it. Two
+    ///   providers minting the same session id is not a thing that happens —
+    ///   both issue UUIDs — but the fire path uses this row to decide whether to
+    ///   type into a terminal, and a lookup that *cannot* answer with the wrong
+    ///   session is worth more than one that merely does not.
+    nonisolated static func loadSessionFromDisk(
+        provider: String? = nil, sessionId: String
+    ) -> AgentSession? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard
@@ -419,7 +426,8 @@ final class SessionStore: ObservableObject {
         for file in files where file.pathExtension == "json" {
             guard let data = try? Data(contentsOf: file),
                 let session = try? decoder.decode(AgentSession.self, from: data),
-                session.sessionId == sessionId
+                session.sessionId == sessionId,
+                provider == nil || session.provider == provider
             else { continue }
             return session
         }

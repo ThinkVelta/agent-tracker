@@ -626,9 +626,13 @@ struct SessionRow: View {
     /// acts without asking is worth saying out loud before the user arms it.
     private func readPermissionMode() {
         let sessionId = session.sessionId
+        let provider = session.provider
         Task {
             let mode = await Task.detached { () -> String? in
-                guard let row = SessionStore.loadSessionFromDisk(sessionId: sessionId) else {
+                guard
+                    let row = SessionStore.loadSessionFromDisk(
+                        provider: provider, sessionId: sessionId)
+                else {
                     return nil
                 }
                 // Same order as the delivery gate reads it, so the panel cannot
