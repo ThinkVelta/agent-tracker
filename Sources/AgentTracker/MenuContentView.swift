@@ -732,7 +732,11 @@ struct SessionRow: View {
         }
         .buttonStyle(.plain)
         .overlay(alignment: .bottomLeading) {
-            if showsPath, let cwd = session.primaryDirectory {
+            // Not while the arming panel is open: the card floats below the
+            // row and would land on top of the panel's own text. Hovering to
+            // read a path and reading the panel are different activities, and
+            // the panel is the one the user deliberately opened.
+            if showsPath, !editing, let cwd = session.primaryDirectory {
                 Text(cwd)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)

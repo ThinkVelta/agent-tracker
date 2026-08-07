@@ -190,10 +190,18 @@ private struct GeneralSettingsTab: View {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundStyle(.green)
                         } else {
+                            // Disabled ONLY while a check is in flight. `nil`
+                            // means "Ghostty isn't running", but it is also the
+                            // state before the first check returns — and the
+                            // status is read once, so a Ghostty started after
+                            // Settings opened would leave the only route to the
+                            // grant disabled for the rest of the session. The
+                            // click re-checks anyway, and reports plainly if
+                            // Ghostty still is not there.
                             Button(automationChecking ? "Checking…" : "Allow…") {
                                 checkAutomationPermission()
                             }
-                            .disabled(automationChecking || automationGranted == nil)
+                            .disabled(automationChecking)
                         }
                     }
                 }
@@ -201,6 +209,15 @@ private struct GeneralSettingsTab: View {
         }
         .padding(20)
         .task { await refreshAutomationStatus() }
+        // Ghostty may be launched, quit, or have its permission changed in System
+        // Settings while this window sits open, so the status is re-read whenever
+        // the app comes forward rather than only once.
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification)
+        ) { _ in
+            Task { await refreshAutomationStatus() }
+        }
         .onReceive(statusTick) { _ in launchAtLogin = LoginItem.isEnabled }
         .onAppear { launchAtLogin = LoginItem.isEnabled }
     }
