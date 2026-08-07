@@ -20,6 +20,12 @@ struct OnboardingView: View {
         case confirming
         case running
         case failed(String)
+        /// Installed, but not yet working. Codex runs a hook only once the user
+        /// has accepted its own review prompt, and nothing tells them that: the
+        /// installer succeeded, the checkmark is green, and `codex exec` skips
+        /// untrusted hooks silently. Without this the honest outcome of
+        /// onboarding is a Codex that reports nothing and no reason why.
+        case actionNeeded(String)
     }
 
     private let agents = Onboarding.installableAgents(
@@ -109,6 +115,7 @@ struct OnboardingView: View {
             }
             if hookPhase == .confirming { hookConfirmation }
             if case .failed(let output) = hookPhase { hookFailure(output) }
+            if case .actionNeeded(let note) = hookPhase { hookActionNeeded(note) }
         }
     }
 
@@ -172,18 +179,46 @@ struct OnboardingView: View {
         .padding(.bottom, 10)
     }
 
+    /// Succeeded, but the user is not done. Deliberately not styled as an
+    /// error — nothing went wrong — and deliberately not dismissible on its
+    /// own, since the row above it now shows a green checkmark that would
+    /// otherwise be the last word.
+    private func hookActionNeeded(_ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("One step left")
+                .font(.system(size: 11, weight: .semibold))
+            Text(note)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 10)
+    }
+
     private func runInstallers() async {
         hookPhase = .running
         var failures: [String] = []
+        var installed: [Onboarding.Agent] = []
         for agent in agents {
             let outcome = await HookSetup.runInstaller(for: agent)
-            if !outcome.succeeded {
+            if outcome.succeeded {
+                installed.append(agent)
+            } else {
                 failures.append("\(agent.displayName):\n\(outcome.output)")
             }
         }
         claudeInstalled = HookSetup.claudeHookInstalled()
         codexInstalled = HookSetup.codexHookInstalled()
-        hookPhase = failures.isEmpty ? .idle : .failed(failures.joined(separator: "\n"))
+        if !failures.isEmpty {
+            hookPhase = .failed(failures.joined(separator: "\n"))
+        } else if let note = Onboarding.postInstallAction(for: installed) {
+            hookPhase = .actionNeeded(note)
+        } else {
+            hookPhase = .idle
+        }
     }
 
     private var loginRow: some View {

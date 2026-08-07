@@ -203,6 +203,17 @@ def codex_states(payload):
     plays for Claude — the one event that means a prompt is waiting rather than
     a turn having finished. That distinction is the whole reason to prefer
     these hooks over the legacy `notify`, which cannot see it.
+
+    No subagent guard here, and that is measured rather than assumed: across
+    1213 rollouts on a real multi-agent machine, every one of the 1171 subagent
+    threads carried the *root* session's `session_id` — only the thread id
+    differs, with `parent_thread_id` pointing up the tree — and all 19 sessions
+    that had subagents shared one `session_id` with their root. So a hook fired
+    inside a subagent writes to the root session's file, which is what we want:
+    its `PreToolUse` reads as the session working, and its `PermissionRequest`
+    turns the session red, because the user really does have to approve it.
+    This is what the legacy `notify` gets wrong — it reports a thread id, which
+    is why `CodexSubagentLedger` and `threadIdToSession` exist.
     """
     tool = payload.get("tool_name")
     return {

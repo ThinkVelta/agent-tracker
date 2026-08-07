@@ -62,6 +62,16 @@ final class OnboardingTests {
         }
     }
 
+    /// A successful Codex install is not a finished Codex install.
+    @Test func codexInstallLeavesTheTrustStepToSay() {
+        #expect(Onboarding.Agent.claude.postInstallAction == nil)
+        #expect(Onboarding.Agent.codex.postInstallAction != nil)
+        #expect(Onboarding.postInstallAction(for: []) == nil)
+        #expect(Onboarding.postInstallAction(for: [.claude]) == nil)
+        #expect(Onboarding.postInstallAction(for: [.codex])?.contains("trusted") == true)
+        #expect(Onboarding.postInstallAction(for: [.claude, .codex])?.contains("trusted") == true)
+    }
+
     // MARK: - HookSetup probes (temp home, never the real one)
 
     private func makeHome() throws -> URL {

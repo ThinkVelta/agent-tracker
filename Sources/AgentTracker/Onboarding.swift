@@ -61,5 +61,29 @@ enum Onboarding {
             case .codex: return "~/.codex/hooks.json and config.toml"
             }
         }
+
+        /// What the user still has to do once the installer has succeeded.
+        ///
+        /// Stated by the agent rather than scraped from installer output: the
+        /// installers write their stdout and stderr into one pipe, so the only
+        /// way to show this would be to show everything they printed. This is a
+        /// fixed property of registering a Codex hook, not a condition the run
+        /// discovers.
+        var postInstallAction: String? {
+            switch self {
+            case .claude: return nil
+            case .codex:
+                return
+                    "Open Codex once and accept the hook review prompt. It runs a hook only "
+                    + "after you have trusted it, and skips untrusted hooks silently — so until "
+                    + "you do, Codex sessions report nothing and nothing says why."
+            }
+        }
+    }
+
+    /// The one note worth showing after a successful install, or nothing.
+    static func postInstallAction(for agents: [Agent]) -> String? {
+        let actions = agents.compactMap(\.postInstallAction)
+        return actions.isEmpty ? nil : actions.joined(separator: "\n\n")
     }
 }
