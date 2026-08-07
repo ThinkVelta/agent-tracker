@@ -143,6 +143,24 @@ enum GhosttyScripting {
 
     // MARK: - Writing
 
+    /// How a command reports that it did the thing.
+    ///
+    /// Read straight out of `Ghostty.sdef`, because the two write commands do NOT
+    /// agree: `perform action` declares `<result type="boolean"` ("True when the
+    /// action was performed"), while `send key` declares no result at all. One
+    /// shared rule cannot serve both — requiring a result would report every
+    /// successful Return as a failure, and accepting a missing one would let an
+    /// unconfirmed write be treated as done.
+    private enum Acknowledgement {
+        /// The reply must carry an explicit `true`. Anything else — false, a
+        /// missing result, an unreadable one — is a failure, because the next
+        /// step after a successful write is pressing Return.
+        case requiresTrue
+        /// The command returns nothing, so completing without an error IS the
+        /// acknowledgement.
+        case completesWithoutError
+    }
+
     /// Ghostty's own event codes for the two write commands, from `Ghostty.sdef`.
     private enum Write {
         /// `perform action` — takes any keybind action string.
@@ -173,7 +191,8 @@ enum GhosttyScripting {
         // — which is what keeps a newline from becoming an unrequested Return.
         performAction(
             onSurface: surfaceId, pid: pid, parameter: Write.onTerminal,
-            event: Write.performAction, direct: NSAppleEventDescriptor(string: "text:\(text)"))
+            event: Write.performAction, direct: NSAppleEventDescriptor(string: "text:\(text)"),
+            acknowledgement: .requiresTrue)
     }
 
     /// Presses Return in one surface. Structurally separate from `writeText` so
@@ -181,12 +200,14 @@ enum GhosttyScripting {
     static func pressReturn(inSurface surfaceId: String, pid: pid_t) -> Bool {
         performAction(
             onSurface: surfaceId, pid: pid, parameter: Write.toTerminal,
-            event: Write.sendKey, direct: NSAppleEventDescriptor(string: "enter"))
+            event: Write.sendKey, direct: NSAppleEventDescriptor(string: "enter"),
+            acknowledgement: .completesWithoutError)
     }
 
     private static func performAction(
         onSurface surfaceId: String, pid target: pid_t, parameter: AEKeyword,
-        event id: AEEventID, direct: NSAppleEventDescriptor
+        event id: AEEventID, direct: NSAppleEventDescriptor,
+        acknowledgement: Acknowledgement
     ) -> Bool {
         guard case .success = automationPermission(pid: target) else { return false }
 
@@ -207,9 +228,18 @@ enum GhosttyScripting {
             if let error = reply.forKeyword(AEKeyword(keyErrorNumber)), error.int32Value != 0 {
                 return false
             }
-            // Ghostty returns a boolean; a false result means it declined.
-            guard let result = reply.forKeyword(AEKeyword(keyDirectObject)) else { return true }
-            return result.booleanValue
+            switch acknowledgement {
+            case .completesWithoutError:
+                return true
+            case .requiresTrue:
+                // Fail CLOSED. A missing result used to read as success, which
+                // meant an unconfirmed write could be followed by pressing
+                // Return — and Return submits whatever is on that prompt.
+                guard let result = reply.forKeyword(AEKeyword(keyDirectObject)) else {
+                    return false
+                }
+                return result.booleanValue
+            }
         } catch {
             return false
         }

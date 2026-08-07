@@ -90,6 +90,32 @@ final class DeliverySafetyTests {
         #expect(text.contains("private static func surfaceSpecifier(id surfaceId: String)"))
     }
 
+    /// The text write must fail CLOSED.
+    ///
+    /// It previously returned `true` when the reply carried no result, so an
+    /// unconfirmed write read as a success — and the next step after a successful
+    /// write is pressing Return, which submits whatever is on that prompt.
+    ///
+    /// The two commands genuinely differ, which is what made the bug easy to
+    /// write: per `Ghostty.sdef`, `perform action` declares
+    /// `<result type="boolean"` while `send key` declares no result at all. So the
+    /// rule is per command, and only the one that can be confirmed is required to
+    /// confirm.
+    @Test func theTextWriteRequiresAnExplicitAcknowledgement() throws {
+        let text = try code("GhosttyScripting.swift")
+        #expect(text.contains("acknowledgement: .requiresTrue"))
+        #expect(text.contains("acknowledgement: .completesWithoutError"))
+
+        // The fail-open default is gone: no `else { return true }` guarding a
+        // missing direct object.
+        #expect(
+            text.contains(
+                "guard let result = reply.forKeyword(AEKeyword(keyDirectObject)) else { return true }"
+            )
+                == false)
+        #expect(text.contains("case .requiresTrue:"))
+    }
+
     /// Return is its own call, reachable only after a successful write. If these
     /// ever merge into one command, the ordering test in ContinueSenderTests
     /// stops proving anything.
