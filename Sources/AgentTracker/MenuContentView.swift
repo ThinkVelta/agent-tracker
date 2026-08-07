@@ -257,6 +257,7 @@ struct MenuContentView: View {
             arming: ContinueScheduler.availability(
                 for: session, armableResetBySession: store.armableResetBySession,
                 enabled: preferences.scheduledContinues),
+            windowTitle: store.exactWindowTitle(for: session),
             onSelect: {
                 let exactTitle = store.exactWindowTitle(for: session)
                 let roster = store.sessions.map { ($0, store.exactWindowTitle(for: $0)) }
@@ -477,6 +478,9 @@ struct SessionRow: View {
     /// Whether this row can be armed to resume itself, or why it cannot.
     /// Defaulted so the row keeps its single-argument construction sites.
     var arming: ContinueScheduler.Availability = .unavailable(reason: "")
+    /// The session's live terminal window title, which is how a Ghostty surface
+    /// is identified at all. Supplied by the parent, which owns the store.
+    var windowTitle: String?
     let onSelect: () -> Void
 
     @State private var hovering = false
@@ -527,6 +531,9 @@ struct SessionRow: View {
 
     @State private var editing = false
     @State private var draft = ContinueDraft()
+    /// Read from the transcript when the editor opens, never in a view body —
+    /// it is a bounded file read and the body runs on the main actor.
+    @State private var unattendedWarning: String?
 
     private var armedSchedule: ScheduledContinue? {
         continues.schedule(for: session.sessionId)
@@ -591,6 +598,22 @@ struct SessionRow: View {
         return "Why this session cannot be scheduled"
     }
 
+    /// Off the main actor: reading a transcript tail is I/O, and a mode that
+    /// acts without asking is worth saying out loud before the user arms it.
+    private func readPermissionMode() {
+        let sessionId = session.sessionId
+        Task {
+            let mode = await Task.detached { () -> String? in
+                guard
+                    let path = SessionStore.loadSessionFromDisk(sessionId: sessionId)?
+                        .transcriptPath
+                else { return nil }
+                return ContinueSender.permissionMode(inTranscriptAt: path)
+            }.value
+            unattendedWarning = ContinueDelivery.unattendedWarning(for: mode)
+        }
+    }
+
     private var editorPanel: some View {
         ContinueEditor(
             draft: $draft,
@@ -605,6 +628,7 @@ struct SessionRow: View {
             // say when it sends rather than "available once this session is
             // waiting on a usage limit".
             unavailableReason: armedSchedule == nil ? arming.reason : nil,
+            unattended: unattendedWarning,
             onArm: {
                 // `armedForResetAt` here, deliberately not `pendingMoment` as the
                 // display above uses. Committing an edit to a settled repeating
@@ -612,7 +636,7 @@ struct SessionRow: View {
                 // travels with it, so it stays settled and does not fire — where
                 // `pendingMoment` would be nil and the edit would be dropped.
                 guard let moment = arming.resetsAt ?? armedSchedule?.armedForResetAt else { return }
-                continues.arm(
+                continues.armResolvingPane(
                     ScheduledContinue(
                         sessionId: session.sessionId,
                         provider: session.provider,
@@ -622,7 +646,12 @@ struct SessionRow: View {
                         sendsOnWake: draft.sendsOnWake,
                         // Preserved, so editing the text of a schedule that has
                         // already fired cannot make it owe that moment again.
-                        settledThrough: armedSchedule?.settledThrough))
+                        settledThrough: armedSchedule?.settledThrough,
+                        target: armedSchedule?.target,
+                        agent: armedSchedule?.agent),
+                    // The window title is how a Ghostty surface is identified at
+                    // all, and this is the app's best copy of it.
+                    expectedTitle: windowTitle ?? session.displayName)
                 editing = false
             },
             onCancel: {

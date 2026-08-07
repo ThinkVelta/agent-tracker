@@ -30,6 +30,8 @@ struct ContinueEditor: View {
     let resetsAt: Date?
     let isArmed: Bool
     let unavailableReason: String?
+    /// Set when this session runs in a mode that acts without asking.
+    var unattended: String?
     let onArm: () -> Void
     let onCancel: () -> Void
     let onDismiss: () -> Void
@@ -40,6 +42,17 @@ struct ContinueEditor: View {
                 .font(Theme.Typography.sessionMeta)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            if let unattended {
+                // Informed consent, which is what this decision owes the user
+                // instead of a refusal: a bypass-mode session can act unwatched,
+                // and that is true whether the user types "Continue" or the app
+                // does. The only thing auto-resume changes is who is present.
+                Label(unattended, systemImage: "exclamationmark.triangle")
+                    .font(Theme.Typography.sessionMeta)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             if unavailableReason == nil {
                 TextField(ContinueScheduler.defaultMessage, text: $draft.message)

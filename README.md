@@ -208,6 +208,61 @@ signal rather than a requirement.
   row turns red quoting what Claude is blocked on ("input needed"). Acknowledged
   rows are left alone, so clearing a row by hand always sticks.
 
+## Scheduled continues
+
+A Claude Code session that stops on a usage limit can be armed, from the clock on
+its row, to resume itself when the window resets. **Off by default** — it is the
+only thing this app does that acts on a session rather than reporting on one, so
+it has its own switch in Settings › General.
+
+It needs two macOS permissions, both asked for when you arm a schedule and never
+while it is firing: **Automation** (to talk to Ghostty) and **Notifications** (so
+an automated send always tells you). A prompt raised at 04:00 would sit unanswered
+and block the very delivery it was meant to authorise.
+
+**It never wakes your Mac.** A schedule fires if the Mac is awake, or when it next
+wakes, and is abandoned after 12 hours — by then the window it was armed for is
+long gone and the session has probably been worked in since.
+
+### What it refuses, and why that is most of the feature
+
+Typing into the wrong session is the one thing here that cannot be undone, so
+delivery refuses far more often than it fires, and always says why:
+
+- **It can't tell which window is yours.** Ghostty exposes only an id, a title and
+  a working directory per surface, and a session cannot report which surface it is
+  in. If two windows share a title, both are refused. On one real machine, 2 of 9
+  windows were uniquely identifiable. Running a session inside `tmux` would make
+  it exact — that channel is not built yet.
+- **The session isn't at a finished turn.** Return at an open permission prompt
+  *approves the focused option*, so anything other than a completed turn is a hard
+  refusal, re-checked from disk immediately before writing.
+- **Something else is in the foreground.** In `vim`, "Continue" is
+  change-to-end-of-line; at a `sudo` prompt it is submitted as a password. The
+  agent must own the terminal (`pgid == tpgid`) before a single character is sent.
+- **The window or process changed.** The pane recorded when you armed it is
+  re-resolved before writing, and any disagreement aborts — a closed window, a
+  reused one, a restarted Ghostty (surface ids are only meaningful within one run)
+  or a recycled pid all refuse.
+- **Only Ghostty, only Claude Code.** Terminal.app is excluded permanently: its
+  entire scripting dictionary has one text-injecting command, `do script`, which
+  *runs* what you give it. For Codex the app cannot tell "turn complete" from
+  "approval prompt open", so the gate that makes a send safe has nothing to read.
+
+Every attempt is recorded — sent, refused or failed — in the row's receipt list
+and in `~/.agent-tracker/logs/agent-tracker.log`. A feature that acts while nobody
+is watching owes you a receipt.
+
+### Permission modes
+
+Every mode Claude Code is known to run in is allowed, **including
+`bypassPermissions`**. Auto-resume adds no capability such a session did not
+already have — typing "Continue" yourself has exactly the same effect — so the
+only thing that changes is that you are not at the keyboard when it starts. The
+arming panel says so plainly for those modes rather than refusing. A mode this
+version does not recognise *is* refused, because a mode nobody has seen cannot be
+reasoned about.
+
 ## Known limitations
 
 - **Several sessions in one repo look alike, and clicking one may open its
@@ -283,15 +338,9 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 ## Roadmap
 
 - [ ] Homebrew tap: `brew install --cask agent-tracker`
-- [ ] **Scheduled continues** — arm a Claude Code session that stopped on a usage
+- [x] **Scheduled continues** — arm a Claude Code session that stopped on a usage
       limit to resume itself when the window resets, from the clock on its row.
-      Off by default (Settings › General). The scheduling half is in: it works
-      out exactly when a "Continue" would be sent, writes that to
-      `~/.agent-tracker/logs/agent-tracker.log`, and **types nothing anywhere
-      yet** — delivery into a terminal is a separate change, because a keystroke
-      sent into the wrong pane, or a Return at an open permission prompt, is not
-      a bug you get to undo. It never wakes the Mac: a schedule fires if the Mac
-      is awake, or when it next wakes, and is abandoned after 12 hours.
+      Off by default (Settings › General). See below.
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
 - [ ] Migrate the Codex integration to its native hooks engine (approval-request
       red states)

@@ -103,6 +103,57 @@ final class ContinueSchedules: ObservableObject {
         schedules.first { $0.sessionId == sessionId }
     }
 
+    /// Resolves the pane and asks for the permissions, then arms.
+    ///
+    /// Arming is the ONLY moment either prompt may appear: the user is present,
+    /// they just asked for this, and a prompt raised at fire time would sit
+    /// unanswered while the delivery it was meant to authorise waited on it.
+    ///
+    /// A pane that cannot be resolved is still armed, deliberately. The reason is
+    /// re-derived at fire time anyway, and refusing to arm would mean the row
+    /// could never explain itself — better to record the schedule and let the
+    /// receipt say why nothing was sent.
+    func armResolvingPane(_ schedule: ScheduledContinue, expectedTitle: String?) {
+        arm(schedule)
+        Task { [weak self] in
+            let resolved = await Self.resolvePane(
+                for: schedule.sessionId, expectedTitle: expectedTitle)
+            await MainActor.run {
+                guard let self else { return }
+                self.update(sessionId: schedule.sessionId) { record in
+                    record.target = resolved.target
+                    record.agent = resolved.agent
+                }
+                if let refusal = resolved.refusal {
+                    self.log("\(schedule.sessionId) — armed, but \(refusal)")
+                }
+            }
+            await ContinueNotifier.requestAuthorization()
+        }
+    }
+
+    /// Off the main actor: the Automation preflight was measured taking over 100
+    /// seconds for a running-but-ungranted target.
+    private static func resolvePane(for sessionId: String, expectedTitle: String?) async
+        -> (target: ContinueDelivery.Target?, agent: ProcessIdentity?, refusal: String?)
+    {
+        await Task.detached { () -> (ContinueDelivery.Target?, ProcessIdentity?, String?) in
+            let session = SessionStore.loadSessionFromDisk(sessionId: sessionId)
+            let agent = session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil
+            guard let terminalPid = GhosttyScripting.runningApplication()?.processIdentifier else {
+                return (nil, agent, GhosttyScripting.Failure.notRunning.reason)
+            }
+            switch GhosttyScripting.surfaces() {
+            case .failure(let failure):
+                return (nil, agent, failure.reason)
+            case .success(let surfaces):
+                let resolution = ContinueDelivery.resolve(
+                    expectedTitle: expectedTitle, among: surfaces, terminalPid: terminalPid)
+                return (resolution.target, agent, resolution.refusal)
+            }
+        }.value
+    }
+
     func arm(_ schedule: ScheduledContinue) {
         var updated = schedules.filter { $0.sessionId != schedule.sessionId }
         updated.append(schedule)
