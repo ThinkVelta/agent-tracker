@@ -60,17 +60,24 @@ enum GhosttyScripting {
         NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier).first
     }
 
-    /// Whether this app may control Ghostty, **without ever asking**.
+    /// Whether this app may control Ghostty.
     ///
-    /// `askUserIfNeeded: false` is not optional here. The consent prompt belongs
-    /// at a moment the user is expecting it — arming a schedule — and never at
-    /// fire time, which is by definition when nobody is watching. A prompt raised
-    /// at 04:00 would sit unanswered and block the delivery it was meant to
-    /// authorise.
+    /// `promptIfNeeded` is the consent checkpoint, and it must be true in exactly
+    /// one place: arming a schedule, where the user is present and has just asked
+    /// for this. At fire time it must be false — a prompt raised at 04:00 sits
+    /// unanswered and blocks the delivery it was meant to authorise.
     ///
-    /// Blocking, and the measured worst case is over 100 seconds, so the caller
-    /// must already be off the main actor.
-    static func automationPermission(pid: pid_t) -> Result<Void, Failure> {
+    /// Shipping it false everywhere made the grant unobtainable: macOS raises the
+    /// prompt when an app first sends an Apple event, this check bailed out before
+    /// any event was sent, and so nothing ever asked. Delivery then refused
+    /// forever with "macOS hasn't been allowed…" and no way for the user to act on
+    /// it. Found by running the feature end to end rather than by any test.
+    ///
+    /// Blocking either way, and the measured worst case is over 100 seconds, so
+    /// the caller must already be off the main actor.
+    static func automationPermission(pid: pid_t, promptIfNeeded: Bool = false)
+        -> Result<Void, Failure>
+    {
         var target = AEAddressDesc()
         var pid = pid
         let built = AECreateDesc(
@@ -81,7 +88,7 @@ enum GhosttyScripting {
         defer { AEDisposeDesc(&target) }
 
         let status = AEDeterminePermissionToAutomateTarget(
-            &target, DescType(typeWildCard), DescType(typeWildCard), false)
+            &target, DescType(typeWildCard), DescType(typeWildCard), promptIfNeeded)
         switch status {
         case noErr:
             return .success(())
@@ -89,8 +96,9 @@ enum GhosttyScripting {
             // procNotFound here means the target vanished between the two calls.
             return .failure(status == OSStatus(procNotFound) ? .notRunning : .notPermitted)
         case OSStatus(errAEEventWouldRequireUserConsent):
-            // Never asked yet. Deliberately reported as "not permitted": the only
-            // honest thing to do is have the user grant it at arming time.
+            // Only reachable when not prompting: the user has never been asked.
+            // Reported as not-permitted so delivery refuses and says so, and the
+            // arming path is what actually raises the prompt.
             return .failure(.notPermitted)
         default:
             return .failure(.unreadable("permission check returned \(status)"))
@@ -104,8 +112,14 @@ enum GhosttyScripting {
     /// returns a nested descriptor whose shape is undocumented, and guessing at
     /// it is how a surface list silently becomes wrong. Nine windows cost a few
     /// milliseconds and this runs once per delivery.
-    static func surfaces(pid: pid_t) -> Result<[ContinueDelivery.Surface], Failure> {
-        if case .failure(let failure) = automationPermission(pid: pid) { return .failure(failure) }
+    static func surfaces(pid: pid_t, promptIfNeeded: Bool = false)
+        -> Result<[ContinueDelivery.Surface], Failure>
+    {
+        if case .failure(let failure) = automationPermission(
+            pid: pid, promptIfNeeded: promptIfNeeded)
+        {
+            return .failure(failure)
+        }
 
         let count: Int
         switch send(
