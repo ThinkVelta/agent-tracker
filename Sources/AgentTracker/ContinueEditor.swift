@@ -32,6 +32,10 @@ struct ContinueEditor: View {
     let unavailableReason: String?
     /// Set when this session runs in a mode that acts without asking.
     var unattended: String?
+    /// The last thing that happened to this session's schedule, if anything has.
+    /// A feature that acts unwatched owes a receipt, and this is where someone
+    /// looks for it — the log is for afterwards, not for reassurance now.
+    var lastReceipt: ContinueReceipt?
     let onArm: () -> Void
     let onCancel: () -> Void
     let onDismiss: () -> Void
@@ -61,6 +65,14 @@ struct ContinueEditor: View {
 
                 Toggle("Do it again at the next reset too", isOn: $draft.repeats)
                 Toggle("Send on wake if the Mac slept through it", isOn: $draft.sendsOnWake)
+            }
+
+            if let lastReceipt {
+                Text(lastReceipt.summary)
+                    .font(Theme.Typography.sessionMeta)
+                    .foregroundStyle(lastReceipt.outcome == .sent ? .secondary : .primary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 8) {

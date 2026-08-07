@@ -249,9 +249,10 @@ delivery refuses far more often than it fires, and always says why:
   *runs* what you give it. For Codex the app cannot tell "turn complete" from
   "approval prompt open", so the gate that makes a send safe has nothing to read.
 
-Every attempt is recorded — sent, refused or failed — in the row's receipt list
-and in `~/.agent-tracker/logs/agent-tracker.log`. A feature that acts while nobody
-is watching owes you a receipt.
+Every attempt is recorded — sent, refused or failed. The most recent outcome for a
+session shows in its scheduling panel (click the clock), every one is written to
+`~/.agent-tracker/logs/agent-tracker.log`, and a send also raises a notification.
+A feature that acts while nobody is watching owes you a receipt.
 
 ### Permission modes
 

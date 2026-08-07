@@ -633,6 +633,7 @@ struct SessionRow: View {
             // waiting on a usage limit".
             unavailableReason: armedSchedule == nil ? arming.reason : nil,
             unattended: unattendedWarning,
+            lastReceipt: continues.receipts.first { $0.sessionId == session.sessionId },
             onArm: {
                 // `armedForResetAt` here, deliberately not `pendingMoment` as the
                 // display above uses. Committing an edit to a settled repeating

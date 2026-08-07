@@ -95,12 +95,9 @@ enum ContinueSender {
         case .failure(let failure): return .refused(failure.reason)
         }
 
-        guard
-            case .ready(let target) = ContinueDelivery.verify(
-                recorded: recorded, among: surfaces, terminalPid: terminalPid)
-        else {
-            let resolution = ContinueDelivery.verify(
-                recorded: recorded, among: surfaces, terminalPid: terminalPid)
+        let resolution = ContinueDelivery.verify(
+            recorded: recorded, among: surfaces, terminalPid: terminalPid)
+        guard case .ready(let target) = resolution else {
             return .refused(resolution.refusal ?? "The recorded window no longer matches")
         }
 
