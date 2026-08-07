@@ -28,9 +28,10 @@ enum CodexHookTrust {
     /// True when at least one agent-tracker hook in `hooksJSON` has no matching
     /// trust record in `configTOML`.
     ///
-    /// Fails towards speaking up: unreadable or unexpected JSON means we cannot
-    /// show that anything is trusted, and being told about a step already taken
-    /// is a smaller harm than a silent Codex with no explanation.
+    /// Unreadable or unexpected JSON returns false — quiet, not waiting. A file
+    /// we cannot parse does not tell us our hooks are untrusted; it does not
+    /// even tell us they are *there*, so speaking up would mean telling someone
+    /// with no Codex hooks at all to go and trust them.
     static func awaitsTrust(hooksJSON: Data, configTOML: String, hooksPath: String) -> Bool {
         guard
             let root = try? JSONSerialization.jsonObject(with: hooksJSON) as? [String: Any],
