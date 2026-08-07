@@ -87,14 +87,33 @@ cat > "$CONTENTS/Info.plist" << PLIST
 	<string>$MIN_OS</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Agent Tracker sends a "Continue" to a terminal window when you have asked it to resume a session whose usage limit has reset. Nothing is sent unless you arm that session yourself.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
 </plist>
 PLIST
 
+# Automation is a SEPARATE TCC service from Accessibility, and both halves are
+# needed: without the usage description above macOS denies every Apple event
+# outright rather than prompting, and the hardened runtime needs the entitlement
+# to allow them at all. Ad-hoc signing accepts entitlements too, so this is not
+# gated on a Developer ID.
+ENTITLEMENTS_FILE="$DIST/AgentTracker.entitlements"
+cat > "$ENTITLEMENTS_FILE" << 'ENTITLEMENTS'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>
+ENTITLEMENTS
+
 echo "==> codesign ($([ "$IDENTITY" = "-" ] && echo ad-hoc || echo "$IDENTITY"))"
-SIGN_FLAGS=(--force --sign "$IDENTITY")
+SIGN_FLAGS=(--force --sign "$IDENTITY" --entitlements "$ENTITLEMENTS_FILE")
 [ "$IDENTITY" != "-" ] && SIGN_FLAGS+=(--options runtime --timestamp)
 codesign "${SIGN_FLAGS[@]}" "$APP"
 
@@ -109,6 +128,16 @@ plutil -lint "$CONTENTS/Info.plist" > /dev/null
 [ -f "$CONTENTS/Resources/AppIcon.icns" ]
 [ -x "$CONTENTS/Resources/integrations/agent-tracker-hook.py" ]
 [ -x "$CONTENTS/Resources/integrations/agent-tracker-statusline.py" ]
+# Both halves of the Automation prerequisite. Absent, every Apple event the
+# scheduled-continue delivery sends is denied without even prompting — a failure
+# that only shows up at the moment the feature tries to act.
+/usr/libexec/PlistBuddy -c 'Print :NSAppleEventsUsageDescription' "$CONTENTS/Info.plist" > /dev/null
+ENT_DUMP="$(mktemp)"
+codesign -d --entitlements "$ENT_DUMP" --xml "$APP" 2> /dev/null
+# PlistBuddy, not `plutil -extract`: plutil reads dots in a key path as nesting,
+# so it hunts for com -> apple -> security and always fails on this key.
+[ "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.automation.apple-events' "$ENT_DUMP")" = "true" ]
+rm -f "$ENT_DUMP"
 codesign --verify --deep "$APP"
 echo "    OK: $APP_NAME.app v$VERSION ($BUILD_NUMBER), $(du -sh "$APP" | cut -f1 | tr -d ' ')"
 

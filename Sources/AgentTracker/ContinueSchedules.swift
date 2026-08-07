@@ -23,6 +23,17 @@ final class ContinueSchedules: ObservableObject {
 
     @Published private(set) var schedules: [ScheduledContinue] = []
 
+    /// What happened on past deliveries, newest first.
+    ///
+    /// Stored separately from the schedules on purpose: a one-shot schedule is
+    /// deleted the moment it fires, before its outcome exists, so an outcome kept
+    /// on the record would only ever survive for repeating schedules.
+    @Published private(set) var receipts: [ContinueReceipt] = []
+
+    /// Enough to answer "did it fire last night, and what happened", not a
+    /// history. This is a menu bar app.
+    static let receiptsKept = 20
+
     /// Asks for a pass. Set by `SessionStore`, because a pass has to come from
     /// the place that reads the clock and the sessions together.
     var requestPass: () -> Void = {}
@@ -43,7 +54,7 @@ final class ContinueSchedules: ObservableObject {
     /// Its return value deliberately feeds only the receipt, never the schedule
     /// state, so a hung or refused delivery cannot make a settled schedule look
     /// owed again.
-    var deliver: @Sendable (ContinueScheduler.Fire) async -> String
+    var deliver: @Sendable (ContinueScheduler.Fire) async -> ContinueDeliveryResult
 
     /// A docs render builds a real `SessionStore` over synthetic sessions
     /// (`scripts/make-docs-images.sh` drives `--render-preview`). Nothing armed
@@ -66,15 +77,26 @@ final class ContinueSchedules: ObservableObject {
     /// removed from the one it came from.
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
+    /// Bumped every time a session is armed, so an in-flight pane resolution can
+    /// tell whether it is still the current one.
+    ///
+    /// In memory, and never persisted — which is the whole point. Comparing the
+    /// user-visible fields instead was not enough: re-arming with an identical
+    /// moment and message can still be a DIFFERENT pane context (the session moved
+    /// window, or its title changed), and an older resolution would then write a
+    /// stale pane onto the newer arming. A generation cannot be fooled by equal
+    /// values, and because it only has to survive between an arm and its own
+    /// resolution, it never needed to reach disk.
+    private var armingGeneration: [String: Int] = [:]
+
     init(defaults: UserDefaults = .standard, launchedAt: Date = Date()) {
         self.defaults = defaults
         self.launchedAt = launchedAt
-        deliver = { fire in
-            // The PR B stub: the schedule machinery is exercised end to end and
-            // nothing is typed anywhere. Real delivery replaces this closure.
-            "would send \"\(fire.message)\" (delivery not implemented yet)"
-        }
+        // The default writes into a real terminal. Tests replace it, and so does
+        // any caller that wants the machinery without the consequence.
+        deliver = { fire in await ContinueSchedules.deliverForReal(fire) }
         schedules = Self.load(from: defaults)
+        receipts = Self.loadReceipts(from: defaults)
         observeSystemChanges()
     }
 
@@ -93,6 +115,68 @@ final class ContinueSchedules: ObservableObject {
         schedules.first { $0.sessionId == sessionId }
     }
 
+    /// Resolves the pane and asks for the permissions, then arms.
+    ///
+    /// Arming is the ONLY moment either prompt may appear: the user is present,
+    /// they just asked for this, and a prompt raised at fire time would sit
+    /// unanswered while the delivery it was meant to authorise waited on it.
+    ///
+    /// A pane that cannot be resolved is still armed, deliberately. The reason is
+    /// re-derived at fire time anyway, and refusing to arm would mean the row
+    /// could never explain itself — better to record the schedule and let the
+    /// receipt say why nothing was sent.
+    func armResolvingPane(_ schedule: ScheduledContinue, expectedTitle: String?) {
+        arm(schedule)
+        let generation = (armingGeneration[schedule.sessionId] ?? 0) + 1
+        armingGeneration[schedule.sessionId] = generation
+        Task { [weak self] in
+            let resolved = await Self.resolvePane(
+                for: schedule.sessionId, expectedTitle: expectedTitle)
+            await MainActor.run {
+                guard let self else { return }
+                // Only if this is still the arming that launched the task.
+                // Resolution takes as long as an Automation preflight, and a user
+                // who re-arms inside that window would otherwise have the newer
+                // schedule overwritten with a pane resolved for the older one.
+                guard self.armingGeneration[schedule.sessionId] == generation else {
+                    self.log(
+                        "\(schedule.sessionId) — re-armed while resolving; older result dropped")
+                    return
+                }
+                self.update(sessionId: schedule.sessionId) { record in
+                    record.target = resolved.target
+                    record.agent = resolved.agent
+                }
+                if let refusal = resolved.refusal {
+                    self.log("\(schedule.sessionId) — armed, but \(refusal)")
+                }
+            }
+            await ContinueNotifier.requestAuthorization()
+        }
+    }
+
+    /// Off the main actor: the Automation preflight was measured taking over 100
+    /// seconds for a running-but-ungranted target.
+    private static func resolvePane(for sessionId: String, expectedTitle: String?) async
+        -> (target: ContinueDelivery.Target?, agent: ProcessIdentity?, refusal: String?)
+    {
+        await Task.detached { () -> (ContinueDelivery.Target?, ProcessIdentity?, String?) in
+            let session = SessionStore.loadSessionFromDisk(sessionId: sessionId)
+            let agent = session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil
+            guard let terminalPid = GhosttyScripting.runningApplication()?.processIdentifier else {
+                return (nil, agent, GhosttyScripting.Failure.notRunning.reason)
+            }
+            switch GhosttyScripting.surfaces(pid: terminalPid) {
+            case .failure(let failure):
+                return (nil, agent, failure.reason)
+            case .success(let surfaces):
+                let resolution = ContinueDelivery.resolve(
+                    expectedTitle: expectedTitle, among: surfaces, terminalPid: terminalPid)
+                return (resolution.target, agent, resolution.refusal)
+            }
+        }.value
+    }
+
     func arm(_ schedule: ScheduledContinue) {
         var updated = schedules.filter { $0.sessionId != schedule.sessionId }
         updated.append(schedule)
@@ -102,6 +186,9 @@ final class ContinueSchedules: ObservableObject {
     }
 
     func disarm(sessionId: String) {
+        // Invalidates any resolution still in flight: a disarmed schedule must not
+        // be silently re-populated by a task the user has already cancelled.
+        armingGeneration[sessionId] = (armingGeneration[sessionId] ?? 0) + 1
         let updated = schedules.filter { $0.sessionId != sessionId }
         guard updated.count != schedules.count else { return }
         persist(updated)
@@ -156,10 +243,72 @@ final class ContinueSchedules: ObservableObject {
                 if fire.delay > 0 {
                     try? await Task.sleep(for: .seconds(fire.delay))
                 }
-                let outcome = await deliver(fire)
-                await self?.log("\(fire.sessionId) — \(outcome)")
+                let result = await deliver(fire)
+                await self?.record(fire: fire, result: result)
             }
         }
+    }
+
+    /// Files a receipt, logs it, and tells the user. Called after the send has
+    /// already happened, so nothing here can undo or retry it — a notification
+    /// that fails to post must not turn a delivered message into a pending one.
+    private func record(fire: ContinueScheduler.Fire, result: ContinueDeliveryResult) {
+        file(
+            ContinueReceipt(
+                sessionId: fire.sessionId,
+                // From the fire, never from the schedules: a one-shot is deleted
+                // before its outcome exists, so looking it up there degrades every
+                // single-shot receipt to a raw session id — which is exactly the
+                // receipt least likely to be self-explanatory.
+                project: fire.target?.title ?? fire.sessionId,
+                message: fire.message,
+                at: Date(),
+                outcome: result.outcome,
+                detail: result.detail))
+    }
+
+    /// Gathers what delivery must re-read, then performs it. Runs off the main
+    /// actor by construction — it is only ever called from the detached task —
+    /// except for the one hop that reads the kill switch, which lives on
+    /// `Preferences` and is deliberately re-read rather than taken from the plan
+    /// that scheduled this.
+    private static func deliverForReal(_ fire: ContinueScheduler.Fire) async
+        -> ContinueDeliveryResult
+    {
+        let enabled = await MainActor.run { Preferences.shared.scheduledContinues }
+        let session = SessionStore.loadSessionFromDisk(sessionId: fire.sessionId)
+        let context = SendContext(
+            enabled: enabled,
+            lastEvent: session?.lastEvent,
+            permissionMode: session?.transcriptPath.flatMap {
+                ContinueSender.permissionMode(inTranscriptAt: $0)
+            },
+            liveAgent: session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil)
+        return ContinueSender.send(fire, context: context, ops: .ghostty)
+    }
+
+    /// The public seam for a receipt, so delivery and its refusals file the same
+    /// kind of record through one path.
+    func file(_ receipt: ContinueReceipt) {
+        var updated = [receipt] + receipts
+        if updated.count > Self.receiptsKept { updated = Array(updated.prefix(Self.receiptsKept)) }
+        receipts = updated
+        persistReceipts(updated)
+        log("\(receipt.sessionId) — \(receipt.summary)")
+        guard Self.notifies(receipt.outcome) else { return }
+        Task { await ContinueNotifier.post(receipt) }
+    }
+
+    /// Whether an outcome is worth interrupting the user for.
+    ///
+    /// Notify when something HAPPENED, stay quiet when the feature simply
+    /// declined. A refusal is the designed-for common case — most windows cannot
+    /// be told apart, so most fires refuse — and one notification per refusal
+    /// would be pure noise. A failure is the opposite: the feature half-acted, and
+    /// "typed but could not press Return" leaves a message on a prompt the user
+    /// has to know about. Refusals are still filed and logged.
+    static func notifies(_ outcome: ContinueReceipt.Outcome) -> Bool {
+        outcome != .refused
     }
 
     /// Seconds asleep since the previous pass, from the divergence between a
@@ -281,6 +430,27 @@ final class ContinueSchedules: ObservableObject {
         decoder.dateDecodingStrategy = .iso8601
         return (encoder, decoder)
     }()
+
+    /// Its own key, for the same reason the schedules have one: two values in
+    /// one `UserDefaults` key overwrite each other, which is a bug this feature
+    /// has already shipped once.
+    static let receiptsKey = "continueReceipts"
+
+    static func loadReceipts(from defaults: UserDefaults) -> [ContinueReceipt] {
+        guard let stored = defaults.object(forKey: receiptsKey) as? [String] else { return [] }
+        return stored.compactMap { entry in
+            guard let data = entry.data(using: .utf8) else { return nil }
+            return try? coder.decoder.decode(ContinueReceipt.self, from: data)
+        }
+    }
+
+    private func persistReceipts(_ updated: [ContinueReceipt]) {
+        let encoded = updated.compactMap { receipt -> String? in
+            guard let data = try? Self.coder.encoder.encode(receipt) else { return nil }
+            return String(data: data, encoding: .utf8)
+        }
+        defaults.set(encoded, forKey: Self.receiptsKey)
+    }
 
     static func load(from defaults: UserDefaults) -> [ScheduledContinue] {
         guard let stored = defaults.object(forKey: storageKey) as? [String] else { return [] }

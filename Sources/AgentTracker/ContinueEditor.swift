@@ -30,6 +30,12 @@ struct ContinueEditor: View {
     let resetsAt: Date?
     let isArmed: Bool
     let unavailableReason: String?
+    /// Set when this session runs in a mode that acts without asking.
+    var unattended: String?
+    /// The last thing that happened to this session's schedule, if anything has.
+    /// A feature that acts unwatched owes a receipt, and this is where someone
+    /// looks for it — the log is for afterwards, not for reassurance now.
+    var lastReceipt: ContinueReceipt?
     let onArm: () -> Void
     let onCancel: () -> Void
     let onDismiss: () -> Void
@@ -41,6 +47,17 @@ struct ContinueEditor: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if let unattended {
+                // Informed consent, which is what this decision owes the user
+                // instead of a refusal: a bypass-mode session can act unwatched,
+                // and that is true whether the user types "Continue" or the app
+                // does. The only thing auto-resume changes is who is present.
+                Label(unattended, systemImage: "exclamationmark.triangle")
+                    .font(Theme.Typography.sessionMeta)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             if unavailableReason == nil {
                 TextField(ContinueScheduler.defaultMessage, text: $draft.message)
                     .textFieldStyle(.roundedBorder)
@@ -48,6 +65,14 @@ struct ContinueEditor: View {
 
                 Toggle("Do it again at the next reset too", isOn: $draft.repeats)
                 Toggle("Send on wake if the Mac slept through it", isOn: $draft.sendsOnWake)
+            }
+
+            if let lastReceipt {
+                Text(lastReceipt.summary)
+                    .font(Theme.Typography.sessionMeta)
+                    .foregroundStyle(lastReceipt.outcome == .sent ? .secondary : .primary)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 8) {

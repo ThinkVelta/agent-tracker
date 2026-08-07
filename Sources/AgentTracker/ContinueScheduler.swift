@@ -31,6 +31,16 @@ struct ScheduledContinue: Equatable, Codable {
     /// has to remember.
     var settledThrough: Date?
 
+    /// The pane this was armed against, and the agent process that was in it.
+    ///
+    /// Optional so records written before delivery existed still decode — a
+    /// non-optional field would silently drop every schedule armed by the version
+    /// that shipped the scheduler. Absent simply means "resolve it at fire time",
+    /// which then has no recorded pane to disagree with and refuses if the window
+    /// is ambiguous, exactly as a fresh arming would.
+    var target: ContinueDelivery.Target?
+    var agent: ProcessIdentity?
+
     init(
         sessionId: String,
         provider: String,
@@ -38,7 +48,9 @@ struct ScheduledContinue: Equatable, Codable {
         armedForResetAt: Date,
         repeats: Bool = false,
         sendsOnWake: Bool = true,
-        settledThrough: Date? = nil
+        settledThrough: Date? = nil,
+        target: ContinueDelivery.Target? = nil,
+        agent: ProcessIdentity? = nil
     ) {
         self.sessionId = sessionId
         self.provider = provider
@@ -47,6 +59,8 @@ struct ScheduledContinue: Equatable, Codable {
         self.repeats = repeats
         self.sendsOnWake = sendsOnWake
         self.settledThrough = settledThrough
+        self.target = target
+        self.agent = agent
     }
 
     /// Whether this schedule has already dealt with the moment it holds.
@@ -149,6 +163,12 @@ enum ContinueScheduler {
         /// Waited before this one is sent, staggering a fan-out.
         var delay: TimeInterval
         var lateness: Lateness
+        /// What arming recorded, carried through untouched. The planner decides
+        /// nothing with either: they exist so delivery can re-verify against what
+        /// was true when the user armed it, rather than re-deriving a pane and
+        /// typing into whatever now looks closest.
+        var target: ContinueDelivery.Target?
+        var agent: ProcessIdentity?
     }
 
     /// Why a fire is late, which decides whether it happens at all.
@@ -390,7 +410,9 @@ enum ContinueScheduler {
                     sessionId: schedule.sessionId,
                     message: schedule.message,
                     delay: Double(dueCount) * deliveryStagger,
-                    lateness: lateness
+                    lateness: lateness,
+                    target: schedule.target,
+                    agent: schedule.agent
                 ))
             note(schedule.sessionId, .fired(message: schedule.message, lateness: lateness))
             dueCount += 1
