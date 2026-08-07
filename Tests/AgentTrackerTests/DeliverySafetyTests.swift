@@ -52,11 +52,20 @@ final class DeliverySafetyTests {
     /// A permission prompt at fire time is a prompt nobody is there to answer,
     /// and it would block the delivery it was meant to authorise.
     @Test func automationIsNeverPreflightedWithAPrompt() throws {
-        let text = try code("GhosttyScripting.swift")
-        #expect(text.contains("askUserIfNeeded: true") == false)
-        // The call is made with a literal false, not a variable that could be
-        // flipped somewhere else.
-        #expect(text.contains("DescType(typeWildCard), false)"))
+        // The prompt is allowed in exactly one place — arming — and the sender
+        // must never reach it. Asserted on the DELIVERY path rather than on the
+        // scripting layer, because forbidding it everywhere is what made the
+        // grant unobtainable and the feature permanently refuse.
+        let sender = try code("ContinueSender.swift")
+        #expect(sender.contains("promptIfNeeded") == false)
+        for op in ["surfaces:", "writeText:", "pressReturn:"] {
+            #expect(sender.contains(op), "delivery no longer routes \(op) through ChannelOps")
+        }
+
+        let schedules = try code("ContinueSchedules.swift")
+        #expect(
+            schedules.contains("promptIfNeeded: true"),
+            "nothing asks for the Automation grant, so it can never be obtained")
     }
 
     /// `chooseAmbiguous` deliberately cycles candidates so repeated clicks reach

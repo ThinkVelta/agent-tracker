@@ -166,7 +166,11 @@ final class ContinueSchedules: ObservableObject {
             guard let terminalPid = GhosttyScripting.runningApplication()?.processIdentifier else {
                 return (nil, agent, GhosttyScripting.Failure.notRunning.reason)
             }
-            switch GhosttyScripting.surfaces(pid: terminalPid) {
+            // The one call site allowed to prompt. The user is looking at the
+            // panel they just used to arm this, so a permission dialog is expected
+            // — and it is the only chance to get the grant, because fire time must
+            // never ask.
+            switch GhosttyScripting.surfaces(pid: terminalPid, promptIfNeeded: true) {
             case .failure(let failure):
                 return (nil, agent, failure.reason)
             case .success(let surfaces):

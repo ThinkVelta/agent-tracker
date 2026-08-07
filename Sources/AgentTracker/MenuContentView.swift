@@ -503,6 +503,26 @@ struct SessionRow: View {
                 rowButton
                 trailingAffordance
             }
+            // Tracked on the whole row, NOT on `rowButton`. The trailing control
+            // is a sibling of that button, so with the handler on the button,
+            // moving the pointer onto the control un-hovered the row — which hid
+            // the control, which put the pointer back over the button, which
+            // re-hovered the row. Hover drove hit-testing and hit-testing drove
+            // hover, and the pair oscillated at screen refresh rate.
+            .onHover { hovering in
+                self.hovering = hovering
+                guard hovering else {
+                    showsPath = false
+                    return
+                }
+                // Our own delay rather than .help(): AppKit's tooltip timer is
+                // system-owned and takes over a second, which is far too slow
+                // for a list you are scanning.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(280))
+                    if self.hovering { showsPath = true }
+                }
+            }
             if editing { editorPanel }
         }
         .contextMenu {
@@ -711,22 +731,12 @@ struct SessionRow: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            self.hovering = hovering
-            guard hovering else {
-                showsPath = false
-                return
-            }
-            // Our own delay rather than .help(): AppKit's tooltip timer is
-            // system-owned and takes over a second, which is far too slow for
-            // a list you are scanning.
-            Task {
-                try? await Task.sleep(for: .milliseconds(280))
-                if self.hovering { showsPath = true }
-            }
-        }
         .overlay(alignment: .bottomLeading) {
-            if showsPath, let cwd = session.primaryDirectory {
+            // Not while the arming panel is open: the card floats below the
+            // row and would land on top of the panel's own text. Hovering to
+            // read a path and reading the panel are different activities, and
+            // the panel is the one the user deliberately opened.
+            if showsPath, !editing, let cwd = session.primaryDirectory {
                 Text(cwd)
                     .font(.system(size: 10))
                     .foregroundStyle(.secondary)

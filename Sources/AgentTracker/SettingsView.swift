@@ -50,6 +50,56 @@ struct SettingsPreviewStack: View {
 private struct GeneralSettingsTab: View {
     @ObservedObject private var preferences = Preferences.shared
     @State private var launchAtLogin = LoginItem.isEnabled
+    /// Whether this app may drive Ghostty. Not derivable from anything on disk —
+    /// the only way to know is to ask the Apple Event manager.
+    @State private var automationGranted: Bool?
+    @State private var automationChecking = false
+
+    private var automationDetail: String {
+        switch automationGranted {
+        case true:
+            return "Granted. A scheduled continue can be typed into its terminal window."
+        case false:
+            return "Not granted yet. Without it a schedule still runs, works out when it would "
+                + "send, and then declines — check will ask macOS for permission."
+        case nil:
+            return "Ghostty isn't running, so there is nothing to ask about yet."
+        }
+    }
+
+    /// Deliberately a button rather than something that happens on launch: this is
+    /// the one call that may raise a permission dialog, and a dialog belongs to a
+    /// moment the user chose. Off the main actor because the check was measured
+    /// taking over 100 seconds for a running-but-ungranted target.
+    private func checkAutomationPermission() {
+        automationChecking = true
+        Task {
+            let granted = await Task.detached { () -> Bool? in
+                guard let pid = GhosttyScripting.runningApplication()?.processIdentifier else {
+                    return nil
+                }
+                if case .success = GhosttyScripting.automationPermission(
+                    pid: pid, promptIfNeeded: true)
+                {
+                    return true
+                }
+                return false
+            }.value
+            automationGranted = granted
+            automationChecking = false
+        }
+    }
+
+    /// Status only, and never prompts — opening Settings must not raise a dialog.
+    private func refreshAutomationStatus() async {
+        automationGranted = await Task.detached { () -> Bool? in
+            guard let pid = GhosttyScripting.runningApplication()?.processIdentifier else {
+                return nil
+            }
+            if case .success = GhosttyScripting.automationPermission(pid: pid) { return true }
+            return false
+        }.value
+    }
 
     /// The user can change login-item state behind our back in System
     /// Settings; re-reading while visible keeps the switch truthful.
@@ -118,16 +168,56 @@ private struct GeneralSettingsTab: View {
                     title: "Scheduled continues",
                     detail: "Lets a Claude Code session that stopped on a usage limit be armed "
                         + "to resume itself when the window resets — a clock appears on those "
-                        + "rows. Nothing is sent yet in this version: an armed schedule is "
-                        + "worked out and written to the log instead. Never wakes the Mac."
+                        + "rows. Sending needs permission to control Ghostty, which macOS asks "
+                        + "for once. Never wakes the Mac."
                 ) {
                     Toggle("", isOn: $preferences.scheduledContinues)
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
+                if preferences.scheduledContinues {
+                    SettingsRow(
+                        title: "Permission to control Ghostty",
+                        detail: automationDetail,
+                        divided: true
+                    ) {
+                        // No button once it is granted: there is nothing left to
+                        // do, and a live control beside "Granted." reads as an
+                        // unfinished step. Re-checking is still possible by
+                        // revoking it in System Settings, which puts the button
+                        // back.
+                        if automationGranted == true {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else {
+                            // Disabled ONLY while a check is in flight. `nil`
+                            // means "Ghostty isn't running", but it is also the
+                            // state before the first check returns — and the
+                            // status is read once, so a Ghostty started after
+                            // Settings opened would leave the only route to the
+                            // grant disabled for the rest of the session. The
+                            // click re-checks anyway, and reports plainly if
+                            // Ghostty still is not there.
+                            Button(automationChecking ? "Checking…" : "Allow…") {
+                                checkAutomationPermission()
+                            }
+                            .disabled(automationChecking)
+                        }
+                    }
+                }
             }
         }
         .padding(20)
+        .task { await refreshAutomationStatus() }
+        // Ghostty may be launched, quit, or have its permission changed in System
+        // Settings while this window sits open, so the status is re-read whenever
+        // the app comes forward rather than only once.
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: NSApplication.didBecomeActiveNotification)
+        ) { _ in
+            Task { await refreshAutomationStatus() }
+        }
         .onReceive(statusTick) { _ in launchAtLogin = LoginItem.isEnabled }
         .onAppear { launchAtLogin = LoginItem.isEnabled }
     }

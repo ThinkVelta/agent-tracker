@@ -215,10 +215,12 @@ its row, to resume itself when the window resets. **Off by default** — it is t
 only thing this app does that acts on a session rather than reporting on one, so
 it has its own switch in Settings › General.
 
-It needs two macOS permissions, both asked for when you arm a schedule and never
-while it is firing: **Automation** (to talk to Ghostty) and **Notifications** (so
-an automated send always tells you). A prompt raised at 04:00 would sit unanswered
-and block the very delivery it was meant to authorise.
+It needs two macOS permissions, and neither is ever asked for while a schedule is
+firing — a prompt raised at 04:00 would sit unanswered and block the very delivery
+it was meant to authorise. **Automation** (to talk to Ghostty) is requested when
+you arm a schedule, or from Settings › General › *Permission to control Ghostty*,
+which is also the way to grant it before you have ever been usage-limited.
+**Notifications** are requested when you arm.
 
 **It never wakes your Mac.** A schedule fires if the Mac is awake, or when it next
 wakes, and is abandoned after 12 hours — by then the window it was armed for is
