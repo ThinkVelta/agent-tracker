@@ -503,6 +503,26 @@ struct SessionRow: View {
                 rowButton
                 trailingAffordance
             }
+            // Tracked on the whole row, NOT on `rowButton`. The trailing control
+            // is a sibling of that button, so with the handler on the button,
+            // moving the pointer onto the control un-hovered the row — which hid
+            // the control, which put the pointer back over the button, which
+            // re-hovered the row. Hover drove hit-testing and hit-testing drove
+            // hover, and the pair oscillated at screen refresh rate.
+            .onHover { hovering in
+                self.hovering = hovering
+                guard hovering else {
+                    showsPath = false
+                    return
+                }
+                // Our own delay rather than .help(): AppKit's tooltip timer is
+                // system-owned and takes over a second, which is far too slow
+                // for a list you are scanning.
+                Task {
+                    try? await Task.sleep(for: .milliseconds(280))
+                    if self.hovering { showsPath = true }
+                }
+            }
             if editing { editorPanel }
         }
         .contextMenu {
@@ -711,20 +731,6 @@ struct SessionRow: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { hovering in
-            self.hovering = hovering
-            guard hovering else {
-                showsPath = false
-                return
-            }
-            // Our own delay rather than .help(): AppKit's tooltip timer is
-            // system-owned and takes over a second, which is far too slow for
-            // a list you are scanning.
-            Task {
-                try? await Task.sleep(for: .milliseconds(280))
-                if self.hovering { showsPath = true }
-            }
-        }
         .overlay(alignment: .bottomLeading) {
             if showsPath, let cwd = session.primaryDirectory {
                 Text(cwd)
