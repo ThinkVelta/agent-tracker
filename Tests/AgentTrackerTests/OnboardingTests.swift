@@ -56,7 +56,7 @@ final class OnboardingTests {
     /// The consent step names the exact file each installer edits.
     @Test func everyAgentNamesItsEditedConfig() {
         #expect(Onboarding.Agent.claude.editedConfig == "~/.claude/settings.json")
-        #expect(Onboarding.Agent.codex.editedConfig == "~/.codex/config.toml")
+        #expect(Onboarding.Agent.codex.editedConfig == "~/.codex/hooks.json and config.toml")
         for agent in Onboarding.Agent.allCases {
             #expect(agent.installerScript.hasSuffix(".sh"))
         }
@@ -92,6 +92,24 @@ final class OnboardingTests {
             "notify = [\"python3\", \"/Users/x/.agent-tracker/bin/agent-tracker-hook.py\", \"codex\"]\n"
             .write(
                 to: codex.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
+        #expect(HookSetup.codexHookInstalled(home: home))
+    }
+
+    /// hooks.json alone is enough: the installer declines the `notify` line when
+    /// the user already points it elsewhere, and the native hooks still run.
+    @Test func codexHooksJsonAloneCountsAsInstalled() throws {
+        let home = try makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let codex = home.appendingPathComponent(".codex")
+        try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+        try "notify = [\"somebody-elses-tool\"]\n".write(
+            to: codex.appendingPathComponent("config.toml"), atomically: true, encoding: .utf8)
+        #expect(!HookSetup.codexHookInstalled(home: home))
+
+        let command = "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py codex-hook"
+        try #"{"hooks":{"Stop":[{"matcher":"*","hooks":[{"command":"\#(command)"}]}]}}"#
+            .write(
+                to: codex.appendingPathComponent("hooks.json"), atomically: true, encoding: .utf8)
         #expect(HookSetup.codexHookInstalled(home: home))
     }
 

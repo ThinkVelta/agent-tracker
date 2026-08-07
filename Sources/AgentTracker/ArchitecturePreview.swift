@@ -87,7 +87,9 @@ enum ArchitecturePreview {
                     Node(
                         title: "Claude Code hooks",
                         detail: "lifecycle events, pushed", accent: nil),
-                    Node(title: "Codex notify", detail: "turn complete, pushed", accent: nil),
+                    Node(
+                        title: "Codex hooks",
+                        detail: "lifecycle events, pushed", accent: nil),
                     Node(
                         title: "~/.codex/sessions",
                         detail: "rollout files, read-only", accent: nil),

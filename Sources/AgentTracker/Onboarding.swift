@@ -58,7 +58,7 @@ enum Onboarding {
         var editedConfig: String {
             switch self {
             case .claude: return "~/.claude/settings.json"
-            case .codex: return "~/.codex/config.toml"
+            case .codex: return "~/.codex/hooks.json and config.toml"
             }
         }
     }

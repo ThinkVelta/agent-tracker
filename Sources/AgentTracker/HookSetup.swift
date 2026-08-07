@@ -12,10 +12,15 @@ enum HookSetup {
         configReferencesHook(home.appendingPathComponent(".claude/settings.json"))
     }
 
+    /// Either file counts. The installer registers native hooks in hooks.json
+    /// and the legacy `notify` callback in config.toml, and it declines the
+    /// second when the user already points `notify` somewhere else — so
+    /// checking only config.toml would report a working install as missing.
     static func codexHookInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser)
         -> Bool
     {
-        configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
+        configReferencesHook(home.appendingPathComponent(".codex/hooks.json"))
+            || configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
     }
 
     /// Presence means the CLI has left its home directory behind — the
