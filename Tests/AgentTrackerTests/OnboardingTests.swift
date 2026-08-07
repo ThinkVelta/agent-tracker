@@ -65,11 +65,7 @@ final class OnboardingTests {
     /// A successful Codex install is not a finished Codex install.
     @Test func codexInstallLeavesTheTrustStepToSay() {
         #expect(Onboarding.Agent.claude.postInstallAction == nil)
-        #expect(Onboarding.Agent.codex.postInstallAction != nil)
-        #expect(Onboarding.postInstallAction(for: []) == nil)
-        #expect(Onboarding.postInstallAction(for: [.claude]) == nil)
-        #expect(Onboarding.postInstallAction(for: [.codex])?.contains("trusted") == true)
-        #expect(Onboarding.postInstallAction(for: [.claude, .codex])?.contains("trusted") == true)
+        #expect(Onboarding.Agent.codex.postInstallAction?.contains("trusted") == true)
     }
 
     // MARK: - HookSetup probes (temp home, never the real one)
@@ -121,6 +117,40 @@ final class OnboardingTests {
             .write(
                 to: codex.appendingPathComponent("hooks.json"), atomically: true, encoding: .utf8)
         #expect(HookSetup.codexHookInstalled(home: home))
+    }
+
+    /// The note is due when Codex's own trust records are empty for our hooks
+    /// file — not when this particular run happened to change something.
+    @Test func trustIsAwaitedUntilCodexRecordsIt() throws {
+        let home = try makeHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let codex = home.appendingPathComponent(".codex")
+        try FileManager.default.createDirectory(at: codex, withIntermediateDirectories: true)
+        let hooksFile = codex.appendingPathComponent("hooks.json")
+
+        // Nothing installed: nothing to say.
+        #expect(!HookSetup.codexHooksAwaitTrust(home: home))
+
+        let command = "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py codex-hook"
+        try #"{"hooks":{"Stop":[{"matcher":"*","hooks":[{"command":"\#(command)"}]}]}}"#
+            .write(to: hooksFile, atomically: true, encoding: .utf8)
+        // Registered, no config.toml at all — still waiting.
+        #expect(HookSetup.codexHooksAwaitTrust(home: home))
+
+        let config = codex.appendingPathComponent("config.toml")
+        try "model = \"gpt-5\"\n".write(to: config, atomically: true, encoding: .utf8)
+        #expect(HookSetup.codexHooksAwaitTrust(home: home))
+
+        // Trust recorded against a DIFFERENT hooks file says nothing about ours.
+        try
+            ("[hooks.state.\"/Users/dev/proj/.codex/hooks.json:stop:0:0\"]\n"
+            + "trusted_hash = \"sha256:abc\"\n")
+            .write(to: config, atomically: true, encoding: .utf8)
+        #expect(HookSetup.codexHooksAwaitTrust(home: home))
+
+        try ("[hooks.state.\"\(hooksFile.path):stop:0:0\"]\ntrusted_hash = \"sha256:abc\"\n")
+            .write(to: config, atomically: true, encoding: .utf8)
+        #expect(!HookSetup.codexHooksAwaitTrust(home: home))
     }
 
     @Test func aConfigWithoutOurHookDoesNotCountAsInstalled() throws {

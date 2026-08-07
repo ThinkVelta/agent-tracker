@@ -202,10 +202,13 @@ except (OSError, ValueError) as error:
     print(f"Cannot read {hooks_path} as JSON: {error}", file=sys.stderr)
     sys.exit(1)
 
-hooks = document.get("hooks")
-if not isinstance(document, dict) or not isinstance(hooks, dict):
+# Type-checked before the lookup, not after: a JSON array or scalar root has no
+# .get, so asking first would raise instead of printing the graceful refusal
+# this branch exists to print.
+if not isinstance(document, dict) or not isinstance(document.get("hooks"), dict):
     print(f"{hooks_path} is not in the expected shape — leaving it alone.", file=sys.stderr)
     sys.exit(1)
+hooks = document["hooks"]
 
 # Strip at hook level, not group level: a group may hold someone else's hook
 # alongside ours, and dropping the whole group would take theirs with it.

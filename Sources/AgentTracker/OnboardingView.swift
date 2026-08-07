@@ -201,12 +201,9 @@ struct OnboardingView: View {
     private func runInstallers() async {
         hookPhase = .running
         var failures: [String] = []
-        var installed: [Onboarding.Agent] = []
         for agent in agents {
             let outcome = await HookSetup.runInstaller(for: agent)
-            if outcome.succeeded {
-                installed.append(agent)
-            } else {
+            if !outcome.succeeded {
                 failures.append("\(agent.displayName):\n\(outcome.output)")
             }
         }
@@ -214,7 +211,9 @@ struct OnboardingView: View {
         codexInstalled = HookSetup.codexHookInstalled()
         if !failures.isEmpty {
             hookPhase = .failed(failures.joined(separator: "\n"))
-        } else if let note = Onboarding.postInstallAction(for: installed) {
+        } else if HookSetup.codexHooksAwaitTrust(),
+            let note = Onboarding.Agent.codex.postInstallAction
+        {
             hookPhase = .actionNeeded(note)
         } else {
             hookPhase = .idle

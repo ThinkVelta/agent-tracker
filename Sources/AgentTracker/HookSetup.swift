@@ -23,6 +23,33 @@ enum HookSetup {
             || configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
     }
 
+    /// Registered, but not yet running.
+    ///
+    /// Codex runs a hook only once the user has accepted its own review prompt,
+    /// and records that in config.toml as
+    /// `[hooks.state."<hooks.json path>:<event>:<matcher>:<index>"]`. So the
+    /// absence of *any* such key for our hooks file means nothing in it has been
+    /// trusted, ours included.
+    ///
+    /// Asymmetric on purpose. Presence is weaker evidence — the trusted hook
+    /// could be someone else's — so this errs towards going quiet rather than
+    /// telling a user to accept a prompt they already accepted. What it must
+    /// not do is stay quiet for someone who installed from the command line and
+    /// never opened Codex, which is exactly the case the note exists for, and
+    /// which is why this asks about trust rather than about whether this
+    /// particular run changed anything.
+    static func codexHooksAwaitTrust(home: URL = FileManager.default.homeDirectoryForCurrentUser)
+        -> Bool
+    {
+        let hooksFile = home.appendingPathComponent(".codex/hooks.json")
+        guard configReferencesHook(hooksFile) else { return false }
+        guard
+            let config = try? String(
+                contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8)
+        else { return true }
+        return !config.contains("hooks.state.\"\(hooksFile.path):")
+    }
+
     /// Presence means the CLI has left its home directory behind — the
     /// reliable signal from a GUI app, where PATH is not the user's shell's.
     static func claudePresent(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {

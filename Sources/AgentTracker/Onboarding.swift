@@ -62,13 +62,17 @@ enum Onboarding {
             }
         }
 
-        /// What the user still has to do once the installer has succeeded.
+        /// What the user still has to do for this agent to actually report.
+        ///
+        /// Only the copy lives here. Whether it is *due* is
+        /// `HookSetup.codexHooksAwaitTrust`, which asks Codex's own trust
+        /// records rather than inferring it from the install run — a user who
+        /// installed from the command line last week and never opened Codex
+        /// still needs to read this, and their install changes nothing today.
         ///
         /// Stated by the agent rather than scraped from installer output: the
-        /// installers write their stdout and stderr into one pipe, so the only
-        /// way to show this would be to show everything they printed. This is a
-        /// fixed property of registering a Codex hook, not a condition the run
-        /// discovers.
+        /// installers write stdout and stderr into one pipe, so showing "the
+        /// warning" would mean showing everything they printed.
         var postInstallAction: String? {
             switch self {
             case .claude: return nil
@@ -79,11 +83,5 @@ enum Onboarding {
                     + "you do, Codex sessions report nothing and nothing says why."
             }
         }
-    }
-
-    /// The one note worth showing after a successful install, or nothing.
-    static func postInstallAction(for agents: [Agent]) -> String? {
-        let actions = agents.compactMap(\.postInstallAction)
-        return actions.isEmpty ? nil : actions.joined(separator: "\n\n")
     }
 }
