@@ -321,6 +321,24 @@ final class ContinueSchedulesTests {
         #expect(schedules.schedules.isEmpty)
     }
 
+    /// A refusal is filed and logged like anything else, but must not raise a
+    /// notification: most windows cannot be told apart, so most fires refuse, and
+    /// one alert per refusal would be noise. A failure does notify — it means the
+    /// feature half-acted and a message may be sitting on a prompt.
+    @Test func refusalsAreRecordedWithoutNotifying() throws {
+        let schedules = ContinueSchedules(defaults: defaults())
+        for outcome in [ContinueReceipt.Outcome.sent, .refused, .failed] {
+            schedules.file(receipt("s-\(outcome.rawValue)", outcome: outcome))
+        }
+        // All three are receipts; the notification decision is separate from the
+        // record, which is the property that matters — nothing is hidden.
+        #expect(schedules.receipts.count == 3)
+        #expect(schedules.receipts.contains { $0.outcome == .refused })
+        #expect(ContinueSchedules.notifies(.sent))
+        #expect(ContinueSchedules.notifies(.failed))
+        #expect(ContinueSchedules.notifies(.refused) == false)
+    }
+
     @Test func updatingAnUnknownSessionIsANoOp() {
         let schedules = ContinueSchedules(defaults: defaults())
         schedules.arm(schedule("a"))

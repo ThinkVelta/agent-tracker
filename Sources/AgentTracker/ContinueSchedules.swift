@@ -295,7 +295,20 @@ final class ContinueSchedules: ObservableObject {
         receipts = updated
         persistReceipts(updated)
         log("\(receipt.sessionId) — \(receipt.summary)")
+        guard Self.notifies(receipt.outcome) else { return }
         Task { await ContinueNotifier.post(receipt) }
+    }
+
+    /// Whether an outcome is worth interrupting the user for.
+    ///
+    /// Notify when something HAPPENED, stay quiet when the feature simply
+    /// declined. A refusal is the designed-for common case — most windows cannot
+    /// be told apart, so most fires refuse — and one notification per refusal
+    /// would be pure noise. A failure is the opposite: the feature half-acted, and
+    /// "typed but could not press Return" leaves a message on a prompt the user
+    /// has to know about. Refusals are still filed and logged.
+    static func notifies(_ outcome: ContinueReceipt.Outcome) -> Bool {
+        outcome != .refused
     }
 
     /// Seconds asleep since the previous pass, from the divergence between a

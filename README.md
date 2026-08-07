@@ -250,9 +250,14 @@ delivery refuses far more often than it fires, and always says why:
   "approval prompt open", so the gate that makes a send safe has nothing to read.
 
 Every attempt is recorded — sent, refused or failed. The most recent outcome for a
-session shows in its scheduling panel (click the clock), every one is written to
-`~/.agent-tracker/logs/agent-tracker.log`, and a send also raises a notification.
-A feature that acts while nobody is watching owes you a receipt.
+session shows in its scheduling panel (click the clock), and every one is written
+to `~/.agent-tracker/logs/agent-tracker.log`. A feature that acts while nobody is
+watching owes you a receipt.
+
+**Notifications** are raised when something happened: a send, or a failure that
+left a message sitting on a prompt. Refusals stay quiet — they are the normal case
+here, not a malfunction, and one alert per refused schedule would be noise. They
+are still in the log and the panel.
 
 ### Permission modes
 
