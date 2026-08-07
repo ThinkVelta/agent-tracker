@@ -84,12 +84,20 @@ AGENTS = [
         ),
         "plan": [
             "copy the hook script to ~/.agent-tracker/bin/",
-            "back up ~/.codex/config.toml to config.toml.agent-tracker-backup",
+            "back up ~/.codex/hooks.json and config.toml alongside themselves",
             (
-                "prepend one 'notify = [...]' line to config.toml — note: live "
-                "running/turn-complete tracking works even without this (the app "
-                "watches ~/.codex/sessions read-only); notify just adds an extra "
-                "push signal"
+                "register agent-tracker hooks in ~/.codex/hooks.json — merge-only, "
+                "appended after any hooks you already have; they always exit 0 and "
+                "can never approve, deny or modify anything"
+            ),
+            (
+                "prepend one 'notify = [...]' line to config.toml — the legacy "
+                "turn-complete callback, kept so sessions already running when you "
+                "install still report something"
+            ),
+            (
+                "AFTERWARDS: Codex runs a hook only once you have trusted it, so "
+                "accept the hook review prompt on your next Codex launch"
             ),
         ],
     },
@@ -268,11 +276,9 @@ def confirm():
 def run_installer(agent, statusline=False):
     """Run one install script, prefixing its output. Returns True on success.
 
-    Two exit codes are warnings rather than failures, because the tracking that
-    matters still works: install-codex.sh exits 1 when an unrelated notify
-    handler is already configured (Codex is tracked by read-only session
-    monitoring regardless), and install-claude-code.sh exits 3 when it refuses
-    to clobber an unrecognized statusLine (the hooks are registered either way).
+    One exit code is a warning rather than a failure: install-claude-code.sh
+    exits 3 when it refuses to clobber an unrecognized statusLine, and the hooks
+    are registered either way.
     """
     print(f"\n{bold(agent['name'])}")
     script = os.path.join(SCRIPT_DIR, agent["script"])
@@ -283,6 +289,11 @@ def run_installer(agent, statusline=False):
     if proc.returncode == 0:
         for line in proc.stdout.strip().splitlines():
             print(f"  {green('✓')} {line}")
+        # Succeeded, but with something worth reading: an installer reports a
+        # setting it declined to touch on stderr while still exiting 0, and
+        # swallowing that would tell the user everything was registered.
+        for line in proc.stderr.strip().splitlines():
+            print(f"  {yellow('!')} {line}")
         return True
     if agent["key"] == "claude" and proc.returncode == 3:
         for line in proc.stdout.strip().splitlines():
@@ -292,22 +303,6 @@ def run_installer(agent, statusline=False):
         print("    unknown; everything else is installed.")
         for line in proc.stderr.strip().splitlines():
             print(dim(f"    {line}"))
-        return True
-    if (
-        agent["key"] == "codex"
-        and proc.returncode == 1
-        and "already sets 'notify'" in proc.stderr
-    ):
-        print(
-            f"  {yellow('!')} Skipped the notify line — ~/.codex/config.toml "
-            "already sets 'notify'"
-        )
-        print(
-            "    to something else (merge it manually if you want the extra "
-            "push signal)."
-        )
-        print("    Codex tracking still fully works: the app watches ~/.codex/sessions")
-        print("    (read-only) for live session state.")
         return True
     for line in (proc.stdout + proc.stderr).strip().splitlines():
         print(f"  {red('✗')} {line}")

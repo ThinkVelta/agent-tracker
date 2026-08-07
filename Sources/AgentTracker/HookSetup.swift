@@ -12,10 +12,34 @@ enum HookSetup {
         configReferencesHook(home.appendingPathComponent(".claude/settings.json"))
     }
 
+    /// Either file counts. The installer registers native hooks in hooks.json
+    /// and the legacy `notify` callback in config.toml, and it declines the
+    /// second when the user already points `notify` somewhere else — so
+    /// checking only config.toml would report a working install as missing.
     static func codexHookInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser)
         -> Bool
     {
-        configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
+        configReferencesHook(home.appendingPathComponent(".codex/hooks.json"))
+            || configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
+    }
+
+    /// Registered, but not yet running — see `CodexHookTrust`, which decides it.
+    ///
+    /// Asks about trust rather than about whether this run changed anything: a
+    /// user who installed from the command line last week and never opened
+    /// Codex is already "installed", so an install-driven check would say
+    /// nothing to exactly the person who needs to hear it.
+    static func codexHooksAwaitTrust(home: URL = FileManager.default.homeDirectoryForCurrentUser)
+        -> Bool
+    {
+        let hooksFile = home.appendingPathComponent(".codex/hooks.json")
+        guard let hooksJSON = try? Data(contentsOf: hooksFile) else { return false }
+        let config =
+            (try? String(
+                contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8))
+            ?? ""
+        return CodexHookTrust.awaitsTrust(
+            hooksJSON: hooksJSON, configTOML: config, hooksPath: hooksFile.path)
     }
 
     /// Presence means the CLI has left its home directory behind — the

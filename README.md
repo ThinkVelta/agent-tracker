@@ -144,9 +144,9 @@ icon and tells the states apart by shape:
 </picture>
 </div>
 
-**Both agents, no configuration.** Claude Code reports through its hooks. Codex
-is tracked live by reading its own session files; its `notify` hook is an extra
-signal rather than a requirement.
+**Both agents, one mechanism.** Claude Code and Codex both report through their
+native hooks. Codex is additionally tracked live by reading its own session
+files, so a session that predates the hooks still shows up.
 
 ## How it works
 
@@ -164,14 +164,20 @@ signal rather than a requirement.
   sources/FSEvents. Two light timers back that up: a 1-second re-read (tunable
   in Settings) because FSEvents does not fire for appends to a file Codex holds
   open, and a 30-second `lsof` pass to notice when a `codex` process has gone.
-- **Codex is tracked live without any config change**: the app also watches
-  Codex's own rollout files in `~/.codex/sessions` (read-only) for
-  `task_started`/`task_complete`/`turn_aborted` events, so Codex sessions show
-  running/needs-you/idle states in real time. The `notify` hook is just an
-  extra push signal on top. Codex multi-agent fan-out is collapsed into its
-  root session: subagent threads get their own rollouts and even fire `notify`
-  per subagent turn, and the app identifies and absorbs them (one session, one
-  row) instead of showing a phantom "needs you" per finished subagent.
+- **Codex has a second, weaker view of itself**, and the app keeps both. The
+  hooks in `~/.codex/hooks.json` are the primary source; underneath, the app
+  also watches Codex's own rollout files in `~/.codex/sessions` (read-only) for
+  `task_started`/`task_complete`/`turn_aborted`, which covers sessions that
+  started before the hooks were installed, a Codex too old to have them, and
+  the case where the hooks are configured but not yet trusted (Codex runs a
+  hook only after you approve it, and `codex exec` skips untrusted hooks
+  silently). Where both describe the same session **the hook wins** — a rollout
+  records no line meaning "an approval prompt is open", so the file-reader
+  would paint a waiting session as busy. Codex multi-agent fan-out is collapsed
+  into its root session: subagent threads get their own rollouts and even fire
+  `notify` per subagent turn, and the app identifies and absorbs them (one
+  session, one row) instead of showing a phantom "needs you" per finished
+  subagent.
 - **Dead sessions are pruned** automatically: each state file records the agent
   CLI's pid, and the app removes files whose process is gone (killed terminal,
   crash) even without a clean `SessionEnd`. Codex sessions are pruned via an
@@ -248,8 +254,9 @@ delivery refuses far more often than it fires, and always says why:
   or a recycled pid all refuse.
 - **Only Ghostty, only Claude Code.** Terminal.app is excluded permanently: its
   entire scripting dictionary has one text-injecting command, `do script`, which
-  *runs* what you give it. For Codex the app cannot tell "turn complete" from
-  "approval prompt open", so the gate that makes a send safe has nothing to read.
+  *runs* what you give it. Codex is not armable yet — its native hooks do
+  distinguish "turn complete" from "approval prompt open", which is what the
+  gate needs, but wiring that into the scheduler is still to come.
 
 Every attempt is recorded — sent, refused or failed. The most recent outcome for a
 session shows in its scheduling panel (click the clock), and every one is written
@@ -292,8 +299,10 @@ reasoned about.
   set in a project's own settings shadows the user-level one, and nothing runs
   for `-p`, background agents, SDK sessions or an untrusted workspace, so those
   sessions report no usage at all.
-- **Codex approval prompts don't surface as red yet**: rollouts don't record
-  them; planned via Codex's native hooks engine.
+- **Codex only reports what it has been trusted to report.** Codex runs a hook
+  only after you approve it in its own review prompt, and `codex exec` skips
+  untrusted hooks without saying so. Until then Codex falls back to rollout
+  reading, which cannot see approval prompts — they stay green rather than red.
 - **A session inside tmux or screen can't be traced back to its window.** The
   multiplexer's server is not a child of the terminal that started it, and tmux
   overwrites the variable that would otherwise name the host, so click-to-focus
@@ -335,6 +344,13 @@ all again (hooks, the statusline wrapper, the installed app, its preferences),
 run `./integrations/uninstall.sh` (add `--purge` to also delete
 `~/.agent-tracker`).
 
+**Codex needs one manual step afterwards.** The installer registers hooks in
+`~/.codex/hooks.json` (appended after any you already have, so the trust you
+granted those survives) and adds the legacy `notify` line to `config.toml`. But
+Codex runs a hook only once you have trusted it: your next Codex launch shows a
+hook review prompt naming agent-tracker, and until you accept it nothing runs —
+`codex exec` skips untrusted hooks silently, so nothing else will tell you.
+
 Claude's usage windows are a separate opt-in, because capturing them means
 occupying the one `statusLine` slot in `~/.claude/settings.json`: the picker
 asks, or pass `--statusline` (`--no-statusline` to skip the question). The
@@ -350,7 +366,7 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
       limit to resume itself when the window resets, from the clock on its row.
       Off by default (Settings › General). See below.
 - [ ] macOS notifications on state changes (opt-in, respects Focus)
-- [ ] Migrate the Codex integration to its native hooks engine (approval-request
+- [x] Migrate the Codex integration to its native hooks engine (approval-request
       red states)
 - [ ] More providers (Kimi, GLM, …), since the state file schema is provider-agnostic
 - [x] Onboarding: install as .app + login item

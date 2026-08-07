@@ -139,8 +139,12 @@ final class SessionStore: ObservableObject {
                 Task { @MainActor in self?.scheduleRefreshTimer(interval: interval) }
             }
 
-        // Codex has no turn-start hook; live state comes from watching rollout
-        // files directly.
+        // Kept now that Codex reports through its own hooks, because three
+        // kinds of session still have nothing else: one that started before the
+        // hooks were installed, a Codex too old to have them, and hooks that
+        // are registered but not yet trusted — which `codex exec` skips
+        // silently. It is also the only source of Codex usage limits, which no
+        // hook payload carries. `CodexMerge` decides where the two overlap.
         let scanner = CodexSessionScanner()
         codexScanner = scanner
         scannerSubscription = scanner.$sessions
@@ -174,10 +178,10 @@ final class SessionStore: ObservableObject {
         for limit in ClaudeStatusline.limits(at: Self.claudeStatuslineURL) {
             accountLimits.record(limit, for: "claude-code")
         }
-        // Codex has no hook to write a state file, and FSEvents does not
-        // reliably report appends to its rollouts — so the scanner's cheap
-        // re-read rides this same tick. Without it, a Codex turn starting or
-        // finishing stayed invisible until the scanner's 30s liveness pass.
+        // FSEvents does not reliably report appends to Codex's rollouts, so the
+        // scanner's cheap re-read rides this same tick. Without it, a turn
+        // starting or finishing in a session the hooks do not cover stayed
+        // invisible until the scanner's 30s liveness pass.
         codexScanner?.refreshFiles()
         let fileManager = FileManager.default
         var loaded: [AgentSession] = []
@@ -228,57 +232,26 @@ final class SessionStore: ObservableObject {
         if let scanner = codexScanner {
             for limit in scanner.usageLimits { accountLimits.record(limit, for: "codex") }
             let scanned = scanner.sessions
-            let threadMap = scanner.threadIdToSession
-            // Notify rows for subagent threads are internal fan-out, never
-            // user-facing sessions — Codex multi-agent fires the notify hook
-            // per subagent turn. Delete their state files (not just hide):
-            // the live threadMap dedupe below only lasts while the subagent's
-            // rollout is tracked, and these files otherwise resurface as
-            // phantom "needs you" rows for as long as the root codex process
-            // lives, one per completed subagent.
-            let subagentThreads = scanner.subagentThreadIds
-            if !subagentThreads.isEmpty {
-                merged.removeAll { row in
-                    guard row.provider == "codex",
-                        subagentThreads.contains(row.sessionId)
-                    else { return false }
-                    if let fileURL = row.fileURL {
-                        try? FileManager.default.removeItem(at: fileURL)
-                    }
-                    return true
-                }
+            var codexRows: [AgentSession] = []
+            merged.removeAll { row in
+                guard row.provider == "codex" else { return false }
+                codexRows.append(row)
+                return true
             }
-            // The notify hook's sessionId may be a thread id rather than the
-            // stable session_id — the scanner's map resolves both. A matched
-            // notify row is superseded, but still carries enrichment rollouts
-            // can't provide (TERM_PROGRAM from the session's shell), so graft
-            // that onto the scanner row. Unmatched rows stay visible as
-            // fallback — deliberately no cwd-based matching, which could hide
-            // a distinct session sharing a working directory.
-            var termProgramBySession: [String: String] = [:]
-            if !scanned.isEmpty {
-                merged.removeAll { row in
-                    guard row.provider == "codex",
-                        let target = threadMap[row.sessionId]
-                    else { return false }
-                    if let termProgram = row.termProgram {
-                        termProgramBySession[target] = termProgram
-                    }
-                    return true
-                }
+            let resolution = CodexMerge.resolve(
+                fileRows: codexRows,
+                scanned: scanned,
+                threadMap: scanner.threadIdToSession,
+                subagentThreads: scanner.subagentThreadIds)
+            for fileURL in resolution.filesToDelete {
+                try? FileManager.default.removeItem(at: fileURL)
             }
             if !codexAcknowledgedAt.isEmpty {
                 let liveIds = Set(scanned.map(\.sessionId))
                 codexAcknowledgedAt = codexAcknowledgedAt.filter { liveIds.contains($0.key) }
             }
-            merged.append(
-                contentsOf: scanned.map { session in
-                    var session = session
-                    if session.termProgram == nil {
-                        session.termProgram = termProgramBySession[session.sessionId]
-                    }
-                    return applyAcknowledgement(session)
-                })
+            merged.append(contentsOf: resolution.fallbackRows)
+            merged.append(contentsOf: resolution.scannerRows.map(applyAcknowledgement))
         }
 
         // The limit is account-wide, so two rows must not straddle its reset and

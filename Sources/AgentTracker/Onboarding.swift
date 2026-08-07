@@ -58,7 +58,29 @@ enum Onboarding {
         var editedConfig: String {
             switch self {
             case .claude: return "~/.claude/settings.json"
-            case .codex: return "~/.codex/config.toml"
+            case .codex: return "~/.codex/hooks.json and config.toml"
+            }
+        }
+
+        /// What the user still has to do for this agent to actually report.
+        ///
+        /// Only the copy lives here. Whether it is *due* is
+        /// `HookSetup.codexHooksAwaitTrust`, which asks Codex's own trust
+        /// records rather than inferring it from the install run — a user who
+        /// installed from the command line last week and never opened Codex
+        /// still needs to read this, and their install changes nothing today.
+        ///
+        /// Stated by the agent rather than scraped from installer output: the
+        /// installers write stdout and stderr into one pipe, so showing "the
+        /// warning" would mean showing everything they printed.
+        var postInstallAction: String? {
+            switch self {
+            case .claude: return nil
+            case .codex:
+                return
+                    "Open Codex once and accept the hook review prompt. It runs a hook only "
+                    + "after you have trusted it, and skips untrusted hooks silently — so until "
+                    + "you do, Codex sessions report nothing and nothing says why."
             }
         }
     }

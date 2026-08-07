@@ -83,6 +83,11 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var transcriptPath: String?
     var termProgram: String?
     var lastMessage: String?
+    /// Which mechanism wrote this row: `"hook"` for a lifecycle hook, `"notify"`
+    /// for Codex's legacy turn-complete callback. Only Codex has two, and only
+    /// `CodexMerge` reads it — a hook watched the whole session, so its state
+    /// outranks anything derived from a rollout file after the fact.
+    var origin: String?
     /// Which terminal pane the session occupies, as the hook found it. Every
     /// field is optional: it depends on the terminal, and sessions the Codex
     /// scanner discovers never had a hook run at all.
@@ -100,7 +105,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schema, provider, sessionId, pid, cwd, state, reason, lastEvent
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
-        case terminal
+        case terminal, origin
     }
 
     var id: String { "\(provider)-\(sessionId)" }

@@ -1,11 +1,11 @@
 #!/bin/bash
 # Removes the agent-tracker integrations: surgically strips agent-tracker hook
-# commands from ~/.claude/settings.json (hook-level, so third-party hooks
-# sharing an entry survive) and the agent-tracker notify setting from
-# ~/.codex/config.toml (single- or multi-line form), backing each file up first
-# and leaving everything else intact. The two sections are independent — a
-# broken config in one never blocks cleaning the other. Idempotent. Session
-# data in ~/.agent-tracker is kept unless --purge.
+# commands from ~/.claude/settings.json and ~/.codex/hooks.json (hook-level, so
+# third-party hooks sharing an entry survive) and the agent-tracker notify
+# setting from ~/.codex/config.toml (single- or multi-line form), backing each
+# file up first and leaving everything else intact. The sections are
+# independent — a broken config in one never blocks cleaning the others.
+# Idempotent. Session data in ~/.agent-tracker is kept unless --purge.
 set -euo pipefail
 
 PURGE=0
@@ -26,6 +26,7 @@ done
 
 SETTINGS="$HOME/.claude/settings.json"
 CONFIG="$HOME/.codex/config.toml"
+HOOKS="$HOME/.codex/hooks.json"
 DATA_DIR="${AGENT_TRACKER_DIR:-$HOME/.agent-tracker}"
 FAILED=0
 
@@ -182,6 +183,89 @@ PYEOF
   fi
 else
   echo "Claude Code: no agent-tracker statusline wrapper in $SETTINGS — nothing to do"
+fi
+
+# --- Codex: remove agent-tracker hook commands -------------------------------
+if [ -f "$HOOKS" ] && grep -q "agent-tracker-hook" "$HOOKS"; then
+  cp "$HOOKS" "$HOOKS.agent-tracker-uninstall-backup"
+  echo "Backed up $HOOKS to $HOOKS.agent-tracker-uninstall-backup"
+  if ! AGENT_TRACKER_HOOKS_PATH="$HOOKS" python3 - << 'PYEOF'; then
+import json
+import os
+import sys
+
+hooks_path = os.environ["AGENT_TRACKER_HOOKS_PATH"]
+try:
+    with open(hooks_path) as handle:
+        document = json.load(handle)
+except (OSError, ValueError) as error:
+    print(f"Cannot read {hooks_path} as JSON: {error}", file=sys.stderr)
+    sys.exit(1)
+
+# Type-checked before the lookup, not after: a JSON array or scalar root has no
+# .get, so asking first would raise instead of printing the graceful refusal
+# this branch exists to print.
+if not isinstance(document, dict) or not isinstance(document.get("hooks"), dict):
+    print(f"{hooks_path} is not in the expected shape — leaving it alone.", file=sys.stderr)
+    sys.exit(1)
+hooks = document["hooks"]
+
+# Strip at hook level, not group level: a group may hold someone else's hook
+# alongside ours, and dropping the whole group would take theirs with it.
+removed = 0
+for event in list(hooks):
+    groups = hooks[event]
+    if not isinstance(groups, list):
+        continue
+    surviving = []
+    for group in groups:
+        if not isinstance(group, dict):
+            surviving.append(group)
+            continue
+        entries = group.get("hooks")
+        if not isinstance(entries, list):
+            surviving.append(group)
+            continue
+        kept = [
+            entry
+            for entry in entries
+            if not (
+                isinstance(entry, dict)
+                and "agent-tracker-hook" in entry.get("command", "")
+            )
+        ]
+        removed += len(entries) - len(kept)
+        if kept:
+            group["hooks"] = kept
+            surviving.append(group)
+    if surviving:
+        hooks[event] = surviving
+    else:
+        del hooks[event]
+
+if not removed:
+    print(
+        f"Found 'agent-tracker-hook' in {hooks_path} but not as a hook command "
+        "— please remove it manually.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+with open(hooks_path, "w") as handle:
+    json.dump(document, handle, indent=2)
+    handle.write("\n")
+
+print(f"Removed {removed} agent-tracker hook command(s) from {hooks_path}")
+# Codex keys hook trust by position, so anything the user registered AFTER ours
+# has shifted down and its trust record no longer matches. Nothing breaks; Codex
+# just asks about those hooks again on the next launch.
+print("Codex will re-ask you to trust any hooks that shifted position.")
+PYEOF
+    echo "WARNING: Codex hook cleanup failed — check $HOOKS manually." >&2
+    FAILED=1
+  fi
+else
+  echo "Codex: no agent-tracker hooks in $HOOKS — nothing to do"
 fi
 
 # --- Codex: remove the agent-tracker notify setting --------------------------

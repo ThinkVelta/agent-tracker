@@ -12,17 +12,21 @@ session's terminal window across Spaces.
 ## Architecture
 
 Event-driven, no daemon: agent CLIs push lifecycle events via their native hook
-mechanisms (Claude Code `hooks`, Codex `notify`) into
+mechanisms (Claude Code `hooks`, Codex `hooks` plus the legacy `notify`) into
 `integrations/agent-tracker-hook.py`, which writes one JSON state file per
 session to `~/.agent-tracker/sessions/`. The SwiftUI app watches that directory
 and renders state. Codex is additionally tracked live in-app by scanning its
-rollout files. See README for the full picture.
+rollout files, as the fallback for sessions its hooks do not cover. See README
+for the full picture.
 
 - `Sources/AgentTracker/` — SwiftUI app (SPM executable, no Xcode project)
   - `SessionStore.swift` — loads/watches state files, prunes dead pids
   - `CodexSessionScanner.swift` — watches `~/.codex/sessions` rollouts
     read-only (`task_started`/`task_complete`/`turn_aborted` events);
-    lsof-based liveness; subagent threads excluded
+    lsof-based liveness; subagent threads excluded. The fallback, not the
+    primary source — it cannot see approval prompts
+  - `CodexMerge.swift` — decides who wins when a hook and the rollout scanner
+    both describe one Codex session (the hook does)
   - `StatusIconRenderer.swift` — draws the colored 3-dot menu bar NSImage and
     exposes per-dot hit regions for click→filter mapping
   - `TitleDirectory.swift` — session_id → live window title map, accumulated

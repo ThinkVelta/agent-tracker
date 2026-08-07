@@ -6,7 +6,8 @@ state files under ~/.agent-tracker/sessions/ which the menu bar app watches.
 
 Usage:
   agent-tracker-hook.py claude          # Claude Code hook: reads JSON on stdin
-  agent-tracker-hook.py codex <json>    # Codex notify: JSON as final argument
+  agent-tracker-hook.py codex-hook      # Codex native hook: reads JSON on stdin
+  agent-tracker-hook.py codex <json>    # Codex legacy notify: JSON as final argument
 
 Design constraints: must never block or break the agent session (always exits
 0, prints nothing on success) and must be dependency-free (stdlib only).
@@ -20,6 +21,16 @@ import sys
 import time
 
 SCHEMA_VERSION = 1
+
+# Wall-clock budget for the whole process-tree walk, across every `ps` it runs.
+#
+# Load-bearing rather than tidiness: Codex runs its hooks synchronously
+# (`async: true` is parsed but skipped — "async hooks are not supported yet"),
+# and one of the events we register for is `PermissionRequest`, which sits in
+# the approval path. A hook that overruns its configured timeout there is not a
+# missed state update, it is an approval prompt we interfered with. The happy
+# path takes ~40ms; this only bites when `ps` itself is wedged.
+PROCESS_WALK_BUDGET = 2.0
 
 # Process names that identify a long-lived agent CLI when walking up the tree.
 AGENT_PROCESS_HINTS = ("claude", "codex", "node", "bun")
@@ -71,13 +82,17 @@ def agent_process():
     """
     pid = os.getppid()
     fallback = (pid, None)
+    deadline = time.monotonic() + PROCESS_WALK_BUDGET
     for _ in range(5):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
         try:
             out = subprocess.run(
                 ["ps", "-o", "ppid=,tty=,comm=", "-p", str(pid)],
                 capture_output=True,
                 text=True,
-                timeout=5,
+                timeout=remaining,
                 check=False,
             ).stdout.strip()
             if not out:
@@ -161,7 +176,66 @@ def update(provider, session_id, event, state, reason, extra):
     write_state(path, data)
 
 
-def handle_claude():
+def claude_states(payload):
+    """Claude Code's lifecycle events, as states.
+
+    "Stop" is a contract: the app reconsiders a red that came from it (the turn
+    ended, but background work may still be running), and never one from
+    "Notification", which is a permission prompt. Renaming either key here
+    without RegistryEnrichment.turnEndedEvent brings the false reds back.
+    """
+    tool = payload.get("tool_name")
+    return {
+        "SessionStart": ("idle", "Session started"),
+        "UserPromptSubmit": ("running", "Working…"),
+        "PreToolUse": ("running", f"Using {tool}" if tool else "Working…"),
+        "PreCompact": ("running", "Compacting context"),
+        "Stop": ("needsYou", "Turn complete — ready for you"),
+        "Notification": ("needsYou", payload.get("message") or "Needs your attention"),
+    }
+
+
+def codex_states(payload):
+    """Codex's native hook events, as states.
+
+    Deliberately parallel to `claude_states`: Codex's hooks carry the same
+    stdin payload shape, and "PermissionRequest" plays the part "Notification"
+    plays for Claude — the one event that means a prompt is waiting rather than
+    a turn having finished. That distinction is the whole reason to prefer
+    these hooks over the legacy `notify`, which cannot see it.
+
+    No subagent guard here, and that is measured rather than assumed: across
+    1213 rollouts on a real multi-agent machine, every one of the 1171 subagent
+    threads carried the *root* session's `session_id` — only the thread id
+    differs, with `parent_thread_id` pointing up the tree — and all 19 sessions
+    that had subagents shared one `session_id` with their root. So a hook fired
+    inside a subagent writes to the root session's file, which is what we want:
+    its `PreToolUse` reads as the session working, and its `PermissionRequest`
+    turns the session red, because the user really does have to approve it.
+    This is what the legacy `notify` gets wrong — it reports a thread id, which
+    is why `CodexSubagentLedger` and `threadIdToSession` exist.
+    """
+    tool = payload.get("tool_name")
+    return {
+        "SessionStart": ("idle", "Session started"),
+        "UserPromptSubmit": ("running", "Working…"),
+        "PreToolUse": ("running", f"Using {tool}" if tool else "Working…"),
+        "PreCompact": ("running", "Compacting context"),
+        "Stop": ("needsYou", "Turn complete — ready for you"),
+        "PermissionRequest": (
+            "needsYou",
+            f"Approve {tool}?" if tool else "Waiting on your approval",
+        ),
+    }
+
+
+def handle_hook(provider, states):
+    """Handle one stdin-delivered hook payload.
+
+    Shared by Claude Code and Codex, which agree on the wire format down to the
+    field names (`hook_event_name`, `session_id`, `cwd`, `transcript_path`).
+    Only the event vocabulary differs, which is what `states` supplies.
+    """
     try:
         payload = json.load(sys.stdin)
     except Exception:  # noqa: BLE001 — malformed input must not break a session
@@ -172,33 +246,31 @@ def handle_claude():
         "cwd": payload.get("cwd"),
         "transcriptPath": payload.get("transcript_path"),
         "termProgram": os.environ.get("TERM_PROGRAM"),
+        # Which mechanism wrote this. For Codex the app has a second, weaker
+        # view of the same session (rollout files), and it needs to know which
+        # rows came from something that watched the whole lifecycle.
+        "origin": "hook",
     }
 
     if event == "SessionEnd":
         try:
-            os.remove(state_path("claude-code", session_id))
+            os.remove(state_path(provider, session_id))
         except FileNotFoundError:
             pass
         return
 
-    tool = payload.get("tool_name")
-    # "Stop" is a contract: the app reconsiders a red that came from it (the
-    # turn ended, but background work may still be running), and never one from
-    # "Notification", which is a permission prompt. Renaming either key here
-    # without RegistryEnrichment.turnEndedEvent brings the false reds back.
-    mapping = {
-        "SessionStart": ("idle", "Session started"),
-        "UserPromptSubmit": ("running", "Working…"),
-        "PreToolUse": ("running", f"Using {tool}" if tool else "Working…"),
-        "PreCompact": ("running", "Compacting context"),
-        "Stop": ("needsYou", "Turn complete — ready for you"),
-        "Notification": ("needsYou", payload.get("message") or "Needs your attention"),
-    }
-    state, reason = mapping.get(event, (None, None))
-    update("claude-code", session_id, event or "unknown", state, reason, extra)
+    state, reason = states(payload).get(event, (None, None))
+    update(provider, session_id, event or "unknown", state, reason, extra)
 
 
 def handle_codex(args):
+    """Codex's legacy `notify` callback: one event, fired after a turn ends.
+
+    Superseded by `codex-hook` above, which sees the whole lifecycle. Kept
+    because a session that was already running when the hooks were installed
+    still reports through this, and because `notify` remains in config.toml
+    until the user uninstalls it.
+    """
     try:
         payload = json.loads(args[0]) if args else {}
     except Exception:  # noqa: BLE001 — malformed input must not break a session
@@ -221,6 +293,7 @@ def handle_codex(args):
         "cwd": get("cwd") or os.getcwd(),
         "termProgram": os.environ.get("TERM_PROGRAM"),
         "lastMessage": last_message,
+        "origin": "notify",
     }
 
     event = get("type") or "unknown"
@@ -240,7 +313,9 @@ def handle_codex(args):
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "claude"
     if mode == "claude":
-        handle_claude()
+        handle_hook("claude-code", claude_states)
+    elif mode == "codex-hook":
+        handle_hook("codex", codex_states)
     elif mode == "codex":
         handle_codex(sys.argv[2:])
     return 0
