@@ -13,6 +13,7 @@ Design constraints: must never block or break the agent session (always exits
 0, prints nothing on success) and must be dependency-free (stdlib only).
 """
 
+import calendar
 import functools
 import json
 import os
@@ -21,6 +22,19 @@ import sys
 import time
 
 SCHEMA_VERSION = 1
+
+# How long a hook-written row stays authoritative over Codex's legacy `notify`.
+#
+# A live hook writes on every prompt, tool call and turn end, so two minutes of
+# silence at the exact moment a turn ends means the hooks are not covering this
+# session. The same 120 seconds the app uses elsewhere for "these two sources
+# are talking about the same moment".
+#
+# Erring either way is safe, and unequally so: too short and notify takes over a
+# turn a live hook also reported, costing a held schedule; too long and a dead
+# hook's last word stands, which is the one that could authorise a send. Short
+# wins ties.
+HOOK_LIVENESS_WINDOW = 120
 
 # Wall-clock budget for the whole process-tree walk, across every `ps` it runs.
 #
@@ -130,6 +144,22 @@ def terminal_identity(tty):
 def state_path(provider, session_id):
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in session_id)
     return os.path.join(sessions_dir(), f"{provider}-{safe}.json")
+
+
+def wrote_recently(stamp, within=HOOK_LIVENESS_WINDOW):
+    """Whether `stamp` is recent enough to mean a live writer produced it.
+
+    Absent or unparseable counts as not recent: this decides whether to *defer*
+    to another writer, and deferring to one we cannot date is how a stale row
+    outlives the thing that wrote it.
+    """
+    if not stamp:
+        return False
+    try:
+        seen = calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+    except (ValueError, TypeError):
+        return False
+    return 0 <= time.time() - seen <= within
 
 
 def load_state(path):
@@ -292,13 +322,21 @@ def handle_codex(args):
     # notifications from one Codex process collapse into a single session.
     session_id = get("thread-id", "thread_id") or f"pid-{agent_process()[0]}"
 
-    # Stand down if the hooks are covering this session. For a root thread
-    # Codex's thread id IS its session id, so both mechanisms write this same
-    # file, and both fire at the end of a turn. Whichever landed last would win:
-    # notify would leave `lastEvent` reading "agent-turn-complete", where the
-    # app's gate for sending into a terminal requires "Stop". A race decided by
-    # scheduling is not a thing to leave in the path of that.
-    if load_state(state_path("codex", session_id)).get("origin") == "hook":
+    # Stand down if the hooks are *currently* covering this session. For a root
+    # thread Codex's thread id IS its session id, so both mechanisms write this
+    # same file, and both fire at the end of a turn. Whichever landed last would
+    # win: notify would leave `lastEvent` reading "agent-turn-complete", where
+    # the app's gate for sending into a terminal requires "Stop". A race decided
+    # by scheduling is not a thing to leave in the path of that.
+    #
+    # "Currently" is load-bearing. Standing down unconditionally would mean that
+    # if the hooks ever stop — trust invalidated by an edit to hooks.json, say —
+    # the row freezes at its last hook event forever, and notify could never
+    # correct it. A frozen "Stop" is the dangerous one: the session moves on to
+    # an approval prompt, the file still says the turn ended, and the send gate
+    # believes it. So a hook that has not written recently is treated as absent.
+    current = load_state(state_path("codex", session_id))
+    if current.get("origin") == "hook" and wrote_recently(current.get("updatedAt")):
         return
     last_message = get("last-assistant-message", "last_assistant_message")
     if last_message and len(last_message) > 200:
