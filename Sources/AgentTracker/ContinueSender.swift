@@ -19,16 +19,23 @@ struct ContinueDeliveryResult: Equatable, Sendable {
 /// Closures rather than a protocol, matching how this repo injects everywhere
 /// else (`DirectoryWatcher(url:) { }`, `ContinueSchedules.deliver`).
 struct ChannelOps: Sendable {
+    /// Sampled ONCE per delivery. Everything below is addressed to this exact
+    /// process: if each step rediscovered the app for itself, verification could
+    /// pass against one instance and the write land in another — which is the
+    /// type-into-a-stranger's-pane failure the whole design exists to prevent.
     var terminalPid: @Sendable () -> Int32?
-    var surfaces: @Sendable () -> Result<[ContinueDelivery.Surface], GhosttyScripting.Failure>
-    var writeText: @Sendable (_ text: String, _ surfaceId: String) -> Bool
-    var pressReturn: @Sendable (_ surfaceId: String) -> Bool
+    var surfaces:
+        @Sendable (_ pid: Int32) -> Result<
+            [ContinueDelivery.Surface], GhosttyScripting.Failure
+        >
+    var writeText: @Sendable (_ text: String, _ surfaceId: String, _ pid: Int32) -> Bool
+    var pressReturn: @Sendable (_ surfaceId: String, _ pid: Int32) -> Bool
 
     static let ghostty = ChannelOps(
         terminalPid: { GhosttyScripting.runningApplication()?.processIdentifier },
-        surfaces: { GhosttyScripting.surfaces() },
-        writeText: { GhosttyScripting.writeText($0, toSurface: $1) },
-        pressReturn: { GhosttyScripting.pressReturn(inSurface: $0) }
+        surfaces: { GhosttyScripting.surfaces(pid: $0) },
+        writeText: { GhosttyScripting.writeText($0, toSurface: $1, pid: $2) },
+        pressReturn: { GhosttyScripting.pressReturn(inSurface: $0, pid: $1) }
     )
 }
 
@@ -83,7 +90,7 @@ enum ContinueSender {
         }
 
         let surfaces: [ContinueDelivery.Surface]
-        switch ops.surfaces() {
+        switch ops.surfaces(terminalPid) {
         case .success(let live): surfaces = live
         case .failure(let failure): return .refused(failure.reason)
         }
@@ -112,11 +119,11 @@ enum ContinueSender {
         }
 
         // Everything has agreed. Write the text, and ONLY on success press Return.
-        guard ops.writeText(fire.message, target.surfaceId) else {
+        guard ops.writeText(fire.message, target.surfaceId, terminalPid) else {
             return ContinueDeliveryResult(
                 outcome: .failed, detail: "Ghostty refused to write the message")
         }
-        guard ops.pressReturn(target.surfaceId) else {
+        guard ops.pressReturn(target.surfaceId, terminalPid) else {
             // The message is sitting on the prompt, unsent. Saying "failed" here
             // would be wrong in the other direction: something IS in that window
             // and the user needs to know it is there.

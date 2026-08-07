@@ -120,6 +120,22 @@ final class ContinueSchedules: ObservableObject {
                 for: schedule.sessionId, expectedTitle: expectedTitle)
             await MainActor.run {
                 guard let self else { return }
+                // Only if this is still the arming that launched the task. Pane
+                // resolution takes as long as an Automation preflight, and a user
+                // who re-arms in that window would otherwise have their newer
+                // schedule silently overwritten with a pane resolved for the old
+                // one. Compared on what the user set rather than on a token,
+                // because re-arming with identical values IS the same schedule
+                // and applying to it is harmless.
+                let current = self.schedule(for: schedule.sessionId)
+                guard current?.armedForResetAt == schedule.armedForResetAt,
+                    current?.message == schedule.message,
+                    current?.repeats == schedule.repeats
+                else {
+                    self.log(
+                        "\(schedule.sessionId) — re-armed while resolving; older result dropped")
+                    return
+                }
                 self.update(sessionId: schedule.sessionId) { record in
                     record.target = resolved.target
                     record.agent = resolved.agent
@@ -143,7 +159,7 @@ final class ContinueSchedules: ObservableObject {
             guard let terminalPid = GhosttyScripting.runningApplication()?.processIdentifier else {
                 return (nil, agent, GhosttyScripting.Failure.notRunning.reason)
             }
-            switch GhosttyScripting.surfaces() {
+            switch GhosttyScripting.surfaces(pid: terminalPid) {
             case .failure(let failure):
                 return (nil, agent, failure.reason)
             case .success(let surfaces):
@@ -230,7 +246,11 @@ final class ContinueSchedules: ObservableObject {
         file(
             ContinueReceipt(
                 sessionId: fire.sessionId,
-                project: projectName(for: fire.sessionId),
+                // From the fire, never from the schedules: a one-shot is deleted
+                // before its outcome exists, so looking it up there degrades every
+                // single-shot receipt to a raw session id — which is exactly the
+                // receipt least likely to be self-explanatory.
+                project: fire.target?.title ?? fire.sessionId,
                 message: fire.message,
                 at: Date(),
                 outcome: result.outcome,
@@ -266,12 +286,6 @@ final class ContinueSchedules: ObservableObject {
         persistReceipts(updated)
         log("\(receipt.sessionId) — \(receipt.summary)")
         Task { await ContinueNotifier.post(receipt) }
-    }
-
-    /// Best effort: a schedule can outlive the row it was armed from, and a
-    /// receipt is more useful with a name than with an opaque id.
-    private func projectName(for sessionId: String) -> String {
-        schedules.first { $0.sessionId == sessionId }?.target?.title ?? sessionId
     }
 
     /// Seconds asleep since the previous pass, from the divergence between a

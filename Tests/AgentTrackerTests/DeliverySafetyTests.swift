@@ -78,9 +78,16 @@ final class DeliverySafetyTests {
     @Test func writesAddressASurfaceByIdRatherThanPosition() throws {
         let text = try source("GhosttyScripting.swift")
         #expect(text.contains("formUniqueID"))
-        // The write helpers take a surface id, never an index.
-        #expect(text.contains("func writeText(_ text: String, toSurface surfaceId: String)"))
-        #expect(text.contains("func pressReturn(inSurface surfaceId: String)"))
+        // The write helpers take a surface ID, never an index. Asserted on the
+        // parameter rather than the whole signature: pinning the signature made
+        // this fail when an unrelated argument was added, which trains people to
+        // update the guard instead of reading it.
+        #expect(text.contains("toSurface surfaceId: String"))
+        #expect(text.contains("inSurface surfaceId: String"))
+        // Reads legitimately enumerate by index; only the WRITE path must not.
+        // The single specifier the writes build is the id one.
+        #expect(text.contains("surfaceSpecifier(id:"))
+        #expect(text.contains("private static func surfaceSpecifier(id surfaceId: String)"))
     }
 
     /// Return is its own call, reachable only after a successful write. If these

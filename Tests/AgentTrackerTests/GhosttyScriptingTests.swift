@@ -17,18 +17,24 @@ final class GhosttyScriptingTests {
         GhosttyScripting.runningApplication() != nil
     }
 
+    /// One sample, exactly as delivery takes one — every call is addressed to
+    /// this process rather than each rediscovering the app for itself.
+    private var ghosttyPid: pid_t? {
+        GhosttyScripting.runningApplication()?.processIdentifier
+    }
+
     /// With Ghostty absent, everything must refuse rather than hang or crash —
     /// which is also the CI path, where no terminal app exists at all.
     @Test func withoutGhosttyEverythingRefusesCleanly() {
         guard !ghosttyIsRunning else { return }
         // `Result<Void, _>` is not Equatable, so match the case rather than
         // making the production type conform for a test's convenience.
-        if case .failure(let failure) = GhosttyScripting.automationPermission() {
+        if case .failure(let failure) = GhosttyScripting.automationPermission(pid: 1) {
             #expect(failure == .notRunning)
         } else {
             Issue.record("permission check succeeded with no Ghostty running")
         }
-        switch GhosttyScripting.surfaces() {
+        switch GhosttyScripting.surfaces(pid: 1) {
         case .failure(let failure):
             #expect(failure == .notRunning)
             #expect(failure.reason.isEmpty == false)
@@ -42,13 +48,15 @@ final class GhosttyScriptingTests {
     /// only acceptable when Ghostty genuinely has no windows.
     @Test func aRunningGhosttyReportsItsSurfaces() throws {
         guard ghosttyIsRunning else { return }
-        guard case .success = GhosttyScripting.automationPermission() else {
+        guard let pid = ghosttyPid,
+            case .success = GhosttyScripting.automationPermission(pid: pid)
+        else {
             // Not granted on this machine, which is a legitimate state and not a
             // failure of this code.
             return
         }
 
-        let surfaces = try GhosttyScripting.surfaces().get()
+        let surfaces = try GhosttyScripting.surfaces(pid: pid).get()
         // Ghostty is running, so there is at least one window.
         #expect(surfaces.isEmpty == false, "read no surfaces from a running Ghostty")
         for surface in surfaces {
@@ -64,11 +72,11 @@ final class GhosttyScriptingTests {
     /// Reading twice must agree. A specifier form that Ghostty half-accepts would
     /// show up here as a list that changes shape between identical calls.
     @Test func readingTwiceGivesTheSameSurfaces() throws {
-        guard ghosttyIsRunning, case .success = GhosttyScripting.automationPermission() else {
-            return
-        }
-        let first = try GhosttyScripting.surfaces().get()
-        let second = try GhosttyScripting.surfaces().get()
+        guard let pid = ghosttyPid,
+            case .success = GhosttyScripting.automationPermission(pid: pid)
+        else { return }
+        let first = try GhosttyScripting.surfaces(pid: pid).get()
+        let second = try GhosttyScripting.surfaces(pid: pid).get()
         #expect(Set(first.map(\.id)) == Set(second.map(\.id)))
     }
 

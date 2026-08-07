@@ -70,10 +70,9 @@ enum GhosttyScripting {
     ///
     /// Blocking, and the measured worst case is over 100 seconds, so the caller
     /// must already be off the main actor.
-    static func automationPermission() -> Result<Void, Failure> {
-        guard let ghostty = runningApplication() else { return .failure(.notRunning) }
+    static func automationPermission(pid: pid_t) -> Result<Void, Failure> {
         var target = AEAddressDesc()
-        var pid = ghostty.processIdentifier
+        var pid = pid
         let built = AECreateDesc(
             DescType(typeKernelProcessID), &pid, MemoryLayout<pid_t>.size, &target)
         guard built == noErr else {
@@ -105,14 +104,13 @@ enum GhosttyScripting {
     /// returns a nested descriptor whose shape is undocumented, and guessing at
     /// it is how a surface list silently becomes wrong. Nine windows cost a few
     /// milliseconds and this runs once per delivery.
-    static func surfaces() -> Result<[ContinueDelivery.Surface], Failure> {
-        if case .failure(let failure) = automationPermission() { return .failure(failure) }
-        guard let ghostty = runningApplication() else { return .failure(.notRunning) }
+    static func surfaces(pid: pid_t) -> Result<[ContinueDelivery.Surface], Failure> {
+        if case .failure(let failure) = automationPermission(pid: pid) { return .failure(failure) }
 
         let count: Int
         switch send(
             event: AEEventClass(kAECoreSuite), id: AEEventID(kAECountElements),
-            to: ghostty.processIdentifier,
+            to: pid,
             direct: NSAppleEventDescriptor.null(),
             extras: [AEKeyword(keyAEObjectClass): NSAppleEventDescriptor(typeCode: Code.terminal)])
         {
@@ -128,15 +126,15 @@ enum GhosttyScripting {
             let specifier = objectSpecifier(
                 container: nil, form: AEKeyword(formAbsolutePosition),
                 key: NSAppleEventDescriptor(int32: Int32(index)))
-            guard let id = property(Code.id, of: specifier, in: ghostty.processIdentifier),
-                let name = property(Code.name, of: specifier, in: ghostty.processIdentifier)
+            guard let id = property(Code.id, of: specifier, in: pid),
+                let name = property(Code.name, of: specifier, in: pid)
             else {
                 // A surface that closed mid-enumeration is not an error; it is
                 // simply not in the list any more.
                 continue
             }
             let directory =
-                property(Code.workingDirectory, of: specifier, in: ghostty.processIdentifier) ?? ""
+                property(Code.workingDirectory, of: specifier, in: pid) ?? ""
             surfaces.append(
                 ContinueDelivery.Surface(id: id, title: name, workingDirectory: directory))
         }
@@ -169,31 +167,30 @@ enum GhosttyScripting {
     /// Verified on a real Ghostty: the `on` target IS honoured for a surface that
     /// is not focused, while five sibling windows shared one title. Without that,
     /// this command would itself have been a type-into-the-wrong-window route.
-    static func writeText(_ text: String, toSurface surfaceId: String) -> Bool {
+    static func writeText(_ text: String, toSurface surfaceId: String, pid: pid_t) -> Bool {
         // The action string is Ghostty's, not a shell's, and the message has
         // already been reduced to a single line by `ContinueScheduler.sanitize`
         // — which is what keeps a newline from becoming an unrequested Return.
         performAction(
-            "text:\(text)", onSurface: surfaceId, parameter: Write.onTerminal,
+            onSurface: surfaceId, pid: pid, parameter: Write.onTerminal,
             event: Write.performAction, direct: NSAppleEventDescriptor(string: "text:\(text)"))
     }
 
     /// Presses Return in one surface. Structurally separate from `writeText` so
     /// that no code path can submit a message it did not first succeed in typing.
-    static func pressReturn(inSurface surfaceId: String) -> Bool {
+    static func pressReturn(inSurface surfaceId: String, pid: pid_t) -> Bool {
         performAction(
-            "enter", onSurface: surfaceId, parameter: Write.toTerminal,
+            onSurface: surfaceId, pid: pid, parameter: Write.toTerminal,
             event: Write.sendKey, direct: NSAppleEventDescriptor(string: "enter"))
     }
 
     private static func performAction(
-        _ description: String, onSurface surfaceId: String, parameter: AEKeyword,
+        onSurface surfaceId: String, pid target: pid_t, parameter: AEKeyword,
         event id: AEEventID, direct: NSAppleEventDescriptor
     ) -> Bool {
-        guard let ghostty = runningApplication() else { return false }
-        guard case .success = automationPermission() else { return false }
+        guard case .success = automationPermission(pid: target) else { return false }
 
-        var pid = ghostty.processIdentifier
+        var pid = target
         let address =
             NSAppleEventDescriptor(
                 descriptorType: DescType(typeKernelProcessID), bytes: &pid,

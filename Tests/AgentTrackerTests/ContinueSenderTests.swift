@@ -75,16 +75,18 @@ final class ContinueSenderTests {
                 recorder.note("terminalPid")
                 return terminal
             },
-            surfaces: {
-                recorder.note("surfaces")
+            surfaces: { addressed in
+                // Every step must address the SAME process the verification used,
+                // so the fake records the pid it was handed.
+                recorder.note("surfaces@\(addressed)")
                 return .success(live)
             },
-            writeText: { _, _ in
-                recorder.note("writeText")
+            writeText: { _, _, addressed in
+                recorder.note("writeText@\(addressed)")
                 return writeSucceeds
             },
-            pressReturn: { _ in
-                recorder.note("pressReturn")
+            pressReturn: { _, addressed in
+                recorder.note("pressReturn@\(addressed)")
                 return returnSucceeds
             })
     }
@@ -95,7 +97,11 @@ final class ContinueSenderTests {
         let recorder = Recorder()
         let result = ContinueSender.send(fire(), context: context(), ops: ops(recorder: recorder))
         #expect(result.outcome == .sent)
-        #expect(recorder.sequence == ["terminalPid", "surfaces", "writeText", "pressReturn"])
+        #expect(
+            recorder.sequence == [
+                "terminalPid", "surfaces@\(ghosttyPid)", "writeText@\(ghosttyPid)",
+                "pressReturn@\(ghosttyPid)",
+            ])
     }
 
     /// The one that would be unrecoverable: Return submits whatever is on the
@@ -106,8 +112,8 @@ final class ContinueSenderTests {
         let result = ContinueSender.send(
             fire(), context: context(), ops: ops(recorder: recorder, writeSucceeds: false))
         #expect(result.outcome == .failed)
-        #expect(recorder.sequence.contains("writeText"))
-        #expect(recorder.sequence.contains("pressReturn") == false)
+        #expect(recorder.sequence.contains { $0.hasPrefix("writeText") })
+        #expect(recorder.sequence.contains { $0.hasPrefix("pressReturn") } == false)
     }
 
     /// Typed but not submitted is its own outcome. Reporting it as a plain
@@ -142,9 +148,29 @@ final class ContinueSenderTests {
                 request, context: sendContext, ops: ops(recorder: recorder))
             #expect(result.outcome == .refused, "\(label) should refuse")
             #expect(result.detail.isEmpty == false, "\(label) gave no reason")
-            #expect(recorder.sequence.contains("writeText") == false, "\(label) wrote anyway")
-            #expect(recorder.sequence.contains("pressReturn") == false, "\(label) pressed Return")
+            #expect(
+                recorder.sequence.contains { $0.hasPrefix("writeText") } == false,
+                "\(label) wrote anyway")
+            #expect(
+                recorder.sequence.contains { $0.hasPrefix("pressReturn") } == false,
+                "\(label) pressed Return")
         }
+    }
+
+    /// Regression: each channel call used to rediscover Ghostty for itself, so
+    /// verification could pass against one instance while the write landed in
+    /// another — the type-into-a-stranger's-pane failure this design exists to
+    /// prevent. One sample is taken per delivery and threaded through everything.
+    @Test func everyCallAddressesTheSameProcessSample() {
+        let recorder = Recorder()
+        _ = ContinueSender.send(fire(), context: context(), ops: ops(recorder: recorder))
+        let addressed = recorder.sequence.compactMap { call -> String? in
+            guard let marker = call.range(of: "@") else { return nil }
+            return String(call[marker.upperBound...])
+        }
+        #expect(addressed.isEmpty == false)
+        #expect(Set(addressed).count == 1, "calls addressed different processes: \(addressed)")
+        #expect(addressed.allSatisfy { $0 == "\(ghosttyPid)" })
     }
 
     // MARK: - Identity, re-checked at write time
@@ -156,7 +182,7 @@ final class ContinueSenderTests {
             agent: nil)
         let result = ContinueSender.send(bare, context: context(), ops: ops(recorder: recorder))
         #expect(result.outcome == .refused)
-        #expect(recorder.sequence.contains("writeText") == false)
+        #expect(recorder.sequence.contains { $0.hasPrefix("writeText") } == false)
     }
 
     @Test func aClosedOrReusedWindowRefuses() {
