@@ -143,6 +143,105 @@ enum GhosttyScripting {
         return .success(surfaces)
     }
 
+    // MARK: - Writing
+
+    /// Ghostty's own event codes for the two write commands, from `Ghostty.sdef`.
+    private enum Write {
+        /// `perform action` — takes any keybind action string.
+        static let performAction: AEEventID = 0x5066_4163  // 'PfAc'
+        /// `send key` — takes a key NAME, not a character.
+        static let sendKey: AEEventID = 0x534B_6579  // 'SKey'
+        /// Ghostty's own event class.
+        static let suite: AEEventClass = 0x4768_7374  // 'Ghst'
+        /// The `on` / `to` target parameter.
+        static let onTerminal: AEKeyword = 0x476F_6E54  // 'GonT'
+        static let toTerminal: AEKeyword = 0x474B_6554  // 'GKeT'
+    }
+
+    /// Writes text into one surface, without pressing Return.
+    ///
+    /// `perform action "text:…"` rather than `input text`. `input text` is
+    /// documented in Ghostty's own dictionary as behaving "as if it was pasted",
+    /// which puts it behind `clipboard-paste-protection` — a confirmation sheet
+    /// this app can neither see nor dismiss. The `text:` keybind action sends the
+    /// string directly and has no such gate.
+    ///
+    /// Verified on a real Ghostty: the `on` target IS honoured for a surface that
+    /// is not focused, while five sibling windows shared one title. Without that,
+    /// this command would itself have been a type-into-the-wrong-window route.
+    static func writeText(_ text: String, toSurface surfaceId: String) -> Bool {
+        // The action string is Ghostty's, not a shell's, and the message has
+        // already been reduced to a single line by `ContinueScheduler.sanitize`
+        // — which is what keeps a newline from becoming an unrequested Return.
+        performAction(
+            "text:\(text)", onSurface: surfaceId, parameter: Write.onTerminal,
+            event: Write.performAction, direct: NSAppleEventDescriptor(string: "text:\(text)"))
+    }
+
+    /// Presses Return in one surface. Structurally separate from `writeText` so
+    /// that no code path can submit a message it did not first succeed in typing.
+    static func pressReturn(inSurface surfaceId: String) -> Bool {
+        performAction(
+            "enter", onSurface: surfaceId, parameter: Write.toTerminal,
+            event: Write.sendKey, direct: NSAppleEventDescriptor(string: "enter"))
+    }
+
+    private static func performAction(
+        _ description: String, onSurface surfaceId: String, parameter: AEKeyword,
+        event id: AEEventID, direct: NSAppleEventDescriptor
+    ) -> Bool {
+        guard let ghostty = runningApplication() else { return false }
+        guard case .success = automationPermission() else { return false }
+
+        var pid = ghostty.processIdentifier
+        let address =
+            NSAppleEventDescriptor(
+                descriptorType: DescType(typeKernelProcessID), bytes: &pid,
+                length: MemoryLayout<pid_t>.size) ?? NSAppleEventDescriptor.null()
+        let event = NSAppleEventDescriptor.appleEvent(
+            withEventClass: Write.suite, eventID: id, targetDescriptor: address,
+            returnID: AEReturnID(kAutoGenerateReturnID),
+            transactionID: AETransactionID(kAnyTransactionID))
+        event.setDescriptor(direct, forKeyword: AEKeyword(keyDirectObject))
+        event.setDescriptor(surfaceSpecifier(id: surfaceId), forKeyword: parameter)
+
+        do {
+            let reply = try event.sendEvent(options: .defaultOptions, timeout: 10)
+            if let error = reply.forKeyword(AEKeyword(keyErrorNumber)), error.int32Value != 0 {
+                return false
+            }
+            // Ghostty returns a boolean; a false result means it declined.
+            guard let result = reply.forKeyword(AEKeyword(keyDirectObject)) else { return true }
+            return result.booleanValue
+        } catch {
+            return false
+        }
+    }
+
+    /// A surface addressed by its own id.
+    ///
+    /// `formUniqueID`, never an index. Verified against a real Ghostty:
+    /// `formUniqueID` resolves to the same surface as index 1 did, while
+    /// `formName` fails outright with -1728. An index would be wrong regardless —
+    /// it shifts the moment any window closes, which between reading the list and
+    /// writing to it is a real interval.
+    private static func surfaceSpecifier(id surfaceId: String) -> NSAppleEventDescriptor {
+        let specifier =
+            NSAppleEventDescriptor.record().coerce(toDescriptorType: DescType(typeObjectSpecifier))
+            ?? NSAppleEventDescriptor.record()
+        specifier.setDescriptor(
+            NSAppleEventDescriptor(typeCode: Code.terminal),
+            forKeyword: AEKeyword(keyAEDesiredClass))
+        specifier.setDescriptor(
+            NSAppleEventDescriptor.null(), forKeyword: AEKeyword(keyAEContainer))
+        specifier.setDescriptor(
+            NSAppleEventDescriptor(enumCode: AEKeyword(formUniqueID)),
+            forKeyword: AEKeyword(keyAEKeyForm))
+        specifier.setDescriptor(
+            NSAppleEventDescriptor(string: surfaceId), forKeyword: AEKeyword(keyAEKeyData))
+        return specifier
+    }
+
     // MARK: - Event plumbing
 
     /// `terminal <index>` / `every terminal`, as an object specifier.

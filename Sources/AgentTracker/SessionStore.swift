@@ -429,6 +429,30 @@ final class SessionStore: ObservableObject {
         }
     }
 
+    /// Reads one session's state file straight from disk, off any actor.
+    ///
+    /// Delivery needs the session as it is *now*, not as the pass that scheduled
+    /// it saw it: fires in one fan-out are twenty seconds apart, so by the third
+    /// one "the turn had finished" is a claim about the past. Reading the file
+    /// rather than the published array is also what keeps this callable from the
+    /// detached delivery task without hopping to the main actor.
+    nonisolated static func loadSessionFromDisk(sessionId: String) -> AgentSession? {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard
+            let files = try? FileManager.default.contentsOfDirectory(
+                at: sessionsDirectory, includingPropertiesForKeys: nil)
+        else { return nil }
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                let session = try? decoder.decode(AgentSession.self, from: data),
+                session.sessionId == sessionId
+            else { continue }
+            return session
+        }
+        return nil
+    }
+
     static func isProcessAlive(_ pid: Int) -> Bool {
         if kill(pid_t(pid), 0) == 0 { return true }
         return errno == EPERM

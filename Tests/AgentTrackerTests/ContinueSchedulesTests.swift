@@ -148,7 +148,7 @@ final class ContinueSchedulesTests {
         let schedules = ContinueSchedules(defaults: defaults())
         schedules.deliver = { _ in
             observed.record(isMainThread: Thread.isMainThread)
-            return "stubbed"
+            return ContinueDeliveryResult(outcome: .sent, detail: "stubbed")
         }
         Preferences.shared.scheduledContinues = true
         defer { Preferences.shared.scheduledContinues = false }

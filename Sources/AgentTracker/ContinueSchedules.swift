@@ -54,7 +54,7 @@ final class ContinueSchedules: ObservableObject {
     /// Its return value deliberately feeds only the receipt, never the schedule
     /// state, so a hung or refused delivery cannot make a settled schedule look
     /// owed again.
-    var deliver: @Sendable (ContinueScheduler.Fire) async -> String
+    var deliver: @Sendable (ContinueScheduler.Fire) async -> ContinueDeliveryResult
 
     /// A docs render builds a real `SessionStore` over synthetic sessions
     /// (`scripts/make-docs-images.sh` drives `--render-preview`). Nothing armed
@@ -80,11 +80,9 @@ final class ContinueSchedules: ObservableObject {
     init(defaults: UserDefaults = .standard, launchedAt: Date = Date()) {
         self.defaults = defaults
         self.launchedAt = launchedAt
-        deliver = { fire in
-            // The PR B stub: the schedule machinery is exercised end to end and
-            // nothing is typed anywhere. Real delivery replaces this closure.
-            "would send \"\(fire.message)\" (delivery not implemented yet)"
-        }
+        // The default writes into a real terminal. Tests replace it, and so does
+        // any caller that wants the machinery without the consequence.
+        deliver = { fire in await ContinueSchedules.deliverForReal(fire) }
         schedules = Self.load(from: defaults)
         receipts = Self.loadReceipts(from: defaults)
         observeSystemChanges()
@@ -168,8 +166,8 @@ final class ContinueSchedules: ObservableObject {
                 if fire.delay > 0 {
                     try? await Task.sleep(for: .seconds(fire.delay))
                 }
-                let outcome = await deliver(fire)
-                await self?.record(fire: fire, outcome: outcome)
+                let result = await deliver(fire)
+                await self?.record(fire: fire, result: result)
             }
         }
     }
@@ -177,15 +175,35 @@ final class ContinueSchedules: ObservableObject {
     /// Files a receipt, logs it, and tells the user. Called after the send has
     /// already happened, so nothing here can undo or retry it — a notification
     /// that fails to post must not turn a delivered message into a pending one.
-    private func record(fire: ContinueScheduler.Fire, outcome: String) {
-        let receipt = ContinueReceipt(
-            sessionId: fire.sessionId,
-            project: projectName(for: fire.sessionId),
-            message: fire.message,
-            at: Date(),
-            outcome: .sent,
-            detail: outcome)
-        file(receipt)
+    private func record(fire: ContinueScheduler.Fire, result: ContinueDeliveryResult) {
+        file(
+            ContinueReceipt(
+                sessionId: fire.sessionId,
+                project: projectName(for: fire.sessionId),
+                message: fire.message,
+                at: Date(),
+                outcome: result.outcome,
+                detail: result.detail))
+    }
+
+    /// Gathers what delivery must re-read, then performs it. Runs off the main
+    /// actor by construction — it is only ever called from the detached task —
+    /// except for the one hop that reads the kill switch, which lives on
+    /// `Preferences` and is deliberately re-read rather than taken from the plan
+    /// that scheduled this.
+    private static func deliverForReal(_ fire: ContinueScheduler.Fire) async
+        -> ContinueDeliveryResult
+    {
+        let enabled = await MainActor.run { Preferences.shared.scheduledContinues }
+        let session = SessionStore.loadSessionFromDisk(sessionId: fire.sessionId)
+        let context = SendContext(
+            enabled: enabled,
+            lastEvent: session?.lastEvent,
+            permissionMode: session?.transcriptPath.flatMap {
+                ContinueSender.permissionMode(inTranscriptAt: $0)
+            },
+            liveAgent: session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil)
+        return ContinueSender.send(fire, context: context, ops: .ghostty)
     }
 
     /// The public seam for a receipt, so delivery and its refusals file the same
