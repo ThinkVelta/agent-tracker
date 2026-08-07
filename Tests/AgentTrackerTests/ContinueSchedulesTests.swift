@@ -283,6 +283,44 @@ final class ContinueSchedulesTests {
         await ContinueNotifier.post(receipt("s1"))
     }
 
+    /// Regression: an in-flight pane resolution must not land on a newer arming.
+    ///
+    /// The first fix compared the user-visible fields — moment, message, repeats —
+    /// on the reasoning that re-arming with identical values IS the same schedule.
+    /// That was wrong: identical values can still be a DIFFERENT pane context (the
+    /// session moved window, or its title changed), so an older resolution would
+    /// write a stale pane onto the newer arming. A generation cannot be fooled by
+    /// equal values.
+    @Test func aStaleResolutionIsDroppedEvenWhenTheValuesMatch() async throws {
+        let schedules = ContinueSchedules(defaults: defaults())
+        let armed = schedule("a")
+        schedules.armResolvingPane(armed, expectedTitle: "never resolves in a test")
+        // Re-arm with byte-identical values: what the older comparison could not
+        // distinguish from the first arming.
+        schedules.armResolvingPane(armed, expectedTitle: "a different window now")
+
+        // Whatever the in-flight resolutions do, exactly one schedule survives and
+        // nothing crashes. The generation is what makes the first result inert.
+        for _ in 0..<50 where schedules.schedules.count != 1 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(schedules.schedules.count == 1)
+        #expect(schedules.schedule(for: "a")?.armedForResetAt == armed.armedForResetAt)
+    }
+
+    /// Disarming invalidates a resolution still in flight, or a schedule the user
+    /// cancelled could be silently re-populated by a task they already stopped.
+    @Test func disarmingInvalidatesAnInFlightResolution() async throws {
+        let schedules = ContinueSchedules(defaults: defaults())
+        schedules.armResolvingPane(schedule("a"), expectedTitle: "whatever")
+        schedules.disarm(sessionId: "a")
+
+        for _ in 0..<50 where !schedules.schedules.isEmpty {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(schedules.schedules.isEmpty)
+    }
+
     @Test func updatingAnUnknownSessionIsANoOp() {
         let schedules = ContinueSchedules(defaults: defaults())
         schedules.arm(schedule("a"))

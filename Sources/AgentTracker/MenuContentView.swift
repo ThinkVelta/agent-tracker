@@ -576,6 +576,10 @@ struct SessionRow: View {
         Button {
             draft = ContinueDraft(schedule: armedSchedule)
             editing.toggle()
+            // Read when the panel opens, not in the body: it is a bounded file
+            // read, and a mode that acts without asking is worth saying out loud
+            // before the user arms it.
+            if editing { readPermissionMode() }
         } label: {
             Image(systemName: icon)
                 .font(.system(size: 11))

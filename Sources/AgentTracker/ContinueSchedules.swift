@@ -77,6 +77,18 @@ final class ContinueSchedules: ObservableObject {
     /// removed from the one it came from.
     private var observers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
 
+    /// Bumped every time a session is armed, so an in-flight pane resolution can
+    /// tell whether it is still the current one.
+    ///
+    /// In memory, and never persisted — which is the whole point. Comparing the
+    /// user-visible fields instead was not enough: re-arming with an identical
+    /// moment and message can still be a DIFFERENT pane context (the session moved
+    /// window, or its title changed), and an older resolution would then write a
+    /// stale pane onto the newer arming. A generation cannot be fooled by equal
+    /// values, and because it only has to survive between an arm and its own
+    /// resolution, it never needed to reach disk.
+    private var armingGeneration: [String: Int] = [:]
+
     init(defaults: UserDefaults = .standard, launchedAt: Date = Date()) {
         self.defaults = defaults
         self.launchedAt = launchedAt
@@ -115,23 +127,18 @@ final class ContinueSchedules: ObservableObject {
     /// receipt say why nothing was sent.
     func armResolvingPane(_ schedule: ScheduledContinue, expectedTitle: String?) {
         arm(schedule)
+        let generation = (armingGeneration[schedule.sessionId] ?? 0) + 1
+        armingGeneration[schedule.sessionId] = generation
         Task { [weak self] in
             let resolved = await Self.resolvePane(
                 for: schedule.sessionId, expectedTitle: expectedTitle)
             await MainActor.run {
                 guard let self else { return }
-                // Only if this is still the arming that launched the task. Pane
-                // resolution takes as long as an Automation preflight, and a user
-                // who re-arms in that window would otherwise have their newer
-                // schedule silently overwritten with a pane resolved for the old
-                // one. Compared on what the user set rather than on a token,
-                // because re-arming with identical values IS the same schedule
-                // and applying to it is harmless.
-                let current = self.schedule(for: schedule.sessionId)
-                guard current?.armedForResetAt == schedule.armedForResetAt,
-                    current?.message == schedule.message,
-                    current?.repeats == schedule.repeats
-                else {
+                // Only if this is still the arming that launched the task.
+                // Resolution takes as long as an Automation preflight, and a user
+                // who re-arms inside that window would otherwise have the newer
+                // schedule overwritten with a pane resolved for the older one.
+                guard self.armingGeneration[schedule.sessionId] == generation else {
                     self.log(
                         "\(schedule.sessionId) — re-armed while resolving; older result dropped")
                     return
@@ -179,6 +186,9 @@ final class ContinueSchedules: ObservableObject {
     }
 
     func disarm(sessionId: String) {
+        // Invalidates any resolution still in flight: a disarmed schedule must not
+        // be silently re-populated by a task the user has already cancelled.
+        armingGeneration[sessionId] = (armingGeneration[sessionId] ?? 0) + 1
         let updated = schedules.filter { $0.sessionId != sessionId }
         guard updated.count != schedules.count else { return }
         persist(updated)
