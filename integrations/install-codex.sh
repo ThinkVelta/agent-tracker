@@ -204,4 +204,4 @@ echo "ONE STEP LEFT: Codex runs a hook only once you have trusted it. Your next"
 echo "Codex launch shows a hook review prompt naming agent-tracker; accept it, or" >&2
 echo "none of the above runs. 'codex exec' skips untrusted hooks silently, so" >&2
 echo "nothing else will tell you it is waiting." >&2
-echo "Already-running sessions pick the hooks up on their next restart."
+echo "Already-running sessions pick the hooks up on their next restart." >&2

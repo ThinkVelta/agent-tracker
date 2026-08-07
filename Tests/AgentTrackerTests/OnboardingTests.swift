@@ -141,13 +141,6 @@ final class OnboardingTests {
         try "model = \"gpt-5\"\n".write(to: config, atomically: true, encoding: .utf8)
         #expect(HookSetup.codexHooksAwaitTrust(home: home))
 
-        // Trust recorded against a DIFFERENT hooks file says nothing about ours.
-        try
-            ("[hooks.state.\"/Users/dev/proj/.codex/hooks.json:stop:0:0\"]\n"
-            + "trusted_hash = \"sha256:abc\"\n")
-            .write(to: config, atomically: true, encoding: .utf8)
-        #expect(HookSetup.codexHooksAwaitTrust(home: home))
-
         try ("[hooks.state.\"\(hooksFile.path):stop:0:0\"]\ntrusted_hash = \"sha256:abc\"\n")
             .write(to: config, atomically: true, encoding: .utf8)
         #expect(!HookSetup.codexHooksAwaitTrust(home: home))

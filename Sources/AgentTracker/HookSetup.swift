@@ -23,31 +23,23 @@ enum HookSetup {
             || configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
     }
 
-    /// Registered, but not yet running.
+    /// Registered, but not yet running — see `CodexHookTrust`, which decides it.
     ///
-    /// Codex runs a hook only once the user has accepted its own review prompt,
-    /// and records that in config.toml as
-    /// `[hooks.state."<hooks.json path>:<event>:<matcher>:<index>"]`. So the
-    /// absence of *any* such key for our hooks file means nothing in it has been
-    /// trusted, ours included.
-    ///
-    /// Asymmetric on purpose. Presence is weaker evidence — the trusted hook
-    /// could be someone else's — so this errs towards going quiet rather than
-    /// telling a user to accept a prompt they already accepted. What it must
-    /// not do is stay quiet for someone who installed from the command line and
-    /// never opened Codex, which is exactly the case the note exists for, and
-    /// which is why this asks about trust rather than about whether this
-    /// particular run changed anything.
+    /// Asks about trust rather than about whether this run changed anything: a
+    /// user who installed from the command line last week and never opened
+    /// Codex is already "installed", so an install-driven check would say
+    /// nothing to exactly the person who needs to hear it.
     static func codexHooksAwaitTrust(home: URL = FileManager.default.homeDirectoryForCurrentUser)
         -> Bool
     {
         let hooksFile = home.appendingPathComponent(".codex/hooks.json")
-        guard configReferencesHook(hooksFile) else { return false }
-        guard
-            let config = try? String(
-                contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8)
-        else { return true }
-        return !config.contains("hooks.state.\"\(hooksFile.path):")
+        guard let hooksJSON = try? Data(contentsOf: hooksFile) else { return false }
+        let config =
+            (try? String(
+                contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8))
+            ?? ""
+        return CodexHookTrust.awaitsTrust(
+            hooksJSON: hooksJSON, configTOML: config, hooksPath: hooksFile.path)
     }
 
     /// Presence means the CLI has left its home directory behind — the
