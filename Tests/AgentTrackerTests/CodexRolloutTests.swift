@@ -3,6 +3,44 @@ import Testing
 
 @testable import AgentTracker
 
+/// The scanner must never produce the one event that authorises a send.
+///
+/// `ContinueSender` gates on `lastEvent == "Stop"`, and only a hook writes that.
+/// A rollout records no line meaning "an approval prompt is open", so a row the
+/// scanner derived cannot be trusted to say a turn is safely over — and this is
+/// what keeps a Codex session whose hooks are untrusted from being fired into.
+@Suite("Codex scanner event vocabulary")
+struct CodexScannerVocabularyTests {
+    @Test("no rollout event maps to the name that authorises a send")
+    func scannerNeverSaysStop() {
+        let lines = [
+            #"{"timestamp":"2026-08-07T10:00:00.0Z","type":"event_msg","payload":{"type":"task_started"}}"#,
+            #"{"timestamp":"2026-08-07T10:00:01.0Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":"done"}}"#,
+            #"{"timestamp":"2026-08-07T10:00:02.0Z","type":"event_msg","payload":{"type":"turn_aborted"}}"#,
+        ]
+        let meta = #"{"session_id":"s1","id":"s1","cwd":"/Users/dev/proj"}"#
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(
+            line:
+                #"{"timestamp":"2026-08-07T09:59:00.0Z","type":"session_meta","payload":\#(meta)}"#
+        )
+        var seen: [String] = []
+        for line in lines {
+            accumulator.consume(line: line)
+            let sessions = CodexSessionGrouper.sessions(from: [
+                CodexThreadSnapshot(
+                    accumulator: accumulator, fileActivityAt: Date(), holderPid: 1)
+            ])
+            let name = sessions.first?.lastEvent
+            #expect(name != "Stop")
+            if let name { seen.append(name) }
+        }
+        // Not just "never Stop" — that would pass if the parser had silently
+        // stopped naming events at all.
+        #expect(seen == ["task_started", "task_complete", "turn_aborted"])
+    }
+}
+
 /// All fixtures are synthetic — shaped like Codex rollout lines but never
 /// sourced from real ~/.codex data.
 final class CodexRolloutTests {

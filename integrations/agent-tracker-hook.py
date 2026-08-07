@@ -291,6 +291,15 @@ def handle_codex(args):
     # thread-id is stable across turns; fall back to the agent pid so repeated
     # notifications from one Codex process collapse into a single session.
     session_id = get("thread-id", "thread_id") or f"pid-{agent_process()[0]}"
+
+    # Stand down if the hooks are covering this session. For a root thread
+    # Codex's thread id IS its session id, so both mechanisms write this same
+    # file, and both fire at the end of a turn. Whichever landed last would win:
+    # notify would leave `lastEvent` reading "agent-turn-complete", where the
+    # app's gate for sending into a terminal requires "Stop". A race decided by
+    # scheduling is not a thing to leave in the path of that.
+    if load_state(state_path("codex", session_id)).get("origin") == "hook":
+        return
     last_message = get("last-assistant-message", "last_assistant_message")
     if last_message and len(last_message) > 200:
         last_message = last_message[:200] + "…"
