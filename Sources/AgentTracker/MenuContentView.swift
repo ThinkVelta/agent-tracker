@@ -437,13 +437,10 @@ private struct UsageChip: View {
     }
 
     private var resetHelp: String {
-        guard let resetsAt = reading.resetsAt else {
-            return "\(reading.providerLabel) \(reading.windowLabel) window"
-        }
         let formatter = DateFormatter()
         formatter.dateFormat =
-            Calendar.current.isDateInToday(resetsAt) ? "HH:mm" : "EEE HH:mm"
-        return "Resets \(formatter.string(from: resetsAt))"
+            Calendar.current.isDateInToday(reading.resetsAt) ? "HH:mm" : "EEE HH:mm"
+        return "Resets \(formatter.string(from: reading.resetsAt))"
     }
 
     var body: some View {

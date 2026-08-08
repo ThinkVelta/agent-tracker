@@ -7,7 +7,9 @@ struct UsageReading: Equatable, Identifiable, Sendable {
     /// 0-100. Absent readings are dropped rather than shown as zero, because
     /// "no data" and "none used" are the two things this must never confuse.
     var usedPercent: Double
-    var resetsAt: Date?
+    /// Always known. A reading with no reset can never be retired, so it is
+    /// dropped before it becomes one of these rather than shown open-ended.
+    var resetsAt: Date
 
     var id: String { "\(provider)-\(window)" }
 
@@ -52,13 +54,24 @@ enum UsageSummary {
         providers.compactMap { provider -> UsageReading? in
             let candidates = limits.limits(for: provider).compactMap { limit -> UsageReading? in
                 guard let used = limit.usedPercent else { return nil }
-                // A reading whose window has already reset describes a window
-                // that no longer exists. Nothing writes a correction — the file
-                // simply goes quiet — so staleness has to be read off the clock.
-                if let resetsAt = limit.resetsAt, resetsAt <= now { return nil }
+                // A known future reset is required, not merely respected.
+                //
+                // Nothing writes a correction when a window rolls over — the
+                // file simply goes quiet — so the reset is the only thing that
+                // can ever retire a reading. Without one there is no moment at
+                // which this stops being displayed, and a Claude refusal that
+                // names a limit without saying when it lifts would pin "100%"
+                // to the strip for the life of the process. `isBlocking` takes
+                // the same position for the same reason.
+                //
+                // Costs nothing in practice: measured on this machine, Claude's
+                // statusline carries `resets_at` beside every percentage, and so
+                // do 181,211 of 181,561 Codex rollout readings — the rest being
+                // a format retired in October 2025.
+                guard let resetsAt = limit.resetsAt, resetsAt > now else { return nil }
                 return UsageReading(
                     provider: provider, window: limit.window, usedPercent: used,
-                    resetsAt: limit.resetsAt)
+                    resetsAt: resetsAt)
             }
             return candidates.max { $0.usedPercent < $1.usedPercent }
         }
