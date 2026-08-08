@@ -80,6 +80,23 @@ struct UsageSummaryTests {
         #expect(readings.map(\.provider) == ["claude-code"])
     }
 
+    /// Two windows at the same percentage is the ordinary morning case, not an
+    /// exotic one — both sit at 0% early in a week. Ranking on percentage alone
+    /// left the winner to dictionary order, so the chip could flip between "5h"
+    /// and "7d" with no data behind it, republishing on each flip.
+    @Test("a percentage tie is broken by which window bites first, every time")
+    func tiesResolveToTheSoonerReset() {
+        let tied = limitsOf([
+            ("claude-code", limit(.weekly, used: 0, resetsIn: 86_400)),
+            ("claude-code", limit(.fiveHour, used: 0, resetsIn: 3600)),
+        ])
+        for _ in 0..<50 {
+            let readings = UsageSummary.readings(
+                from: tied, providers: ["claude-code"], now: now)
+            #expect(readings.map(\.windowLabel) == ["5h"])
+        }
+    }
+
     @Test("two providers are ordered stably, not by dictionary chance")
     func stableOrder() {
         let both = limitsOf([

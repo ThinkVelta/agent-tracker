@@ -73,9 +73,27 @@ enum UsageSummary {
                     provider: provider, window: limit.window, usedPercent: used,
                     resetsAt: resetsAt)
             }
-            return candidates.max { $0.usedPercent < $1.usedPercent }
+            return candidates.min(by: mostPressing)
         }
         // Stable order, so two providers do not swap places between passes.
         .sorted { $0.provider < $1.provider }
+    }
+
+    /// A total order, not just a comparison on percentage.
+    ///
+    /// `AccountLimits` stores windows in a dictionary, so `limits(for:)` hands
+    /// them back in whatever order it feels like. Ranking on percentage alone
+    /// leaves ties to that order — and ties are not exotic: two windows both
+    /// sitting at 0% early in a week is the ordinary morning case. The chip
+    /// would then flip between "5h" and "7d" between passes with no data
+    /// behind it, and because the readings are published, each flip is a
+    /// republish.
+    ///
+    /// Earlier reset breaks a percentage tie, since that window bites first.
+    /// The id is the last resort and exists only to make the result total.
+    private static func mostPressing(_ lhs: UsageReading, _ rhs: UsageReading) -> Bool {
+        if lhs.usedPercent != rhs.usedPercent { return lhs.usedPercent > rhs.usedPercent }
+        if lhs.resetsAt != rhs.resetsAt { return lhs.resetsAt < rhs.resetsAt }
+        return lhs.id < rhs.id
     }
 }
