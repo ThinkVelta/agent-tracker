@@ -280,13 +280,18 @@ final class ContinueSchedules: ObservableObject {
         -> ContinueDeliveryResult
     {
         let enabled = await MainActor.run { Preferences.shared.scheduledContinues }
-        let session = SessionStore.loadSessionFromDisk(sessionId: fire.sessionId)
+        let session = SessionStore.loadSessionFromDisk(
+            provider: fire.provider, sessionId: fire.sessionId)
         let context = SendContext(
             enabled: enabled,
             lastEvent: session?.lastEvent,
+            // Transcript first, so Claude's behaviour is exactly what it was;
+            // the hook-written field is the fallback, and the only source Codex
+            // has. Reversing these would put a whole shipped provider's gate on
+            // a field that has existed for one release.
             permissionMode: session?.transcriptPath.flatMap {
                 ContinueSender.permissionMode(inTranscriptAt: $0)
-            },
+            } ?? session?.permissionMode,
             liveAgent: session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil)
         return ContinueSender.send(fire, context: context, ops: .ghostty)
     }

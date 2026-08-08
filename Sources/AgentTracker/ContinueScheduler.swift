@@ -118,11 +118,33 @@ enum ContinueScheduler {
     /// so an overnight sleep still fires when the lid opens.
     static let maximumLateness: TimeInterval = 12 * 3600
 
-    /// Only Claude Code. For Codex the app cannot tell "turn complete" from
-    /// "approval prompt open" at all, so the gate that makes an automated send
-    /// safe (R1) has no signal to read — and sending blind could answer a
-    /// permission dialog.
-    static let supportedProvider = "claude-code"
+    /// Providers whose lifecycle the app can read well enough to send blind
+    /// into their terminal.
+    ///
+    /// The bar is R1: something that says "this turn is over" and is *not* said
+    /// while a permission prompt is open, since a send at a prompt would answer
+    /// it. Both providers now clear it through the same field — their hooks
+    /// write `Stop` for a finished turn and a separate event for a waiting
+    /// prompt (`Notification` for Claude, `PermissionRequest` for Codex).
+    ///
+    /// A Codex row the rollout scanner produced does *not* clear it, and that is
+    /// the point: its `lastEvent` reads `task_complete`, because a rollout
+    /// records no line meaning "waiting on you". So only a session the hooks
+    /// actually cover can ever be armed, and one whose hooks are installed but
+    /// untrusted refuses rather than firing into the dark.
+    static let supportedProviders: Set<String> = ["claude-code", "codex"]
+
+    /// Providers the app can also describe *without* their hooks, and whose
+    /// hookless description is not good enough to arm on.
+    ///
+    /// Only Codex: a Claude row exists because a hook wrote it, so there is no
+    /// hookless Claude row to refuse. Asking `origin` rather than asking Codex
+    /// whether the hooks are trusted, because `origin` is the same evidence one
+    /// step later — it says a hook actually ran for *this* session, which is the
+    /// thing that has to be true.
+    static func requiresHookCoverage(_ provider: String) -> Bool {
+        provider == "codex"
+    }
 
     /// Everything a decision depends on, as one value.
     struct Pass: Equatable {
@@ -159,6 +181,9 @@ enum ContinueScheduler {
 
     struct Fire: Equatable, Sendable {
         var sessionId: String
+        /// Carried so delivery re-reads the row this schedule was armed against,
+        /// rather than the first row on disk wearing the same session id.
+        var provider: String
         var message: String
         /// Waited before this one is sent, staggering a fan-out.
         var delay: TimeInterval
@@ -253,8 +278,21 @@ enum ContinueScheduler {
         guard enabled else {
             return .unavailable(reason: "Turn on scheduled continues in Settings")
         }
-        guard session.provider == supportedProvider else {
-            return .unavailable(reason: "Only Claude Code sessions can be resumed automatically")
+        guard supportedProviders.contains(session.provider) else {
+            return .unavailable(
+                reason: "\(session.providerDisplayName) cannot be resumed automatically")
+        }
+        // Refused at arming rather than at delivery, though delivery would catch
+        // it too. A row the rollout scanner produced can never satisfy R1 — its
+        // `lastEvent` is `task_complete`, never `Stop` — so arming one would
+        // offer a clock that is held on every pass and then abandoned twelve
+        // hours later, which reads as the feature simply not working. Say no
+        // while there is still someone to read the reason.
+        guard requiresHookCoverage(session.provider) == false || session.origin == "hook" else {
+            return .unavailable(
+                reason: "Accept Codex's hook review prompt first — until then it is tracked by "
+                    + "reading its session files, which cannot tell an approval prompt from a "
+                    + "finished turn")
         }
         guard let moment = armableResetBySession[session.sessionId] else {
             return .unavailable(reason: "Available once this session is waiting on a usage limit")
@@ -317,8 +355,9 @@ enum ContinueScheduler {
 
             // Defence in depth: arming already refuses an unsupported provider,
             // but a record could arrive from an older build or a hand-edited
-            // domain, and firing blind into Codex is the case R1 has no gate for.
-            guard schedule.provider == supportedProvider else {
+            // domain, and a provider whose turn state we cannot read is exactly
+            // the case R1 has no gate for.
+            guard supportedProviders.contains(schedule.provider) else {
                 note(
                     schedule.sessionId,
                     .cancelled(reason: "\(schedule.provider) cannot be resumed automatically"))
@@ -408,6 +447,7 @@ enum ContinueScheduler {
             fires.append(
                 Fire(
                     sessionId: schedule.sessionId,
+                    provider: schedule.provider,
                     message: schedule.message,
                     delay: Double(dueCount) * deliveryStagger,
                     lateness: lateness,
