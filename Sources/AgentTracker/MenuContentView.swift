@@ -680,6 +680,7 @@ struct SessionRow: View {
                         // already fired cannot make it owe that moment again.
                         settledThrough: armedSchedule?.settledThrough,
                         target: armedSchedule?.target,
+                        tmuxTarget: armedSchedule?.tmuxTarget,
                         agent: armedSchedule?.agent),
                     // The window title is how a Ghostty surface is identified at
                     // all, and this is the app's best copy of it.

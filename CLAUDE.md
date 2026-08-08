@@ -32,6 +32,8 @@ for the full picture.
   - `TitleDirectory.swift` — session_id → live window title map, accumulated
     from `~/.claude/statusline-last.json` (exact window matching)
   - `TerminalFocuser.swift` — AX-based window matching + raise
+  - `TmuxScripting.swift` — tmux CLI wrapper for delivery: a pane reports its
+    own id and tty, so nothing is matched by title and no TCC grant is needed
   - `TerminalFocusObserver.swift` — auto-acknowledges sessions whose terminal
     the user visits directly (3s dwell, exact unambiguous matches only)
   - `MenuContentView.swift` — dropdown UI

@@ -145,6 +145,7 @@ final class ContinueSchedules: ObservableObject {
                 }
                 self.update(sessionId: schedule.sessionId) { record in
                     record.target = resolved.target
+                    record.tmuxTarget = resolved.tmuxTarget
                     record.agent = resolved.agent
                 }
                 if let refusal = resolved.refusal {
@@ -158,13 +159,27 @@ final class ContinueSchedules: ObservableObject {
     /// Off the main actor: the Automation preflight was measured taking over 100
     /// seconds for a running-but-ungranted target.
     private static func resolvePane(for sessionId: String, expectedTitle: String?) async
-        -> (target: ContinueDelivery.Target?, agent: ProcessIdentity?, refusal: String?)
+        -> Resolved
     {
-        await Task.detached { () -> (ContinueDelivery.Target?, ProcessIdentity?, String?) in
+        await Task.detached { () -> Resolved in
             let session = SessionStore.loadSessionFromDisk(sessionId: sessionId)
             let agent = session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil
+
+            // A session inside tmux knows exactly where it is: the hook recorded
+            // its pane id and tty from the session's own environment. Nothing to
+            // resolve, nothing to match by title, and no macOS permission needed
+            // — which is why this is checked before the Ghostty path rather than
+            // as a fallback after it.
+            if let terminal = session?.terminal, let paneId = terminal.tmuxPane,
+                let tty = terminal.tty
+            {
+                return Resolved(
+                    tmuxTarget: ContinueDelivery.TmuxTarget(paneId: paneId, tty: tty),
+                    agent: agent)
+            }
+
             guard let terminalPid = GhosttyScripting.runningApplication()?.processIdentifier else {
-                return (nil, agent, GhosttyScripting.Failure.notRunning.reason)
+                return Resolved(agent: agent, refusal: GhosttyScripting.Failure.notRunning.reason)
             }
             // The one call site allowed to prompt. The user is looking at the
             // panel they just used to arm this, so a permission dialog is expected
@@ -172,13 +187,23 @@ final class ContinueSchedules: ObservableObject {
             // never ask.
             switch GhosttyScripting.surfaces(pid: terminalPid, promptIfNeeded: true) {
             case .failure(let failure):
-                return (nil, agent, failure.reason)
+                return Resolved(agent: agent, refusal: failure.reason)
             case .success(let surfaces):
                 let resolution = ContinueDelivery.resolve(
                     expectedTitle: expectedTitle, among: surfaces, terminalPid: terminalPid)
-                return (resolution.target, agent, resolution.refusal)
+                return Resolved(
+                    target: resolution.target, agent: agent, refusal: resolution.refusal)
             }
         }.value
+    }
+
+    /// What arming worked out about where a session lives. Exactly one of the
+    /// two targets is ever set.
+    private struct Resolved: Sendable {
+        var target: ContinueDelivery.Target?
+        var tmuxTarget: ContinueDelivery.TmuxTarget?
+        var agent: ProcessIdentity?
+        var refusal: String?
     }
 
     func arm(_ schedule: ScheduledContinue) {
