@@ -436,10 +436,15 @@ private struct UsageChip: View {
         }
     }
 
+    /// A template, not a format: `j` is "hour in whatever convention this user
+    /// reads", so a 12-hour locale gets 12-hour output. The rest of the app
+    /// already localizes its times (`UsageLimit.reason`), and a tooltip that
+    /// disagreed with the row above it would read as a bug.
     private var resetHelp: String {
         let formatter = DateFormatter()
-        formatter.dateFormat =
-            Calendar.current.isDateInToday(reading.resetsAt) ? "HH:mm" : "EEE HH:mm"
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate(
+            Calendar.current.isDateInToday(reading.resetsAt) ? "jm" : "E jm")
         return "Resets \(formatter.string(from: reading.resetsAt))"
     }
 
