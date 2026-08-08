@@ -37,9 +37,16 @@ final class ContinueDeliveryTests {
 
     // MARK: - Which terminal
 
-    @Test func onlyGhosttyIsASupportedChannel() {
+    @Test func onlyGhosttyAndTmuxAreSupportedChannels() {
         #expect(ContinueDelivery.channel(forTermProgram: "ghostty") == .ghostty)
         #expect(ContinueDelivery.channel(forTermProgram: "Ghostty").isSupported)
+
+        // tmux overwrites TERM_PROGRAM with its own name, so this string is how
+        // a multiplexed session identifies itself no matter which terminal hosts
+        // it — and it is the better channel of the two, because the pane reports
+        // its own id rather than being matched by title.
+        #expect(ContinueDelivery.channel(forTermProgram: "tmux") == .tmux)
+        #expect(ContinueDelivery.channel(forTermProgram: "TMUX").isSupported)
 
         // Terminal.app is a permanent exclusion, not a pending one: `do script`
         // runs what it is given, so there is no way to type without Return.
@@ -47,7 +54,7 @@ final class ContinueDeliveryTests {
         #expect(terminal.isSupported == false)
         #expect(terminal.unsupportedReason?.contains("only run text") == true)
 
-        for other in ["tmux", "iTerm.app", "WezTerm", "vscode"] {
+        for other in ["screen", "iTerm.app", "WezTerm", "vscode"] {
             #expect(
                 ContinueDelivery.channel(forTermProgram: other).isSupported == false, "\(other)")
         }
@@ -57,7 +64,7 @@ final class ContinueDeliveryTests {
     /// Every refusal carries a reason, because a greyed control that will not say
     /// why is not self-explaining.
     @Test func everyUnsupportedChannelExplainsItself() {
-        for program in ["Apple_Terminal", "tmux", "screen", "warp", nil] {
+        for program in ["Apple_Terminal", "screen", "warp", nil] {
             let channel = ContinueDelivery.channel(forTermProgram: program)
             let reason = channel.unsupportedReason
             #expect(reason?.isEmpty == false, "\(program ?? "nil") gave no reason")

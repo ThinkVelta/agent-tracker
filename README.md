@@ -243,8 +243,10 @@ delivery refuses far more often than it fires, and always says why:
 - **It can't tell which window is yours.** Ghostty exposes only an id, a title and
   a working directory per surface, and a session cannot report which surface it is
   in. If two windows share a title, both are refused. On one real machine, 2 of 9
-  windows were uniquely identifiable. Running a session inside `tmux` would make
-  it exact — that channel is not built yet.
+  windows were uniquely identifiable. **Running the session inside `tmux` removes
+  this problem entirely**: a pane reports its own id and tty, the hook records
+  both when the session starts, and nothing is matched by title — so every pane is
+  addressable, and no macOS permission is involved.
 - **The session isn't at a finished turn.** Return at an open permission prompt
   *approves the focused option*, so anything other than a completed turn is a hard
   refusal, re-checked from disk immediately before writing.
@@ -255,9 +257,9 @@ delivery refuses far more often than it fires, and always says why:
   re-resolved before writing, and any disagreement aborts — a closed window, a
   reused one, a restarted Ghostty (surface ids are only meaningful within one run)
   or a recycled pid all refuse.
-- **Only Ghostty.** Terminal.app is excluded permanently: its entire scripting
-  dictionary has one text-injecting command, `do script`, which *runs* what you
-  give it. Claude Code and Codex are both armable, on the same terms — each
+- **Only Ghostty and tmux.** Terminal.app is excluded permanently: its entire
+  scripting dictionary has one text-injecting command, `do script`, which *runs*
+  what you give it. Claude Code and Codex are both armable, on the same terms — each
   reports a finished turn through its own hooks, and a session tracked only by
   reading Codex's rollout files is refused, because a rollout cannot say
   "waiting on you" and a send at a prompt would answer it.
@@ -316,7 +318,9 @@ rather than been stopped by it.
 - **A session inside tmux or screen can't be traced back to its window.** The
   multiplexer's server is not a child of the terminal that started it, and tmux
   overwrites the variable that would otherwise name the host, so click-to-focus
-  only works there if exactly one terminal app is running.
+  only works there if exactly one terminal app is running. Scheduled continues
+  are the exception and go the other way: inside tmux they are *more* reliable,
+  because the pane identifies itself.
 - Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
   kitty are wired up but untested.
 

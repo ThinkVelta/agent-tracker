@@ -39,6 +39,10 @@ struct ScheduledContinue: Equatable, Codable {
     /// which then has no recorded pane to disagree with and refuses if the window
     /// is ambiguous, exactly as a fresh arming would.
     var target: ContinueDelivery.Target?
+    /// Set instead of `target` when the session lives in a tmux pane. Separate
+    /// field rather than a variant of `Target`, so every schedule armed before
+    /// this existed still decodes — absent simply means "not a tmux session".
+    var tmuxTarget: ContinueDelivery.TmuxTarget?
     var agent: ProcessIdentity?
 
     init(
@@ -50,6 +54,7 @@ struct ScheduledContinue: Equatable, Codable {
         sendsOnWake: Bool = true,
         settledThrough: Date? = nil,
         target: ContinueDelivery.Target? = nil,
+        tmuxTarget: ContinueDelivery.TmuxTarget? = nil,
         agent: ProcessIdentity? = nil
     ) {
         self.sessionId = sessionId
@@ -60,6 +65,7 @@ struct ScheduledContinue: Equatable, Codable {
         self.sendsOnWake = sendsOnWake
         self.settledThrough = settledThrough
         self.target = target
+        self.tmuxTarget = tmuxTarget
         self.agent = agent
     }
 
@@ -193,6 +199,7 @@ enum ContinueScheduler {
         /// was true when the user armed it, rather than re-deriving a pane and
         /// typing into whatever now looks closest.
         var target: ContinueDelivery.Target?
+        var tmuxTarget: ContinueDelivery.TmuxTarget?
         var agent: ProcessIdentity?
     }
 
@@ -452,6 +459,7 @@ enum ContinueScheduler {
                     delay: Double(dueCount) * deliveryStagger,
                     lateness: lateness,
                     target: schedule.target,
+                    tmuxTarget: schedule.tmuxTarget,
                     agent: schedule.agent
                 ))
             note(schedule.sessionId, .fired(message: schedule.message, lateness: lateness))

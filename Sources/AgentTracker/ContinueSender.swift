@@ -39,6 +39,28 @@ struct ChannelOps: Sendable {
     )
 }
 
+/// The tmux channel's one read and two writes.
+///
+/// No `terminalPid` equivalent, and that absence is the point. Ghostty has to
+/// sample one process and address every call to it, because each AppleScript
+/// call would otherwise rediscover the app and could land in a different
+/// instance. A tmux pane id is addressed to the server that owns it, and the
+/// tty pinned alongside it says whether it is still the same pane.
+struct TmuxOps: Sendable {
+    var panes:
+        @Sendable (_ socketPath: String?) -> Result<
+            [TmuxScripting.Pane], TmuxScripting.Failure
+        >
+    var writeText: @Sendable (_ text: String, _ pane: String, _ socketPath: String?) -> Bool
+    var pressReturn: @Sendable (_ pane: String, _ socketPath: String?) -> Bool
+
+    static let live = TmuxOps(
+        panes: { TmuxScripting.panes(socketPath: $0) },
+        writeText: { TmuxScripting.writeText($0, toPane: $1, socketPath: $2) },
+        pressReturn: { TmuxScripting.pressReturn(inPane: $0, socketPath: $1) }
+    )
+}
+
 /// Everything delivery re-reads at fire time instead of trusting the plan.
 ///
 /// The plan was made when the schedule came due, and the fires in one fan-out are
@@ -62,7 +84,8 @@ struct SendContext: Sendable {
 /// is deliberately "prove it, then write" and never "write, then check".
 enum ContinueSender {
     static func send(
-        _ fire: ContinueScheduler.Fire, context: SendContext, ops: ChannelOps
+        _ fire: ContinueScheduler.Fire, context: SendContext, ops: ChannelOps,
+        tmux: TmuxOps = .live
     ) -> ContinueDeliveryResult {
         guard context.enabled else {
             return .refused("Scheduled continues were turned off before this could send")
@@ -80,6 +103,26 @@ enum ContinueSender {
             return .refused(
                 "The session isn't sitting at a finished turn any more "
                     + "(\(context.lastEvent ?? "state unknown"))")
+        }
+
+        // The pane can be right while the process in it is not: an agent that
+        // exited and had its pid reused would pass `kill(pid, 0)` and fail this.
+        // Checked before either channel writes, because it is the same question
+        // for both and neither may skip it.
+        guard let live = context.liveAgent else {
+            return .refused("That session's process is gone")
+        }
+        if let armed = fire.agent, !armed.isSameProcess(as: live) {
+            return .refused("A different process is in that window now")
+        }
+        if case .refused(let reason) = ContinueDelivery.foregroundAllows(
+            pgid: live.pgid, tpgid: live.tpgid, comm: live.comm)
+        {
+            return .refused(reason)
+        }
+
+        if let pane = fire.tmuxTarget {
+            return sendToPane(fire, recorded: pane, ops: tmux)
         }
 
         guard let recorded = fire.target else {
@@ -101,20 +144,6 @@ enum ContinueSender {
             return .refused(resolution.refusal ?? "The recorded window no longer matches")
         }
 
-        // The pane can be right while the process in it is not: an agent that
-        // exited and had its pid reused would pass `kill(pid, 0)` and fail this.
-        guard let live = context.liveAgent else {
-            return .refused("That session's process is gone")
-        }
-        if let armed = fire.agent, !armed.isSameProcess(as: live) {
-            return .refused("A different process is in that window now")
-        }
-        if case .refused(let reason) = ContinueDelivery.foregroundAllows(
-            pgid: live.pgid, tpgid: live.tpgid, comm: live.comm)
-        {
-            return .refused(reason)
-        }
-
         // Everything has agreed. Write the text, and ONLY on success press Return.
         guard ops.writeText(fire.message, target.surfaceId, terminalPid) else {
             return ContinueDeliveryResult(
@@ -124,6 +153,41 @@ enum ContinueSender {
             // The message is sitting on the prompt, unsent. Saying "failed" here
             // would be wrong in the other direction: something IS in that window
             // and the user needs to know it is there.
+            return ContinueDeliveryResult(
+                outcome: .failed,
+                detail: "Typed \"\(fire.message)\" but couldn't press Return — it's waiting on "
+                    + "the prompt")
+        }
+        return ContinueDeliveryResult(outcome: .sent, detail: "Sent \"\(fire.message)\"")
+    }
+
+    /// Writes into a tmux pane, having proved it is still the pane that was armed.
+    ///
+    /// Same ordering property as the Ghostty path and for the same reason: Return
+    /// submits whatever is on the prompt, so it must be unreachable unless the
+    /// text write already succeeded.
+    private static func sendToPane(
+        _ fire: ContinueScheduler.Fire,
+        recorded: ContinueDelivery.TmuxTarget,
+        ops: TmuxOps
+    ) -> ContinueDeliveryResult {
+        let panes: [TmuxScripting.Pane]
+        switch ops.panes(recorded.socketPath) {
+        case .success(let live): panes = live
+        case .failure(let failure): return .refused(failure.reason)
+        }
+
+        if case .refused(let reason) = ContinueDelivery.resolveTmux(
+            recorded: recorded, among: panes)
+        {
+            return .refused(reason)
+        }
+
+        guard ops.writeText(fire.message, recorded.paneId, recorded.socketPath) else {
+            return ContinueDeliveryResult(
+                outcome: .failed, detail: "tmux refused to write the message")
+        }
+        guard ops.pressReturn(recorded.paneId, recorded.socketPath) else {
             return ContinueDeliveryResult(
                 outcome: .failed,
                 detail: "Typed \"\(fire.message)\" but couldn't press Return — it's waiting on "

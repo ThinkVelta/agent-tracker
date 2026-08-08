@@ -12,18 +12,21 @@ import Foundation
 enum ContinueDelivery {
     /// Where a message could be written.
     ///
-    /// Ghostty only, for now. Not an oversight: measured on this machine, tmux,
-    /// kitty, WezTerm and iTerm2 are absent, so their write paths could not be
-    /// executed even once — and untested delivery code is exactly the thing this
-    /// design refuses to ship. Terminal.app is a permanent exclusion rather than
-    /// a pending one: its entire scripting dictionary has a single text-injecting
-    /// command, `do script`, which *runs* what it is given. There is no
-    /// write-without-Return primitive to find.
+    /// Ghostty and tmux. The others are absent rather than rejected: kitty,
+    /// WezTerm and iTerm2 are not installed on any machine this has run on, so
+    /// their write paths could not be executed even once, and untested delivery
+    /// code is exactly the thing this design refuses to ship. Terminal.app is a
+    /// permanent exclusion rather than a pending one: its entire scripting
+    /// dictionary has a single text-injecting command, `do script`, which *runs*
+    /// what it is given. There is no write-without-Return primitive to find.
     enum Channel: Equatable {
         case ghostty
+        /// A multiplexer pane, and the *better* of the two: the session records
+        /// its own pane id and tty, so nothing has to be matched by title.
+        case tmux
         case unsupported(reason: String)
 
-        var isSupported: Bool { self == .ghostty }
+        var isSupported: Bool { self == .ghostty || self == .tmux }
 
         /// What the row says when the clock is greyed out. Always present for an
         /// unsupported channel: a control the user can see and cannot use owes
@@ -42,9 +45,11 @@ enum ContinueDelivery {
             return .unsupported(
                 reason: "Terminal.app can only run text, not type it — it has no way to put a "
                     + "message on the prompt without pressing Return")
-        case "tmux", "screen":
+        case "tmux":
+            return .tmux
+        case "screen":
             return .unsupported(
-                reason: "Sending into a multiplexer pane isn't built yet")
+                reason: "Sending into a screen window isn't built yet")
         case let other?:
             return .unsupported(reason: "Sending into \(other) isn't built yet")
         case nil:
@@ -69,6 +74,41 @@ enum ContinueDelivery {
         var title: String
         /// pid of the terminal application, not of the agent.
         var terminalPid: Int32
+    }
+
+    /// The tmux pane a schedule was armed against.
+    ///
+    /// Both fields come from the session's own environment, captured by the hook
+    /// at session start — no matching, no guessing. `tty` is what makes the id
+    /// safe to reuse later: tmux mints pane ids monotonically per server, but a
+    /// server restarted overnight starts again at `%0`, and "the id still
+    /// resolves" would then be a stranger's pane. Two panes never share a tty.
+    struct TmuxTarget: Equatable, Codable, Sendable {
+        var paneId: String
+        var tty: String
+        /// The server socket this pane belongs to, from `$TMUX`. Optional so a
+        /// schedule armed before this field existed still decodes; absent means
+        /// tmux's default socket, which is what those schedules assumed.
+        var socketPath: String?
+    }
+
+    /// Refuses unless the recorded pane is still exactly the pane it was.
+    ///
+    /// Deliberately not "find the pane whose tty matches": that would silently
+    /// follow a session into a pane it was never armed against. Both halves must
+    /// still agree.
+    static func resolveTmux(
+        recorded: TmuxTarget,
+        among panes: [TmuxScripting.Pane]
+    ) -> Verdict {
+        guard let pane = panes.first(where: { $0.id == recorded.paneId }) else {
+            return .refused(reason: "The tmux pane this was armed in is gone")
+        }
+        guard pane.tty == recorded.tty else {
+            return .refused(
+                reason: "The tmux pane this was armed in now holds a different terminal")
+        }
+        return .allowed
     }
 
     /// One terminal surface as the app can see it.
