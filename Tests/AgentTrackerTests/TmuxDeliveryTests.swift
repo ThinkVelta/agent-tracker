@@ -35,11 +35,47 @@ struct TmuxPaneParsingTests {
         #expect(TmuxScripting.parsePanes("").isEmpty)
         #expect(TmuxScripting.parsePanes("\n\n").isEmpty)
     }
+
+    /// `$TMUX` is `<socket-path>,<server-pid>,<session-id>`. The socket is what
+    /// says *which server*, and a named one (`tmux -L work`) has its own pane-id
+    /// namespace — so getting this wrong means addressing a different server.
+    @Test("the server socket is read out of the TMUX variable")
+    func readsSocketPath() {
+        #expect(
+            TmuxScripting.socketPath(fromTmuxVariable: "/private/tmp/tmux-501/default,91694,0")
+                == "/private/tmp/tmux-501/default")
+        #expect(
+            TmuxScripting.socketPath(fromTmuxVariable: "/private/tmp/tmux-501/work,4,2")
+                == "/private/tmp/tmux-501/work")
+    }
+
+    /// Absent means "tmux's default socket", which is what a call with no `-S`
+    /// already does — so anything unparseable must read as nil, not as a path.
+    @Test("a TMUX value that is not a socket path reads as absent")
+    func rejectsNonPaths() {
+        #expect(TmuxScripting.socketPath(fromTmuxVariable: nil) == nil)
+        #expect(TmuxScripting.socketPath(fromTmuxVariable: "") == nil)
+        #expect(TmuxScripting.socketPath(fromTmuxVariable: ",91694,0") == nil)
+        #expect(TmuxScripting.socketPath(fromTmuxVariable: "relative/path,1,0") == nil)
+    }
+
+    /// Documented, not defended: `$TMUX` is comma-separated with no escaping, so
+    /// a socket path containing a comma is ambiguous in the variable itself and
+    /// this reads the first field. Recorded so the truncation is a known shape
+    /// rather than a surprise — and the pane resolution behind it refuses on a
+    /// mismatch, so the outcome is a refusal, never a misdirected send.
+    @Test("a comma inside the socket path truncates, and that is the format's fault")
+    func commaInPathTruncates() {
+        #expect(
+            TmuxScripting.socketPath(fromTmuxVariable: "/tmp/odd,name/sock,91694,0")
+                == "/tmp/odd")
+    }
 }
 
 @Suite("tmux pane resolution")
 struct TmuxResolutionTests {
-    private let armed = ContinueDelivery.TmuxTarget(paneId: "%3", tty: "/dev/ttys007")
+    private let armed = ContinueDelivery.TmuxTarget(
+        paneId: "%3", tty: "/dev/ttys007", socketPath: nil)
 
     @Test("the pane it was armed in, unchanged, is allowed")
     func unchangedPaneIsAllowed() {
@@ -95,7 +131,10 @@ struct TmuxSendTests {
         }
     }
 
-    private let pane = ContinueDelivery.TmuxTarget(paneId: "%3", tty: "/dev/ttys007")
+    private let socket = "/private/tmp/tmux-501/work"
+    private var pane: ContinueDelivery.TmuxTarget {
+        ContinueDelivery.TmuxTarget(paneId: "%3", tty: "/dev/ttys007", socketPath: socket)
+    }
 
     private func agent(pgid: Int32 = 5150, tpgid: Int32 = 5150, comm: String = "claude")
         -> ProcessIdentity
@@ -122,16 +161,16 @@ struct TmuxSendTests {
     ) -> TmuxOps {
         let live = panes ?? [TmuxScripting.Pane(id: "%3", tty: "/dev/ttys007")]
         return TmuxOps(
-            panes: {
-                recorder.note("panes")
+            panes: { socket in
+                recorder.note("panes@\(socket ?? "default")")
                 return .success(live)
             },
-            writeText: { _, addressed in
-                recorder.note("writeText@\(addressed)")
+            writeText: { _, addressed, socket in
+                recorder.note("writeText@\(addressed)@\(socket ?? "default")")
                 return writeSucceeds
             },
-            pressReturn: { addressed in
-                recorder.note("pressReturn@\(addressed)")
+            pressReturn: { addressed, socket in
+                recorder.note("pressReturn@\(addressed)@\(socket ?? "default")")
                 return returnSucceeds
             })
     }
@@ -144,7 +183,13 @@ struct TmuxSendTests {
         let result = ContinueSender.send(
             fire(), context: context(), ops: .ghostty, tmux: ops(recorder))
         #expect(result.outcome == .sent)
-        #expect(recorder.sequence == ["panes", "writeText@%3", "pressReturn@%3"])
+        // Every call carries the same socket. A tmux server started with -L or
+        // -S has its own pane-id namespace, so a call without it would address
+        // the default server — a different machine entirely, as far as %3 goes.
+        #expect(
+            recorder.sequence == [
+                "panes@\(socket)", "writeText@%3@\(socket)", "pressReturn@%3@\(socket)",
+            ])
     }
 
     @Test("Return is never pressed if the text did not land")

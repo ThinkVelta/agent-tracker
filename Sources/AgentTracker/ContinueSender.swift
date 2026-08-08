@@ -47,14 +47,17 @@ struct ChannelOps: Sendable {
 /// instance. A tmux pane id is addressed to the server that owns it, and the
 /// tty pinned alongside it says whether it is still the same pane.
 struct TmuxOps: Sendable {
-    var panes: @Sendable () -> Result<[TmuxScripting.Pane], TmuxScripting.Failure>
-    var writeText: @Sendable (_ text: String, _ pane: String) -> Bool
-    var pressReturn: @Sendable (_ pane: String) -> Bool
+    var panes:
+        @Sendable (_ socketPath: String?) -> Result<
+            [TmuxScripting.Pane], TmuxScripting.Failure
+        >
+    var writeText: @Sendable (_ text: String, _ pane: String, _ socketPath: String?) -> Bool
+    var pressReturn: @Sendable (_ pane: String, _ socketPath: String?) -> Bool
 
     static let live = TmuxOps(
-        panes: { TmuxScripting.panes() },
-        writeText: { TmuxScripting.writeText($0, toPane: $1) },
-        pressReturn: { TmuxScripting.pressReturn(inPane: $0) }
+        panes: { TmuxScripting.panes(socketPath: $0) },
+        writeText: { TmuxScripting.writeText($0, toPane: $1, socketPath: $2) },
+        pressReturn: { TmuxScripting.pressReturn(inPane: $0, socketPath: $1) }
     )
 }
 
@@ -169,7 +172,7 @@ enum ContinueSender {
         ops: TmuxOps
     ) -> ContinueDeliveryResult {
         let panes: [TmuxScripting.Pane]
-        switch ops.panes() {
+        switch ops.panes(recorded.socketPath) {
         case .success(let live): panes = live
         case .failure(let failure): return .refused(failure.reason)
         }
@@ -180,11 +183,11 @@ enum ContinueSender {
             return .refused(reason)
         }
 
-        guard ops.writeText(fire.message, recorded.paneId) else {
+        guard ops.writeText(fire.message, recorded.paneId, recorded.socketPath) else {
             return ContinueDeliveryResult(
                 outcome: .failed, detail: "tmux refused to write the message")
         }
-        guard ops.pressReturn(recorded.paneId) else {
+        guard ops.pressReturn(recorded.paneId, recorded.socketPath) else {
             return ContinueDeliveryResult(
                 outcome: .failed,
                 detail: "Typed \"\(fire.message)\" but couldn't press Return — it's waiting on "

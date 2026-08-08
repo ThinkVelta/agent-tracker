@@ -12,13 +12,13 @@ import Foundation
 enum ContinueDelivery {
     /// Where a message could be written.
     ///
-    /// Ghostty only, for now. Not an oversight: measured on this machine, tmux,
-    /// kitty, WezTerm and iTerm2 are absent, so their write paths could not be
-    /// executed even once — and untested delivery code is exactly the thing this
-    /// design refuses to ship. Terminal.app is a permanent exclusion rather than
-    /// a pending one: its entire scripting dictionary has a single text-injecting
-    /// command, `do script`, which *runs* what it is given. There is no
-    /// write-without-Return primitive to find.
+    /// Ghostty and tmux. The others are absent rather than rejected: kitty,
+    /// WezTerm and iTerm2 are not installed on any machine this has run on, so
+    /// their write paths could not be executed even once, and untested delivery
+    /// code is exactly the thing this design refuses to ship. Terminal.app is a
+    /// permanent exclusion rather than a pending one: its entire scripting
+    /// dictionary has a single text-injecting command, `do script`, which *runs*
+    /// what it is given. There is no write-without-Return primitive to find.
     enum Channel: Equatable {
         case ghostty
         /// A multiplexer pane, and the *better* of the two: the session records
@@ -86,6 +86,10 @@ enum ContinueDelivery {
     struct TmuxTarget: Equatable, Codable, Sendable {
         var paneId: String
         var tty: String
+        /// The server socket this pane belongs to, from `$TMUX`. Optional so a
+        /// schedule armed before this field existed still decodes; absent means
+        /// tmux's default socket, which is what those schedules assumed.
+        var socketPath: String?
     }
 
     /// Refuses unless the recorded pane is still exactly the pane it was.

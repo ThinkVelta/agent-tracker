@@ -174,7 +174,9 @@ final class ContinueSchedules: ObservableObject {
                 let tty = terminal.tty
             {
                 return Resolved(
-                    tmuxTarget: ContinueDelivery.TmuxTarget(paneId: paneId, tty: tty),
+                    tmuxTarget: ContinueDelivery.TmuxTarget(
+                        paneId: paneId, tty: tty,
+                        socketPath: TmuxScripting.socketPath(fromTmuxVariable: terminal.tmux)),
                     agent: agent)
             }
 

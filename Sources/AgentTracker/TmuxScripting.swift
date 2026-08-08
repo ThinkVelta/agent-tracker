@@ -13,8 +13,17 @@ import Foundation
 /// user-editable text on its way to a terminal, and a shell between here and
 /// there would be one interpretation too many.
 enum TmuxScripting {
-    static let executable = "/opt/homebrew/bin/tmux"
-    static let fallbackExecutable = "/usr/local/bin/tmux"
+    /// Where tmux is looked for, in order. Explicit paths rather than a `which`
+    /// through a shell: this app is launched by `open`, so its PATH is launchd's
+    /// and not the user's shell's — the reason a lookup would have to invent a
+    /// shell to be useful, which is exactly what the write path refuses to do.
+    static let searchPaths = [
+        "/opt/homebrew/bin/tmux",  // Homebrew, Apple silicon
+        "/usr/local/bin/tmux",  // Homebrew, Intel
+        "/opt/local/bin/tmux",  // MacPorts
+        "/run/current-system/sw/bin/tmux",  // Nix, system profile
+        "/usr/bin/tmux",
+    ]
 
     /// tmux is fast and local; anything slower than this is a wedged server.
     static let timeout: TimeInterval = 5
@@ -39,20 +48,38 @@ enum TmuxScripting {
     }
 
     static func toolPath() -> String? {
-        for path in [executable, fallbackExecutable]
-        where FileManager.default.isExecutableFile(atPath: path) {
-            return path
-        }
-        return nil
+        searchPaths.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
-    static func panes() -> Result<[Pane], Failure> {
+    /// The server socket named by `$TMUX`, whose format is
+    /// `<socket-path>,<server-pid>,<session-id>`.
+    ///
+    /// Load-bearing rather than tidy. `tmux -L work` or `-S /path` runs a
+    /// *separate server* with its own pane-id namespace, and a call with no
+    /// `-S` reaches the default server instead — which is a different machine
+    /// entirely as far as `%3` is concerned. It cannot mis-deliver, because the
+    /// tty pinned alongside the id is unique system-wide, but it would refuse
+    /// every schedule armed on a named socket and never say why.
+    static func socketPath(fromTmuxVariable value: String?) -> String? {
+        guard let value else { return nil }
+        let path = value.split(separator: ",", maxSplits: 1).first.map(String.init) ?? ""
+        return path.hasPrefix("/") ? path : nil
+    }
+
+    /// `-S` is a global option, so it precedes the command.
+    private static func arguments(socketPath: String?, _ command: [String]) -> [String] {
+        guard let socketPath else { return command }
+        return ["-S", socketPath] + command
+    }
+
+    static func panes(socketPath: String?) -> Result<[Pane], Failure> {
         guard let tool = toolPath() else { return .failure(.notInstalled) }
         // -a: every pane on the server, not just the attached session's. A
         // schedule fires while nothing is attached at all.
         guard
             let output = ProcessProbe.run(
-                tool, ["list-panes", "-a", "-F", paneFormat], timeout: timeout)
+                tool, arguments(socketPath: socketPath, ["list-panes", "-a", "-F", paneFormat]),
+                timeout: timeout)
         else { return .failure(.noServer) }
         let panes = parsePanes(output)
         return panes.isEmpty ? .failure(.unreadable) : .success(panes)
@@ -76,14 +103,17 @@ enum TmuxScripting {
     /// Types text without submitting it. `-l` is literal, so nothing in the
     /// message is read as a key name, and `--` stops a message beginning with a
     /// dash being read as a flag.
-    static func writeText(_ text: String, toPane pane: String) -> Bool {
+    static func writeText(_ text: String, toPane pane: String, socketPath: String?) -> Bool {
         guard let tool = toolPath() else { return false }
         return ProcessProbe.run(
-            tool, ["send-keys", "-t", pane, "-l", "--", text], timeout: timeout) != nil
+            tool, arguments(socketPath: socketPath, ["send-keys", "-t", pane, "-l", "--", text]),
+            timeout: timeout) != nil
     }
 
-    static func pressReturn(inPane pane: String) -> Bool {
+    static func pressReturn(inPane pane: String, socketPath: String?) -> Bool {
         guard let tool = toolPath() else { return false }
-        return ProcessProbe.run(tool, ["send-keys", "-t", pane, "Enter"], timeout: timeout) != nil
+        return ProcessProbe.run(
+            tool, arguments(socketPath: socketPath, ["send-keys", "-t", pane, "Enter"]),
+            timeout: timeout) != nil
     }
 }
