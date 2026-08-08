@@ -72,6 +72,21 @@ def main():
         path = sessions / f"{provider}-demo-{name}.json"
         path.write_text(json.dumps(payload, indent=2, sort_keys=True))
 
+    # The usage strip reads Claude's quota from the statusline payload, so
+    # without one the README would picture a dropdown missing a row it now
+    # always has. Invented numbers, chosen to sit below every warning threshold
+    # so the picture shows the resting state rather than an alarm.
+    resets_at = int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp())
+    statusline = {
+        "rate_limits": {
+            "five_hour": {"used_percentage": 38, "resets_at": resets_at},
+            "seven_day": {"used_percentage": 12, "resets_at": resets_at + 5 * 86400},
+        }
+    }
+    (root / "claude-statusline.json").write_text(
+        json.dumps(statusline, indent=2, sort_keys=True)
+    )
+
     print(f"{len(DEMO)} demo session(s) -> {sessions}")
 
 
