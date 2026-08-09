@@ -152,6 +152,16 @@ the reset time. Shown only when a reading exists, because "nothing known" and
 "nothing used" are not the same thing. Claude's numbers need the statusline
 wrapper (below); Codex reports its own in the rollouts the app already tails.
 
+**A banner, if you want one.** Off by default: the menu bar is the passive
+channel this app was built to be, and a notification is the most intrusive thing
+it can do. Switch it on in Settings › Sessions and a session flipping to
+needs-you posts one banner — the project, the agent, and what it is waiting for —
+which takes you to that terminal when clicked, exactly as clicking the row does.
+It announces the flip and not the state, so a session waiting at a prompt is one
+banner rather than one a second; going to the terminal yourself withdraws it
+again. Focus and Do Not Disturb hold these back like any other app's, which is
+the point of not marking them time-sensitive.
+
 **Both agents, one mechanism.** Claude Code and Codex both report through their
 native hooks. Codex is additionally tracked live by reading its own session
 files, so a session that predates the hooks still shows up.
@@ -387,7 +397,8 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 - [x] **Scheduled continues** — arm a session that stopped on a usage limit to
       resume itself when the window resets, from the clock on its row. Claude
       Code and Codex. Off by default (Settings › General). See below.
-- [ ] macOS notifications on state changes (opt-in, respects Focus)
+- [x] **Notifications** when a session flips to needs-you — opt-in, click to jump
+      to that terminal (Settings › Sessions). See below.
 - [x] Migrate the Codex integration to its native hooks engine (approval-request
       red states)
 - [ ] More providers (Kimi, GLM, …), since the state file schema is provider-agnostic

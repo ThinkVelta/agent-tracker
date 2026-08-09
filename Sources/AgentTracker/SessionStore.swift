@@ -387,6 +387,33 @@ final class SessionStore: ObservableObject {
         return .among(group, sessionId: session.id, clicks: clicks)
     }
 
+    /// Raise this session's terminal window, and clear its red state if the
+    /// window that came up could be this session's.
+    ///
+    /// Lives here rather than in the row that calls it because a notification
+    /// banner is a second way in, and the two must not drift: a jump that
+    /// raises the window but forgets to acknowledge leaves a red row standing
+    /// over a terminal the user is already reading.
+    @discardableResult
+    func focus(_ session: AgentSession) -> TerminalFocuser.Outcome {
+        let exactTitle = exactWindowTitle(for: session)
+        let roster = sessions.map { ($0, exactWindowTitle(for: $0)) }
+        let outcome = TerminalFocuser.focus(
+            session, exactTitle: exactTitle, among: roster,
+            rotation: nextFocusRotation(for: session))
+        // Acknowledge when the raised window could be this session's. A wholly
+        // unrelated window, or one that exactly names someone else, still
+        // refuses — silencing on that guess would hide a red state the user
+        // never saw.
+        if case .focusedWindow(let title) = outcome,
+            TerminalFocuser.isPlausibleMatch(
+                windowTitle: title, for: session, exactTitle: exactTitle, among: roster)
+        {
+            acknowledge(session)
+        }
+        return outcome
+    }
+
     /// Downgrade a needs-you session to idle once the user has jumped to it —
     /// it no longer needs to pull attention.
     func acknowledge(_ session: AgentSession) {

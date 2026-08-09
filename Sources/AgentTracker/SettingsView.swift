@@ -323,10 +323,49 @@ private struct MenuBarSettingsTab: View {
 private struct SessionsSettingsTab: View {
     @ObservedObject private var preferences = Preferences.shared
     @State private var accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
+    @State private var notificationsAllowed: Bool?
 
     /// The user grants this in System Settings, not here, so the row has to
     /// notice by itself.
     private let statusTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+
+    /// Flipping the switch on is the moment to ask, for the same reason the
+    /// Automation grant is asked for by a button: a permission dialog belongs
+    /// to a click the user made.
+    private var notifyBinding: Binding<Bool> {
+        Binding(
+            get: { preferences.notifyNeedsYou },
+            set: { wanted in
+                preferences.notifyNeedsYou = wanted
+                guard wanted else { return }
+                Task {
+                    await Notifications.requestAuthorization()
+                    await refreshNotificationStatus()
+                }
+            })
+    }
+
+    private var notificationDetail: String {
+        guard Notifications.isAvailable else {
+            return "This build has no bundle identifier, so macOS has nowhere to post to. "
+                + "Notifications work in the installed app."
+        }
+        if preferences.notifyNeedsYou, notificationsAllowed == false {
+            return "Turned off for AgentTracker in System Settings \u{203A} Notifications, so "
+                + "nothing will appear until it is allowed there."
+        }
+        return "A banner when a session flips to needs-you, naming the project and what it "
+            + "wants. Clicking it jumps to that terminal, the same as clicking the row. "
+            + "Focus and Do Not Disturb hold these back like any other app's."
+    }
+
+    /// Only asked while the switch is on: it is a cross-process call, it runs
+    /// on the same two-second tick as the Accessibility check, and the copy
+    /// above has nothing to say about the answer when nobody wants banners.
+    private func refreshNotificationStatus() async {
+        guard preferences.notifyNeedsYou else { return }
+        notificationsAllowed = await Notifications.authorizationStatus() == .authorized
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -382,10 +421,26 @@ private struct SessionsSettingsTab: View {
                     .frame(width: 130)
                 }
             }
+            SettingsCard {
+                SettingsRow(
+                    title: "Notify when a session needs you",
+                    detail: notificationDetail
+                ) {
+                    Toggle("", isOn: notifyBinding)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .disabled(!Notifications.isAvailable)
+                }
+            }
         }
         .padding(20)
+        .task { await refreshNotificationStatus() }
         .onReceive(statusTick) { _ in
             accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
+            // Notifications can be switched off for this app in System
+            // Settings while this window sits open, and the switch above would
+            // then be promising something that cannot happen.
+            Task { await refreshNotificationStatus() }
         }
         .onAppear { accessibilityGranted = TerminalFocuser.hasAccessibilityPermission }
     }
