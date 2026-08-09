@@ -275,11 +275,12 @@ final class ContinueSchedulesTests {
     /// identifier, which is what `swift run` and this test runner both are. The
     /// guard is what keeps a development build from crashing on the first fire.
     @Test func notifyingIsSkippedWhereThereIsNoBundle() async {
-        #expect(ContinueNotifier.isAvailable == (Bundle.main.bundleIdentifier != nil))
-        guard !ContinueNotifier.isAvailable else { return }
+        #expect(Notifications.isAvailable == (Bundle.main.bundleIdentifier != nil))
+        guard !Notifications.isAvailable else { return }
         // Must be safe to call anyway — reaching UNUserNotificationCenter here
         // would abort the whole test run rather than fail a case.
-        #expect(await ContinueNotifier.requestAuthorization() == false)
+        #expect(await Notifications.requestAuthorization() == false)
+        #expect(await Notifications.isPermitted == false)
         await ContinueNotifier.post(receipt("s1"))
     }
 

@@ -139,6 +139,18 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(attentionCue, forKey: Keys.attentionCue) }
     }
 
+    // MARK: - Notifications
+
+    /// Whether a session flipping to needs-you posts a notification.
+    ///
+    /// Off by default, and opt-in rather than opt-out: the menu bar icon is
+    /// already the passive channel this app was built to be, and a banner is
+    /// the most intrusive thing it can do. Someone who wants to be interrupted
+    /// can say so; someone who installed a menu bar app probably did not.
+    @Published var notifyNeedsYou: Bool {
+        didSet { defaults.set(notifyNeedsYou, forKey: Keys.notifyNeedsYou) }
+    }
+
     // MARK: - Scheduled continues
 
     /// Whether a session may be armed to resume itself when its usage window
@@ -172,6 +184,7 @@ final class Preferences: ObservableObject {
         static let iconMode = "iconMode"
         static let monochromeIcon = "monochromeIcon"
         static let attentionCue = "attentionCue"
+        static let notifyNeedsYou = "notifyNeedsYou"
         static let scheduledContinues = "scheduledContinues"
     }
 
@@ -234,6 +247,7 @@ final class Preferences: ObservableObject {
         }
 
         attentionCue = defaults.object(forKey: Keys.attentionCue) as? Bool ?? true
+        notifyNeedsYou = defaults.object(forKey: Keys.notifyNeedsYou) as? Bool ?? false
         scheduledContinues = defaults.object(forKey: Keys.scheduledContinues) as? Bool ?? false
     }
 }

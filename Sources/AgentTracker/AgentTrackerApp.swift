@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import SwiftUI
+import UserNotifications
 
 @main
 struct AgentTrackerApp: App {
@@ -38,6 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if RenderPreview.runIfRequested() { return }
 
         Preferences.shared.applyAppearance()
+        // Before anything can post: a response that arrives with no delegate
+        // set is dropped, and the banner a user clicks is the one that has to
+        // take them somewhere.
+        if Notifications.isAvailable {
+            UNUserNotificationCenter.current().delegate = self
+        }
         let store = SessionStore()
         self.store = store
         setUpStatusItem(for: store)
@@ -110,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 self.updateIcon(for: SessionCounts(of: sessions))
+                self.announceAttentionChanges(in: sessions)
                 // A live update can change the list's height while the panel
                 // is open; re-anchor so it stays hung from the menu bar.
                 if self.panel?.isVisible == true, let button = self.statusItem?.button {
@@ -257,6 +265,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
+    private var attention = AttentionTracker()
+
+    /// The loud half of the same signal the pulse gives quietly.
+    private func announceAttentionChanges(in sessions: [AgentSession]) {
+        // Tracked even while notifications are off, so switching them on
+        // announces what happens next rather than everything already red.
+        let changes = attention.update(with: sessions)
+        guard !changes.isEmpty else { return }
+        // Withdrawn unconditionally: a banner posted while the preference was
+        // on must still be taken back after it is turned off, or acknowledging
+        // the session leaves a stale one in Notification Center for good.
+        AttentionNotifier.withdraw(changes.ended)
+        guard Preferences.shared.notifyNeedsYou else { return }
+        for alert in changes.began { post(alert) }
+    }
+
+    /// Posting is not instant — it waits on Notification Center for the current
+    /// authorization status — and withdrawing is. A session acknowledged inside
+    /// that gap would have its banner taken back *before* it was added, then
+    /// added, and then never taken back again: the tracker has already recorded
+    /// the session as no longer needing anyone, so no later pass produces a
+    /// second withdrawal and the stale banner stays for good. Re-reading the row
+    /// on both sides of the await is what closes that.
+    private func post(_ alert: AttentionAlert) {
+        Task { @MainActor [weak self] in
+            guard self?.needsYou(alert.sessionKey) == true else { return }
+            await AttentionNotifier.post(alert)
+            guard self?.needsYou(alert.sessionKey) == false else { return }
+            AttentionNotifier.withdraw([alert.sessionKey])
+        }
+    }
+
+    private func needsYou(_ sessionKey: String) -> Bool {
+        store?.sessions.contains { $0.id == sessionKey && $0.state == .needsYou } ?? false
+    }
+
     @objc private func statusButtonClicked(_ sender: NSStatusBarButton) {
         guard let store else { return }
         let clicked = clickedState(in: sender)
@@ -350,4 +394,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.orderOut(nil)
     }
 
+}
+
+extension AppDelegate: UNUserNotificationCenterDelegate {
+    /// Without this the system swallows a banner whenever the app is frontmost,
+    /// which for an accessory app means any moment its Settings window happens
+    /// to be open — and a notification that silently does not arrive is worse
+    /// than one that was never offered.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
+    }
+
+    /// Clicking the banner does what clicking the row does: jumps to that
+    /// session's terminal, and clears its red state if the window that came up
+    /// could be its own.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let key =
+            response.notification.request.content.userInfo[AttentionNotifier.sessionKeyField]
+            as? String
+        Task { @MainActor in
+            if let key { self.focusSession(key: key) }
+            completionHandler()
+        }
+    }
+
+    /// The row is looked up live rather than carried in the notification: the
+    /// banner may have been sitting in Notification Center for an hour, and the
+    /// focuser needs the session as it is now, with today's window titles.
+    @MainActor
+    private func focusSession(key: String) {
+        guard let store, let session = store.sessions.first(where: { $0.id == key }) else {
+            DebugLog.log("[focus] \(DebugLog.timestamp()) notification for gone session \(key)")
+            return
+        }
+        store.focus(session)
+    }
 }

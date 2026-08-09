@@ -152,7 +152,7 @@ final class ContinueSchedules: ObservableObject {
                     self.log("\(schedule.sessionId) — armed, but \(refusal)")
                 }
             }
-            await ContinueNotifier.requestAuthorization()
+            await Notifications.requestAuthorization()
         }
     }
 
