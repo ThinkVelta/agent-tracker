@@ -222,8 +222,15 @@ final class SessionStore: ObservableObject {
         var merged = fileSessions.map { session -> AgentSession in
             var enriched = RegistryEnrichment.apply(
                 to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId))
-            enriched.contextUsedPercent = statuslineDirectory.contextUsedPercent(
-                for: session.sessionId)
+            // Claude-only, for exactly the reason `exactWindowTitle` is: this
+            // map is built from Claude's statusline payload and keyed by
+            // session id alone, so without the guard a Codex row could inherit
+            // a Claude reading. The two lookups read the same map and had
+            // different rules, which is the part worth fixing.
+            if session.provider == "claude-code" {
+                enriched.contextUsedPercent = statuslineDirectory.contextUsedPercent(
+                    for: session.sessionId)
+            }
             return enriched
         }
         // Claude reports a refusal only in the transcript of the session that hit
