@@ -42,7 +42,19 @@ enum Notifications {
     }
 
     /// Whether a notification posted right now would actually reach anyone.
+    ///
+    /// An allowlist rather than `== .authorized`, so a status that *does*
+    /// deliver can never be read as a refusal. `.provisional` is not reachable
+    /// as this app stands — it has to be asked for, and the ask here is
+    /// `[.alert, .sound]` — but the failure mode it would cause is a
+    /// notification silently not appearing, which is the one nobody thinks to
+    /// go looking for.
     static var isPermitted: Bool {
-        get async { await authorizationStatus() == .authorized }
+        get async {
+            switch await authorizationStatus() {
+            case .authorized, .provisional, .ephemeral: return true
+            default: return false
+            }
+        }
     }
 }

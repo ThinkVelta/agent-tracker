@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 /// The Settings window: the conventional SwiftUI `Settings` scene with tabs —
 /// the surface is small, so the sidebar-window shape (à la Stats) would be
@@ -323,7 +324,10 @@ private struct MenuBarSettingsTab: View {
 private struct SessionsSettingsTab: View {
     @ObservedObject private var preferences = Preferences.shared
     @State private var accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
-    @State private var notificationsAllowed: Bool?
+    /// The raw status, not "allowed or not": the copy below has to tell a
+    /// refusal apart from a question that was never answered, and those two
+    /// need the user to do different things.
+    @State private var notificationStatus: UNAuthorizationStatus?
 
     /// The user grants this in System Settings, not here, so the row has to
     /// notice by itself.
@@ -350,9 +354,17 @@ private struct SessionsSettingsTab: View {
             return "This build has no bundle identifier, so macOS has nowhere to post to. "
                 + "Notifications work in the installed app."
         }
-        if preferences.notifyNeedsYou, notificationsAllowed == false {
-            return "Turned off for AgentTracker in System Settings \u{203A} Notifications, so "
-                + "nothing will appear until it is allowed there."
+        if preferences.notifyNeedsYou {
+            switch notificationStatus {
+            case .denied:
+                return "Turned off for AgentTracker in System Settings \u{203A} Notifications, "
+                    + "so nothing will appear until it is allowed there."
+            case .notDetermined:
+                return "macOS has not been asked yet — switch this off and on again to raise "
+                    + "the prompt."
+            default:
+                break
+            }
         }
         return "A banner when a session flips to needs-you, naming the project and what it "
             + "wants. Clicking it jumps to that terminal, the same as clicking the row. "
@@ -364,7 +376,7 @@ private struct SessionsSettingsTab: View {
     /// above has nothing to say about the answer when nobody wants banners.
     private func refreshNotificationStatus() async {
         guard preferences.notifyNeedsYou else { return }
-        notificationsAllowed = await Notifications.authorizationStatus() == .authorized
+        notificationStatus = await Notifications.authorizationStatus()
     }
 
     var body: some View {
