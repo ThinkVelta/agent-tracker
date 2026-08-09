@@ -144,6 +144,14 @@ icon and tells the states apart by shape:
 </picture>
 </div>
 
+**Quota, before it stops you.** A strip above the footer shows how much of each
+provider's window you have used — `Claude 5h 38%` — so the number that decides
+whether to start something big is readable at a glance rather than discovered
+when a request is refused. Grey until 75%, amber to 90%, red past it; hover for
+the reset time. Shown only when a reading exists, because "nothing known" and
+"nothing used" are not the same thing. Claude's numbers need the statusline
+wrapper (below); Codex reports its own in the rollouts the app already tails.
+
 **Both agents, one mechanism.** Claude Code and Codex both report through their
 native hooks. Codex is additionally tracked live by reading its own session
 files, so a session that predates the hooks still shows up.

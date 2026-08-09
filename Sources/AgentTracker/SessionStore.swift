@@ -78,6 +78,12 @@ final class SessionStore: ObservableObject {
     /// Bumped when a displayed relative time would have changed, so rows
     /// re-render on a quiet machine without republishing identical sessions.
     @Published private(set) var clockTick = 0
+
+    /// What the dropdown shows about remaining quota. Derived in `rebuild` and
+    /// published, rather than exposing `AccountLimits` itself: that is mutated
+    /// several times per pass as readings merge, and observing it directly would
+    /// redraw the menu bar icon on each one.
+    @Published private(set) var usage: [UsageReading] = []
     private var lastClockBucket = 0
     private var codexScanner: CodexSessionScanner?
     private let titleDirectory: TitleDirectory
@@ -275,6 +281,9 @@ final class SessionStore: ObservableObject {
             return UsageLimitPresentation.apply(limit, to: session, now: now)
         }
         armableResetBySession = armableBySession
+        let readings = UsageSummary.readings(
+            from: accountLimits, providers: Set(merged.map(\.provider)), now: now)
+        if usage != readings { usage = readings }
 
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {

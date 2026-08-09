@@ -75,6 +75,10 @@ struct MenuContentView: View {
                 sessionList
             }
             Divider()
+            if !store.usage.isEmpty {
+                usageStrip
+                Divider()
+            }
             footer
         }
         .frame(width: Theme.Metrics.popoverWidth)
@@ -332,6 +336,23 @@ struct MenuContentView: View {
     /// destructive one should not be adjacent (user feedback: quit felt
     /// misclickable next to the gear). The count sits between symmetric
     /// spacers, so it lands dead center.
+    /// Quota, where it can be read without looking for it.
+    ///
+    /// Above the footer rather than inside it: the footer's three items are
+    /// controls and a count, and quota is neither. Shown only when a reading
+    /// exists — an empty strip would imply "nothing used" where the truth is
+    /// "nothing known", and those are the two states this must never merge.
+    private var usageStrip: some View {
+        HStack(spacing: 10) {
+            ForEach(store.usage) { reading in
+                UsageChip(reading: reading)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Theme.Metrics.gutter)
+        .padding(.vertical, 5)
+    }
+
     private var footer: some View {
         HStack(spacing: 0) {
             FooterIconButton(systemName: "gearshape", help: "Settings (⌘,)") {
@@ -399,6 +420,56 @@ struct MenuContentView: View {
 
 /// Footer icon buttons hover-highlight like the rows do — a click target
 /// that doesn't react reads as disabled (user feedback: the Quit button).
+/// One provider's remaining quota: a label, a bar, a number.
+///
+/// The bar carries no colour until the number is worth reacting to. A gauge that
+/// is amber at 50% teaches people to ignore it, and this sits in a window opened
+/// to answer a different question.
+private struct UsageChip: View {
+    let reading: UsageReading
+
+    private var tint: Color {
+        switch reading.usedPercent {
+        case ..<75: return Color.secondary
+        case ..<90: return .orange
+        default: return .red
+        }
+    }
+
+    /// A template, not a format: `j` is "hour in whatever convention this user
+    /// reads", so a 12-hour locale gets 12-hour output. The rest of the app
+    /// already localizes its times (`UsageLimit.reason`), and a tooltip that
+    /// disagreed with the row above it would read as a bug.
+    private var resetHelp: String {
+        let formatter = DateFormatter()
+        formatter.locale = .autoupdatingCurrent
+        formatter.setLocalizedDateFormatFromTemplate(
+            Calendar.current.isDateInToday(reading.resetsAt) ? "jm" : "E jm")
+        return "Resets \(formatter.string(from: reading.resetsAt))"
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Text("\(reading.providerLabel) \(reading.windowLabel)")
+                .font(Theme.Typography.footer)
+                .foregroundStyle(.tertiary)
+            Capsule()
+                .fill(Color.secondary.opacity(0.18))
+                .frame(width: 34, height: 3)
+                .overlay(alignment: .leading) {
+                    Capsule()
+                        .fill(tint)
+                        .frame(width: 34 * min(max(reading.usedPercent, 0), 100) / 100, height: 3)
+                }
+            Text("\(Int(reading.usedPercent.rounded()))%")
+                .font(Theme.Typography.footer)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+        }
+        .help(resetHelp)
+    }
+}
+
 private struct FooterIconButton: View {
     let systemName: String
     let help: String
