@@ -278,9 +278,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // the session leaves a stale one in Notification Center for good.
         AttentionNotifier.withdraw(changes.ended)
         guard Preferences.shared.notifyNeedsYou else { return }
-        for alert in changes.began {
-            Task { await AttentionNotifier.post(alert) }
+        for alert in changes.began { post(alert) }
+    }
+
+    /// Posting is not instant — it waits on Notification Center for the current
+    /// authorization status — and withdrawing is. A session acknowledged inside
+    /// that gap would have its banner taken back *before* it was added, then
+    /// added, and then never taken back again: the tracker has already recorded
+    /// the session as no longer needing anyone, so no later pass produces a
+    /// second withdrawal and the stale banner stays for good. Re-reading the row
+    /// on both sides of the await is what closes that.
+    private func post(_ alert: AttentionAlert) {
+        Task { @MainActor [weak self] in
+            guard self?.needsYou(alert.sessionKey) == true else { return }
+            await AttentionNotifier.post(alert)
+            guard self?.needsYou(alert.sessionKey) == false else { return }
+            AttentionNotifier.withdraw([alert.sessionKey])
         }
+    }
+
+    private func needsYou(_ sessionKey: String) -> Bool {
+        store?.sessions.contains { $0.id == sessionKey && $0.state == .needsYou } ?? false
     }
 
     @objc private func statusButtonClicked(_ sender: NSStatusBarButton) {
