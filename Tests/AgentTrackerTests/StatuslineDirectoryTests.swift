@@ -4,7 +4,7 @@ import Testing
 @testable import AgentTracker
 
 /// Synthetic statusline payloads only — never real ~/.claude data.
-final class TitleDirectoryTests {
+final class StatuslineDirectoryTests {
     private var tempDirs: [URL] = []
 
     deinit {
@@ -13,7 +13,7 @@ final class TitleDirectoryTests {
 
     private func makeDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("title-directory-\(UUID().uuidString)")
+            .appendingPathComponent("statusline-directory-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         tempDirs.append(url)
         return url
@@ -36,32 +36,87 @@ final class TitleDirectoryTests {
         try json.write(to: capture(in: directory), atomically: true, encoding: .utf8)
     }
 
-    private func payload(id: String, name: String?) -> String {
+    private func payload(id: String, name: String?, context: Int? = nil) -> String {
         let nameField = name.map { ", \"session_name\": \"\($0)\"" } ?? ""
+        let contextField =
+            context.map { ", \"context_window\": {\"used_percentage\": \($0)}" } ?? ""
         return """
-            {"session_id": "\(id)"\(nameField), "cwd": "/tmp", \
+            {"session_id": "\(id)"\(nameField)\(contextField), "cwd": "/tmp", \
             "model": {"id": "claude-opus-5", "display_name": "Opus"}}
             """
     }
 
     @Test func parseExtractsIdAndName() {
         let data = Data(payload(id: "abc-123", name: "Fix the flaky scanner test").utf8)
-        let entry = TitleDirectory.parse(data)
+        let entry = StatuslineDirectory.parse(data)
         #expect(entry?.sessionId == "abc-123")
         #expect(entry?.name == "Fix the flaky scanner test")
     }
 
-    @Test func parseRejectsPayloadsWithoutName() {
-        #expect(TitleDirectory.parse(Data(payload(id: "abc", name: nil).utf8)) == nil)
-        #expect(TitleDirectory.parse(Data("{\"session_name\": \"x\"}".utf8)) == nil)
-        #expect(TitleDirectory.parse(Data("not json".utf8)) == nil)
-        #expect(TitleDirectory.parse(Data("[1, 2]".utf8)) == nil)
+    @Test func parseExtractsContextPressure() {
+        let entry = StatuslineDirectory.parse(Data(payload(id: "abc", name: nil, context: 84).utf8))
+        #expect(entry?.contextUsedPercent == 84)
+        #expect(entry?.name == nil)
+    }
+
+    /// A number outside 0-100 means this is not the field we think it is —
+    /// dropped rather than clamped, which would invent a reading.
+    @Test func parseIgnoresAnImpossiblePercentage() {
+        for absurd in [-1, 101, 4200] {
+            let data = Data(payload(id: "abc", name: nil, context: absurd).utf8)
+            #expect(StatuslineDirectory.parse(data)?.contextUsedPercent == nil)
+        }
+    }
+
+    @Test func parseRejectsPayloadsWithoutASessionId() {
+        #expect(StatuslineDirectory.parse(Data("{\"session_name\": \"x\"}".utf8)) == nil)
+        #expect(StatuslineDirectory.parse(Data("not json".utf8)) == nil)
+        #expect(StatuslineDirectory.parse(Data("[1, 2]".utf8)) == nil)
+    }
+
+    /// An unnamed session used to be dropped outright, which was fine when a
+    /// name was all this read. It now also carries context, so the payload is
+    /// kept — but it must still contribute no title.
+    @Test @MainActor func anUnnamedSessionContributesNoTitle() throws {
+        let directory = try makeDirectory()
+        try writePayload(payload(id: "unnamed", name: nil, context: 40), in: directory)
+        let statusline = StatuslineDirectory(
+            directory: directory, capture: capture(in: directory))
+        #expect(statusline.title(for: "unnamed") == nil)
+        #expect(statusline.contextUsedPercent(for: "unnamed") == 40)
+    }
+
+    /// The two facts arrive on the same payloads but not always together, and
+    /// the map is accumulated — so a payload carrying one must not erase the
+    /// other. Both are last-writer-wins across sessions, which is the whole
+    /// reason this is a map and not a snapshot.
+    @Test @MainActor func contextAccumulatesPerSessionAndSurvivesAQuietPayload() throws {
+        let directory = try makeDirectory()
+        try writePayload(payload(id: "a", name: "Task A", context: 30), in: directory)
+        let statusline = StatuslineDirectory(
+            directory: directory, capture: capture(in: directory))
+        #expect(statusline.contextUsedPercent(for: "a") == 30)
+
+        try writePayload(payload(id: "b", name: "Task B", context: 91), in: directory)
+        statusline.absorbLatest()
+        #expect(statusline.contextUsedPercent(for: "a") == 30)
+        #expect(statusline.contextUsedPercent(for: "b") == 91)
+
+        // A payload with no context at all leaves the last known reading alone
+        // rather than blanking the row.
+        try writePayload(payload(id: "a", name: "Task A"), in: directory)
+        statusline.absorbLatest()
+        #expect(statusline.contextUsedPercent(for: "a") == 30)
+
+        try writePayload(payload(id: "a", name: "Task A", context: 55), in: directory)
+        statusline.absorbLatest()
+        #expect(statusline.contextUsedPercent(for: "a") == 55)
     }
 
     @Test @MainActor func accumulatesAcrossLastWriterWinsPayloads() throws {
         let directory = try makeDirectory()
         try writePayload(payload(id: "session-a", name: "Task A"), in: directory)
-        let titles = TitleDirectory(directory: directory, capture: capture(in: directory))
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
         #expect(titles.title(for: "session-a") == "Task A")
 
         // The file only ever holds ONE session's payload; a refresh from a
@@ -82,7 +137,7 @@ final class TitleDirectoryTests {
     @Test @MainActor func absorbsNamesFromTheStatuslineCapture() throws {
         let directory = try makeDirectory()
         try writeCapture(payload(id: "from-capture", name: "Captured title"), in: directory)
-        let titles = TitleDirectory(directory: directory, capture: capture(in: directory))
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
         #expect(titles.title(for: "from-capture") == "Captured title")
     }
 
@@ -92,7 +147,7 @@ final class TitleDirectoryTests {
         let directory = try makeDirectory()
         try writePayload(payload(id: "same", name: "Stale name"), in: directory)
         try writeCapture(payload(id: "same", name: "Current name"), in: directory)
-        let titles = TitleDirectory(directory: directory, capture: capture(in: directory))
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
         #expect(titles.title(for: "same") == "Current name")
 
         // A session only the user's own script has seen is still picked up.
@@ -104,7 +159,7 @@ final class TitleDirectoryTests {
 
     @Test @MainActor func missingFileLeavesDirectoryEmpty() throws {
         let directory = try makeDirectory()
-        let titles = TitleDirectory(directory: directory, capture: capture(in: directory))
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
         #expect(titles.title(for: "anything") == nil)
     }
 
@@ -113,9 +168,9 @@ final class TitleDirectoryTests {
         // directory permanently inert — refresh() (driven by the store's
         // reload tick) re-arms the watcher and absorbs.
         let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("title-directory-\(UUID().uuidString)")
+            .appendingPathComponent("statusline-directory-\(UUID().uuidString)")
         tempDirs.append(directory)
-        let titles = TitleDirectory(directory: directory, capture: capture(in: directory))
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
         #expect(titles.title(for: "late") == nil)
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -130,7 +185,7 @@ final class TitleDirectoryTests {
         // accumulated map must survive).
         let directory = try makeDirectory()
         try writePayload(payload(id: "before", name: "Old title"), in: directory)
-        let titles = TitleDirectory(directory: directory, capture: capture(in: directory))
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
         #expect(titles.title(for: "before") == "Old title")
 
         try FileManager.default.removeItem(at: directory)

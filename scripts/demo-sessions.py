@@ -10,7 +10,8 @@ all three states, two different parent directories (so the location field is
 visibly doing something), and one worktree session whose generated branch name
 is long enough to be shortened.
 
-Usage: demo-sessions.py <dir>   # <dir> becomes AGENT_TRACKER_DIR
+Usage: demo-sessions.py <dir> [claude-dir]
+       <dir> becomes AGENT_TRACKER_DIR, [claude-dir] AGENT_TRACKER_CLAUDE_DIR
 """
 
 import json
@@ -45,9 +46,10 @@ DEMO = [
 
 
 def main():
-    if len(sys.argv) != 2:
+    if not 2 <= len(sys.argv) <= 3:
         sys.exit(__doc__)
     root = pathlib.Path(sys.argv[1])
+    claude_root = pathlib.Path(sys.argv[2]) if len(sys.argv) == 3 else None
     shutil.rmtree(root, ignore_errors=True)
     sessions = root / "sessions"
     sessions.mkdir(parents=True)
@@ -76,16 +78,39 @@ def main():
     # without one the README would picture a dropdown missing a row it now
     # always has. Invented numbers, chosen to sit below every warning threshold
     # so the picture shows the resting state rather than an alarm.
+    #
+    # The same payload carries per-session context pressure, and this is where
+    # the fixture has to respect a real constraint rather than fake past it: one
+    # file holds ONE session's payload, so two sessions can only both have a
+    # reading if they come from the two different sources the app reads. That is
+    # exactly how it works on a real machine.
     resets_at = int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp())
     statusline = {
+        "session_id": "demo-checkout-service",
+        # Past the urgent threshold, so the picture shows the colour that means
+        # "finish this thought" rather than only the mild one.
+        "context_window": {"used_percentage": 92},
         "rate_limits": {
             "five_hour": {"used_percentage": 38, "resets_at": resets_at},
             "seven_day": {"used_percentage": 12, "resets_at": resets_at + 5 * 86400},
-        }
+        },
     }
     (root / "claude-statusline.json").write_text(
         json.dumps(statusline, indent=2, sort_keys=True)
     )
+
+    if claude_root is not None:
+        claude_root.mkdir(parents=True, exist_ok=True)
+        (claude_root / "statusline-last.json").write_text(
+            json.dumps(
+                {
+                    "session_id": "demo-api-gateway",
+                    "context_window": {"used_percentage": 76},
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
 
     print(f"{len(DEMO)} demo session(s) -> {sessions}")
 

@@ -85,9 +85,9 @@ final class ClaudeSessionRegistry {
     private var watcher: DirectoryWatcher?
     private var watchedInode: UInt64?
 
-    /// Lives under the same `~/.claude` root as `TitleDirectory`, and honors
+    /// Lives under the same `~/.claude` root as `StatuslineDirectory`, and honors
     /// the same override so tests and previews stay hermetic.
-    init(claudeDirectory: URL = TitleDirectory.defaultDirectory) {
+    init(claudeDirectory: URL = StatuslineDirectory.defaultDirectory) {
         directory = claudeDirectory.appendingPathComponent("sessions")
         refresh()
     }
@@ -98,7 +98,7 @@ final class ClaudeSessionRegistry {
 
     /// Re-arms the watcher when needed, then reloads. Called from every
     /// SessionStore reload tick rather than relying on the watcher alone — for
-    /// the same three reasons spelled out in `TitleDirectory.refresh()`: the
+    /// the same three reasons spelled out in `StatuslineDirectory.refresh()`: the
     /// directory may not exist at launch, may be recreated under a new inode,
     /// or may be rewritten in place without a rename event.
     func refresh() {
