@@ -590,6 +590,13 @@ struct SessionRow: View {
                 // with no way out.
                 Button("Mark as seen", action: onAcknowledge)
             }
+            Button(session.isMuted ? "Unmute" : "Mute") { muted.toggle(session.id) }
+            if let command = session.resumeCommand {
+                Button("Copy resume command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(command, forType: .string)
+                }
+            }
             if armedSchedule != nil {
                 Button("Cancel scheduled continue") {
                     continues.disarm(sessionId: session.sessionId)
@@ -605,6 +612,7 @@ struct SessionRow: View {
     /// `RenderPreview`.
     @ObservedObject private var continues = ContinueSchedules.shared
     @ObservedObject private var preferences = Preferences.shared
+    @ObservedObject private var muted = MutedSessions.shared
 
     @State private var editing = false
     @State private var draft = ContinueDraft()
@@ -850,6 +858,10 @@ struct SessionRow: View {
     /// sessions they cannot identify.
     private var metadata: String {
         [
+            // First, so truncation cannot eat it. A muted row displays as idle,
+            // and without this the row would be quietly lying about a session
+            // that is in fact waiting on someone.
+            session.isMuted ? "Muted" : nil,
             session.providerDisplayName, session.locationContext,
             session.reason ?? session.state.label,
         ]

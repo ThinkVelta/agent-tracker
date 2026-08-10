@@ -105,6 +105,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// Where the session's terminal is, per the registry. Differs from `cwd`
     /// when the agent works in a subdirectory such as a worktree.
     var registryCwd: String?
+    /// Whether the user has told this session to stop asking. Display state
+    /// only — a muted session still reports everything it always did, and the
+    /// row still says what it wants; it simply does not turn red for it.
+    var isMuted = false
     /// How full this session's context window is, 0-100. Joined in from
     /// whichever source the provider has — `StatuslineDirectory` for Claude,
     /// the rollout scanner for Codex — and never read from the state file: no
@@ -248,6 +252,21 @@ struct AgentSession: Codable, Identifiable, Equatable {
         case "claude-code": return "Claude"
         case "codex": return "Codex"
         default: return provider.capitalized
+        }
+    }
+
+    /// The command that brings this session back, for a provider that has one.
+    ///
+    /// Verified against the shipping CLIs rather than remembered: Claude takes
+    /// `-r, --resume [value]` where the value is a session id, and Codex takes
+    /// `resume [SESSION_ID]` positionally. A provider this version has not been
+    /// told about gets nil rather than a guessed incantation — this lands on
+    /// the clipboard and is pasted into a shell.
+    var resumeCommand: String? {
+        switch provider {
+        case "claude-code": return "claude --resume \(sessionId)"
+        case "codex": return "codex resume \(sessionId)"
+        default: return nil
         }
     }
 }

@@ -175,6 +175,18 @@ banner rather than one a second; going to the terminal yourself withdraws it
 again. Focus and Do Not Disturb hold these back like any other app's, which is
 the point of not marking them time-sensitive.
 
+**Row actions, on right-click.** *Mute* is for the long-running background
+agent that finishes a turn every few minutes: it is doing exactly what it
+should, and every completion turns the menu bar red for something you never
+intended to look at. A muted session displays as idle and keeps the reason it
+gave, so the row still reads `Muted · Claude · api-gateway · Approve Bash?` —
+it says what it wants, it just does not pull you. Counts, sections and
+notifications all follow, because they read the state. The mute lasts as long as
+the session does; the next session in that directory has not asked to be
+ignored. *Copy resume command* puts `claude --resume <id>` or
+`codex resume <id>` on the clipboard, which is what you want once a session has
+ended and you would like it back.
+
 **Both agents, one mechanism.** Claude Code and Codex both report through their
 native hooks. Codex is additionally tracked live by reading its own session
 files, so a session that predates the hooks still shows up.

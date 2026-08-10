@@ -44,6 +44,10 @@ final class SessionStore: ObservableObject {
     private(set) var armableResetBySession: [String: Date] = [:]
     private let usageWatcher = ClaudeUsageWatcher()
     private let continueSchedules: ContinueSchedules
+    /// The shared instance, for the same reason the schedules use theirs: the
+    /// dropdown observes it directly, and a second one here would mute rows the
+    /// menu never sees.
+    private let muted = MutedSessions.shared
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
@@ -295,6 +299,19 @@ final class SessionStore: ObservableObject {
             from: accountLimits, providers: Set(merged.map(\.provider)), now: now)
         if usage != readings { usage = readings }
 
+        // After every other rule has decided what a row is, and before sorting:
+        // a muted row sorts as the idle row it now displays as, which is the
+        // point. Applied here rather than at the source so nothing upstream has
+        // to know about muting, and so the reason a session gave survives — the
+        // row still says "Approve Bash?", it just does not turn red for it.
+        merged = merged.map { session in
+            guard muted.isMuted(session.id) else { return session }
+            var quiet = session
+            quiet.isMuted = true
+            if quiet.state == .needsYou { quiet.state = .idle }
+            return quiet
+        }
+
         let sorted = merged.sorted { lhs, rhs in
             if lhs.state != rhs.state {
                 return lhs.state.sortRank < rhs.state.sortRank
@@ -304,6 +321,7 @@ final class SessionStore: ObservableObject {
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
+        muted.reconcile(liveKeys: Set(sorted.map(\.id)))
         usageWatcher.prune(liveSessionIds: Set(sorted.map(\.sessionId)))
         if !focusRotation.isEmpty {
             let live = Set(sorted.map(\.id))
