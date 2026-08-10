@@ -86,7 +86,7 @@ final class SessionStore: ObservableObject {
     @Published private(set) var usage: [UsageReading] = []
     private var lastClockBucket = 0
     private var codexScanner: CodexSessionScanner?
-    private let titleDirectory: TitleDirectory
+    private let statuslineDirectory: StatuslineDirectory
     private let claudeRegistry: ClaudeSessionRegistry
     private var scannerSubscription: AnyCancellable?
     /// Sessions loaded from ~/.agent-tracker state files (hook-written).
@@ -108,11 +108,11 @@ final class SessionStore: ObservableObject {
     /// project names that already exact-match via the path candidates.
     func exactWindowTitle(for session: AgentSession) -> String? {
         guard session.provider == "claude-code" else { return nil }
-        return titleDirectory.title(for: session.sessionId)
+        return statuslineDirectory.title(for: session.sessionId)
     }
 
     init() {
-        titleDirectory = TitleDirectory()
+        statuslineDirectory = StatuslineDirectory()
         claudeRegistry = ClaudeSessionRegistry()
         // The shared instance rather than an injected one: the dropdown observes
         // it directly, so a second instance here would arm one set of schedules
@@ -174,7 +174,7 @@ final class SessionStore: ObservableObject {
         // ~/.claude appears late or is recreated, and absorbs payloads from
         // statusline scripts that rewrite the file in place (no rename, so no
         // directory event).
-        titleDirectory.refresh()
+        statuslineDirectory.refresh()
         claudeRegistry.refresh()
         // The proactive half of Claude's usage picture, and the only one that
         // exists before a request is refused. Polled rather than watched: the
@@ -219,9 +219,19 @@ final class SessionStore: ObservableObject {
         // the row timestamps need republishing — and reading the clock separately
         // for each let them disagree about what "now" is.
         let now = Date()
-        var merged = fileSessions.map {
-            RegistryEnrichment.apply(
-                to: $0, entry: claudeRegistry.entry(forSessionId: $0.sessionId))
+        var merged = fileSessions.map { session -> AgentSession in
+            var enriched = RegistryEnrichment.apply(
+                to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId))
+            // Claude-only, for exactly the reason `exactWindowTitle` is: this
+            // map is built from Claude's statusline payload and keyed by
+            // session id alone, so without the guard a Codex row could inherit
+            // a Claude reading. The two lookups read the same map and had
+            // different rules, which is the part worth fixing.
+            if session.provider == "claude-code" {
+                enriched.contextUsedPercent = statuslineDirectory.contextUsedPercent(
+                    for: session.sessionId)
+            }
+            return enriched
         }
         // Claude reports a refusal only in the transcript of the session that hit
         // the wall, so the trigger is that session stopping. A row that is still

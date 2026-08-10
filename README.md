@@ -152,6 +152,15 @@ the reset time. Shown only when a reading exists, because "nothing known" and
 "nothing used" are not the same thing. Claude's numbers need the statusline
 wrapper (below); Codex reports its own in the rollouts the app already tails.
 
+**Context pressure, but only when it is pressure.** A Claude row shows how full
+its context window is once that passes 70% — amber, then red past 90% — and says
+nothing below it. Every session climbs from zero all day, so a number on every
+row would be one more thing to read past; the threshold is what makes it worth
+looking at. It sits in its own slot rather than in the row's metadata line,
+because that line truncates and this is precisely the number you would not want
+cut. Needs the statusline wrapper (below), and Claude Code only: Codex publishes
+no equivalent.
+
 **A banner, if you want one.** Off by default: the menu bar is the passive
 channel this app was built to be, and a notification is the most intrusive thing
 it can do. Switch it on in Settings › Sessions and a session flipping to
@@ -383,7 +392,8 @@ Codex runs a hook only once you have trusted it: your next Codex launch shows a
 hook review prompt naming agent-tracker, and until you accept it nothing runs —
 `codex exec` skips untrusted hooks silently, so nothing else will tell you.
 
-Claude's usage windows are a separate opt-in, because capturing them means
+Claude's usage windows and context pressure are a separate opt-in, because
+capturing them means
 occupying the one `statusLine` slot in `~/.claude/settings.json`: the picker
 asks, or pass `--statusline` (`--no-statusline` to skip the question). The
 wrapper saves the payload and then runs your previous statusline command with

@@ -29,8 +29,10 @@ for the full picture.
     both describe one Codex session (the hook does)
   - `StatusIconRenderer.swift` — draws the colored 3-dot menu bar NSImage and
     exposes per-dot hit regions for click→filter mapping
-  - `TitleDirectory.swift` — session_id → live window title map, accumulated
-    from `~/.claude/statusline-last.json` (exact window matching)
+  - `StatuslineDirectory.swift` — session_id → what Claude's statusline payload
+    says about that session: window title (exact window matching) and context
+    pressure. Accumulated, never read as a snapshot — the file is
+    last-writer-wins across sessions
   - `TerminalFocuser.swift` — AX-based window matching + raise
   - `TmuxScripting.swift` — tmux CLI wrapper for delivery: a pane reports its
     own id and tty, so nothing is matched by title and no TCC grant is needed
@@ -73,7 +75,7 @@ for the full picture.
 - Test hook script manually:
   `AGENT_TRACKER_DIR=/tmp/at-test sh -c 'echo "{\"hook_event_name\":\"Stop\",\"session_id\":\"x\"}" | python3 integrations/agent-tracker-hook.py claude'`
   (`AGENT_TRACKER_DIR` overrides `~/.agent-tracker` for both app and hook;
-  `AGENT_TRACKER_CLAUDE_DIR` overrides `~/.claude` for the title directory)
+  `AGENT_TRACKER_CLAUDE_DIR` overrides `~/.claude` for the statusline directory)
 
 ## Conventions
 

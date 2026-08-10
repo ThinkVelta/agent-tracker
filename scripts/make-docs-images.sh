@@ -23,7 +23,7 @@ swift build -c release > /dev/null
 BINARY="$(swift build -c release --show-bin-path)/AgentTracker"
 
 echo "==> synthesizing sessions"
-python3 scripts/demo-sessions.py "$STAGE/state" > /dev/null
+python3 scripts/demo-sessions.py "$STAGE/state" "$STAGE/claude" > /dev/null
 # Empty overrides for the two live scanners: without these the render would
 # pick up the real Claude registry and Codex rollouts on this machine.
 mkdir -p "$STAGE/claude/sessions" "$STAGE/codex"

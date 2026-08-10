@@ -777,6 +777,17 @@ struct SessionRow: View {
 
                 Spacer(minLength: 6)
 
+                // Its own slot rather than another clause on the metadata line:
+                // that line truncates tail-first, so the one number chosen for
+                // being worth interrupting you would be the first thing cut.
+                if let pressure = ContextPressure(usedPercent: session.contextUsedPercent) {
+                    Text(pressure.label)
+                        .font(Theme.Typography.timestamp)
+                        .foregroundStyle(pressure.isUrgent ? Color.red : Color.orange)
+                        .monospacedDigit()
+                        .help(pressure.help)
+                }
+
                 Text(relativeTime)
                     .font(Theme.Typography.timestamp)
                     .foregroundStyle(.tertiary)
@@ -824,7 +835,13 @@ struct SessionRow: View {
         }
         .animation(Theme.Motion.quick, value: showsPath)
         .accessibilityLabel(
-            "\(session.displayName), \(metadata), \(session.primaryDirectory ?? "")")
+            [
+                session.displayName, metadata,
+                ContextPressure(usedPercent: session.contextUsedPercent)?.help,
+                session.primaryDirectory,
+            ]
+            .compactMap { $0 }
+            .joined(separator: ", "))
     }
 
     /// One dimmed line under the name: provider, where it lives, what it is
