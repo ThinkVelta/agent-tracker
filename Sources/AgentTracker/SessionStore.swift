@@ -64,6 +64,25 @@ final class SessionStore: ObservableObject {
 
     nonisolated static let sessionsDirectory = baseDirectory.appendingPathComponent("sessions")
 
+    /// Whether a state file in `sessionsDirectory` is one this app owns.
+    ///
+    /// The hook names every file it writes `claude-code-<session id>.json`, and
+    /// that prefix is the only thing separating our rows from another agent's
+    /// leftovers. It matters during exactly one window — the upgrade to this
+    /// Claude-only build, while a session from the version that also tracked
+    /// Codex is still running, so its file is not pruned because its process is
+    /// alive.
+    ///
+    /// A leftover would not merely show a phantom row. The provider field is no
+    /// longer read, so it would be indistinguishable from a Claude session:
+    /// Codex's hooks write `lastEvent: "Stop"` too, which is the event the
+    /// arming gate reads, so the row could be armed and typed into. Scoping the
+    /// read is what makes that impossible rather than unlikely.
+    nonisolated static func isOwnStateFile(_ file: URL) -> Bool {
+        file.pathExtension == "json"
+            && file.lastPathComponent.hasPrefix("claude-code-")
+    }
+
     /// Where the statusline wrapper leaves Claude's session payload. Outside
     /// `sessions/` deliberately: anything with a `.json` extension in there is
     /// decoded as a session state file.
@@ -171,7 +190,7 @@ final class SessionStore: ObservableObject {
         if let files = try? fileManager.contentsOfDirectory(
             at: Self.sessionsDirectory, includingPropertiesForKeys: nil
         ) {
-            for file in files where file.pathExtension == "json" {
+            for file in files where Self.isOwnStateFile(file) {
                 guard let data = try? Data(contentsOf: file),
                     var session = try? decoder.decode(AgentSession.self, from: data)
                 else { continue }
@@ -411,7 +430,7 @@ final class SessionStore: ObservableObject {
             let files = try? FileManager.default.contentsOfDirectory(
                 at: sessionsDirectory, includingPropertiesForKeys: nil)
         else { return nil }
-        for file in files where file.pathExtension == "json" {
+        for file in files where isOwnStateFile(file) {
             guard let data = try? Data(contentsOf: file),
                 let session = try? decoder.decode(AgentSession.self, from: data),
                 session.sessionId == sessionId
