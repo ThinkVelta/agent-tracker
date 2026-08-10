@@ -105,6 +105,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// Where the session's terminal is, per the registry. Differs from `cwd`
     /// when the agent works in a subdirectory such as a worktree.
     var registryCwd: String?
+    /// Whether the user has told this session to stop asking. Display state
+    /// only — a muted session still reports everything it always did, and the
+    /// row still says what it wants; it simply does not turn red for it.
+    var isMuted = false
     /// How full this session's context window is, 0-100. Joined in from
     /// whichever source the provider has — `StatuslineDirectory` for Claude,
     /// the rollout scanner for Codex — and never read from the state file: no
@@ -249,5 +253,38 @@ struct AgentSession: Codable, Identifiable, Equatable {
         case "codex": return "Codex"
         default: return provider.capitalized
         }
+    }
+
+    /// The command that brings this session back, for a provider that has one.
+    ///
+    /// Verified against the shipping CLIs rather than remembered: Claude takes
+    /// `-r, --resume [value]` where the value is a session id, and Codex takes
+    /// `resume [SESSION_ID]` positionally. A provider this version has not been
+    /// told about gets nil rather than a guessed incantation — this lands on
+    /// the clipboard and is pasted into a shell.
+    var resumeCommand: String? {
+        let id = Self.shellArgument(sessionId)
+        switch provider {
+        case "claude-code": return "claude --resume \(id)"
+        case "codex": return "codex resume \(id)"
+        default: return nil
+        }
+    }
+
+    /// One shell word, quoted only if it needs to be.
+    ///
+    /// Both providers issue UUIDs, so in practice nothing here ever needs
+    /// quoting — but this string goes to the clipboard to be pasted into a
+    /// shell, and "the id is always a UUID" is an assumption about someone
+    /// else's code that costs a command injection if it stops holding. Quoting
+    /// conditionally rather than always keeps the common paste clean, which is
+    /// the whole point of offering it.
+    static func shellArgument(_ value: String) -> String {
+        let safe = CharacterSet(charactersIn: "-._/")
+            .union(.alphanumerics)
+        if !value.isEmpty, value.unicodeScalars.allSatisfy(safe.contains) { return value }
+        // Single quotes take everything literally; the only thing they cannot
+        // hold is a single quote, which is closed, escaped and reopened.
+        return "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 }
