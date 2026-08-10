@@ -51,6 +51,14 @@ struct MenuContentView: View {
         filteredSessions.filter(\.isPinned)
     }
 
+    /// Pinned rows spend from the same budget as everything else, and are
+    /// capped by it. Subtracting their count from the sections' budget without
+    /// capping them is not "spending from the budget", it is exempting them
+    /// from it: pin twenty and twenty draw while the sections get nothing.
+    private var visiblePinnedRows: [AgentSession] {
+        Array(pinnedRows.prefix(Theme.Metrics.maxVisibleRows))
+    }
+
     private var sections: [SessionSections.Section] {
         // A filter or search always expands idle — hiding matches would lie
         // about how many things matched — and the preference decides the rest.
@@ -61,7 +69,7 @@ struct MenuContentView: View {
             overrides: SessionSections.overridesForNarrowing(
                 sectionOverrides, narrowing: narrowing),
             autoCollapseIdle: !narrowing && folding != .never,
-            budget: max(0, Theme.Metrics.maxVisibleRows - pinnedRows.count),
+            budget: max(0, Theme.Metrics.maxVisibleRows - visiblePinnedRows.count),
             idleAutoCollapseThreshold: {
                 switch folding {
                 case .never: return Int.max
@@ -209,9 +217,11 @@ struct MenuContentView: View {
                 noMatchesState
             } else {
                 let sections = sections
-                if !pinnedRows.isEmpty {
+                if !visiblePinnedRows.isEmpty {
+                    // The header counts every pin, not the drawn ones, so the
+                    // number matches what the user pinned.
                     PinnedHeader(count: pinnedRows.count)
-                    ForEach(pinnedRows) { session in
+                    ForEach(visiblePinnedRows) { session in
                         row(for: session)
                     }
                 }
@@ -221,7 +231,9 @@ struct MenuContentView: View {
                         row(for: session)
                     }
                 }
-                let hidden = sections.reduce(0) { $0 + $1.hiddenByBudget }
+                let hidden =
+                    (pinnedRows.count - visiblePinnedRows.count)
+                    + sections.reduce(0) { $0 + $1.hiddenByBudget }
                 if hidden > 0 {
                     Text("+\(hidden) more — narrow down with the tiles or search")
                         .font(.system(size: 11))

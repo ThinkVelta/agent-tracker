@@ -171,7 +171,19 @@ final class SessionKeySetTests {
 
     /// The shipped keys, spelled out. Renaming one silently drops everything
     /// every user has marked, and nothing else in the suite would notice.
+    ///
+    /// This asserted `muted !== pinned` first, which is object identity — it
+    /// would have passed happily while both keys were renamed, i.e. through
+    /// exactly the regression its name promised to catch.
     @Test func theSharedSetsKeepTheirStoredNames() {
-        #expect(SessionKeySet.muted !== SessionKeySet.pinned)
+        #expect(SessionKeySet.muted.storageKey == "mutedSessions")
+        #expect(SessionKeySet.pinned.storageKey == "pinnedSessions")
+
+        // And the key is what a mark is actually written under.
+        let store = defaults()
+        SessionKeySet(defaults: store, storageKey: SessionKeySet.muted.storageKey).toggle("m1")
+        SessionKeySet(defaults: store, storageKey: SessionKeySet.pinned.storageKey).toggle("p1")
+        #expect(store.stringArray(forKey: "mutedSessions") == ["m1"])
+        #expect(store.stringArray(forKey: "pinnedSessions") == ["p1"])
     }
 }

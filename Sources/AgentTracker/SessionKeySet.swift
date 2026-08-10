@@ -54,7 +54,9 @@ final class SessionKeySet: ObservableObject {
     static let graceBeforeForgetting: TimeInterval = 300
 
     private let defaults: UserDefaults
-    private let storageKey: String
+    /// Readable so a test can hold the shipped names to account: renaming one
+    /// silently drops everything every user has marked.
+    let storageKey: String
     /// When each marked session was first noticed missing. In memory: a run
     /// that starts with the session already gone simply begins timing at
     /// launch, which is exactly what is wanted for a session that ended while
