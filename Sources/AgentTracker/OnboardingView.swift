@@ -9,8 +9,7 @@ struct OnboardingView: View {
     var dismiss: () -> Void = {}
 
     @State private var accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
-    @State private var claudeInstalled = HookSetup.claudeHookInstalled()
-    @State private var codexInstalled = HookSetup.codexHookInstalled()
+    @State private var hookInstalled = HookSetup.claudeHookInstalled()
     @State private var hookPhase: HookPhase = .idle
     @State private var launchAtLogin = LoginItem.isEnabled
 
@@ -20,31 +19,15 @@ struct OnboardingView: View {
         case confirming
         case running
         case failed(String)
-        /// Installed, but not yet working. Codex runs a hook only once the user
-        /// has accepted its own review prompt, and nothing tells them that: the
-        /// installer succeeded, the checkmark is green, and `codex exec` skips
-        /// untrusted hooks silently. Without this the honest outcome of
-        /// onboarding is a Codex that reports nothing and no reason why.
-        case actionNeeded(String)
     }
 
-    private let agents = Onboarding.installableAgents(
-        Onboarding.Environment(
-            claudePresent: HookSetup.claudePresent(),
-            codexPresent: HookSetup.codexPresent()))
+    private let claudePresent = HookSetup.claudePresent()
 
     /// Live status: the user grants Accessibility in System Settings, not in
     /// this window, so the checkmark has to notice by itself.
     private let statusTick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
-    private var hooksInstalled: Bool {
-        agents.allSatisfy { agent in
-            switch agent {
-            case .claude: return claudeInstalled
-            case .codex: return codexInstalled
-            }
-        } && !agents.isEmpty
-    }
+    private var hooksInstalled: Bool { hookInstalled && claudePresent }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -103,10 +86,10 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 0) {
             setupRow(
                 done: hooksInstalled,
-                title: "Connect your agents",
+                title: "Connect Claude Code",
                 detail: hooksDetail
             ) {
-                if !hooksInstalled && !agents.isEmpty && hookPhase == .idle {
+                if !hooksInstalled && claudePresent && hookPhase == .idle {
                     Button("Install…") { hookPhase = .confirming }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
@@ -115,35 +98,31 @@ struct OnboardingView: View {
             }
             if hookPhase == .confirming { hookConfirmation }
             if case .failed(let output) = hookPhase { hookFailure(output) }
-            if case .actionNeeded(let note) = hookPhase { hookActionNeeded(note) }
         }
     }
 
     private var hooksDetail: String {
-        if agents.isEmpty {
-            return "No agent CLIs found (~/.claude, ~/.codex). Install one, then run "
-                + "./install.sh from the repo."
+        guard claudePresent else {
+            return "Claude Code not found (~/.claude). Install it, then run ./install.sh from "
+                + "the repo."
         }
-        let names = agents.map(\.displayName).joined(separator: " and ")
         return hooksInstalled
-            ? "\(names) will report their sessions here."
-            : "\(names) detected. Their hooks report session activity to this app."
+            ? "Claude Code will report its sessions here."
+            : "Claude Code detected. Its hooks report session activity to this app."
     }
 
     /// The explicit consent step: name every file that will be edited, note
     /// the backups, and only act on a second click.
     private var hookConfirmation: some View {
         VStack(alignment: .leading, spacing: 6) {
-            ForEach(agents, id: \.self) { agent in
-                Text("\(agent.displayName): adds a hook entry to \(agent.editedConfig)")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
+            Text("Adds a hook entry to \(Onboarding.editedConfig)")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             Text("Each file is backed up first. ./integrations/uninstall.sh reverses everything.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
             HStack {
-                Button("Install hooks") { Task { await runInstallers() } }
+                Button("Install hook") { Task { await runInstaller() } }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 Button("Cancel") { hookPhase = .idle }
@@ -179,45 +158,11 @@ struct OnboardingView: View {
         .padding(.bottom, 10)
     }
 
-    /// Succeeded, but the user is not done. Deliberately not styled as an
-    /// error — nothing went wrong — and deliberately not dismissible on its
-    /// own, since the row above it now shows a green checkmark that would
-    /// otherwise be the last word.
-    private func hookActionNeeded(_ note: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("One step left")
-                .font(.system(size: 11, weight: .semibold))
-            Text(note)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.bottom, 10)
-    }
-
-    private func runInstallers() async {
+    private func runInstaller() async {
         hookPhase = .running
-        var failures: [String] = []
-        for agent in agents {
-            let outcome = await HookSetup.runInstaller(for: agent)
-            if !outcome.succeeded {
-                failures.append("\(agent.displayName):\n\(outcome.output)")
-            }
-        }
-        claudeInstalled = HookSetup.claudeHookInstalled()
-        codexInstalled = HookSetup.codexHookInstalled()
-        if !failures.isEmpty {
-            hookPhase = .failed(failures.joined(separator: "\n"))
-        } else if HookSetup.codexHooksAwaitTrust(),
-            let note = Onboarding.Agent.codex.postInstallAction
-        {
-            hookPhase = .actionNeeded(note)
-        } else {
-            hookPhase = .idle
-        }
+        let outcome = await HookSetup.runInstaller()
+        hookInstalled = HookSetup.claudeHookInstalled()
+        hookPhase = outcome.succeeded ? .idle : .failed(outcome.output)
     }
 
     private var loginRow: some View {

@@ -1,8 +1,7 @@
 import Foundation
 
-/// One provider's usage, as the dropdown shows it.
+/// One usage window, as the dropdown shows it.
 struct UsageReading: Equatable, Identifiable, Sendable {
-    var provider: String
     var window: UsageLimit.Window
     /// 0-100. Absent readings are dropped rather than shown as zero, because
     /// "no data" and "none used" are the two things this must never confuse.
@@ -11,15 +10,7 @@ struct UsageReading: Equatable, Identifiable, Sendable {
     /// dropped before it becomes one of these rather than shown open-ended.
     var resetsAt: Date
 
-    var id: String { "\(provider)-\(window)" }
-
-    var providerLabel: String {
-        switch provider {
-        case "claude-code": return "Claude"
-        case "codex": return "Codex"
-        default: return provider.capitalized
-        }
-    }
+    var id: String { "\(window)" }
 
     /// Short enough to sit beside another one in a 380pt popover.
     var windowLabel: String {
@@ -33,9 +24,8 @@ struct UsageReading: Equatable, Identifiable, Sendable {
 
 /// Decides which usage numbers are worth a line in the dropdown.
 ///
-/// The app already reads all of this — Claude's from the statusline payload,
-/// Codex's from the `token_count` lines in its rollouts — and until now threw it
-/// away unless a limit was actually *reached*. That is the wrong moment to
+/// The app already reads all of this from the statusline payload, and until now
+/// threw it away unless a limit was actually *reached*. That is the wrong moment to
 /// start caring: by then the session has already stopped, and the number that
 /// would have let someone pace their day went unread all day.
 enum UsageSummary {
@@ -45,38 +35,23 @@ enum UsageSummary {
     /// Scoped to providers that actually have a session on screen. An account
     /// limit outlives the sessions that reported it — `AccountLimits` keeps a
     /// reading until its reset passes — so without this the footer would still
-    /// be quoting Codex quota an hour after the last Codex session closed.
-    static func readings(
-        from limits: AccountLimits,
-        providers: Set<String>,
-        now: Date
-    ) -> [UsageReading] {
-        providers.compactMap { provider -> UsageReading? in
-            let candidates = limits.limits(for: provider).compactMap { limit -> UsageReading? in
-                guard let used = limit.usedPercent else { return nil }
-                // A known future reset is required, not merely respected.
-                //
-                // Nothing writes a correction when a window rolls over — the
-                // file simply goes quiet — so the reset is the only thing that
-                // can ever retire a reading. Without one there is no moment at
-                // which this stops being displayed, and a Claude refusal that
-                // names a limit without saying when it lifts would pin "100%"
-                // to the strip for the life of the process. `isBlocking` takes
-                // the same position for the same reason.
-                //
-                // Costs nothing in practice: measured on this machine, Claude's
-                // statusline carries `resets_at` beside every percentage, and so
-                // do 181,211 of 181,561 Codex rollout readings — the rest being
-                // a format retired in October 2025.
-                guard let resetsAt = limit.resetsAt, resetsAt > now else { return nil }
-                return UsageReading(
-                    provider: provider, window: limit.window, usedPercent: used,
-                    resetsAt: resetsAt)
-            }
-            return candidates.min(by: mostPressing)
+    /// be quoting quota an hour after the last session closed.
+    static func readings(from limits: AccountLimits, now: Date) -> [UsageReading] {
+        let candidates = limits.all.compactMap { limit -> UsageReading? in
+            guard let used = limit.usedPercent else { return nil }
+            // A known future reset is required, not merely respected.
+            //
+            // Nothing writes a correction when a window rolls over — the file
+            // simply goes quiet — so the reset is the only thing that can ever
+            // retire a reading. Without one there is no moment at which this
+            // stops being displayed, and a refusal that names a limit without
+            // saying when it lifts would pin "100%" to the strip for the life
+            // of the process. `isBlocking` takes the same position for the same
+            // reason.
+            guard let resetsAt = limit.resetsAt, resetsAt > now else { return nil }
+            return UsageReading(window: limit.window, usedPercent: used, resetsAt: resetsAt)
         }
-        // Stable order, so two providers do not swap places between passes.
-        .sorted { $0.provider < $1.provider }
+        return candidates.min(by: mostPressing).map { [$0] } ?? []
     }
 
     /// A total order, not just a comparison on percentage.

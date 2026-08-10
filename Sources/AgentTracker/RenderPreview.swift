@@ -145,12 +145,11 @@ enum RenderPreview {
             {
                 store.selectedFilter = state
             }
-            // Wait for the codex scanner's first publish (slow lsof pass +
-            // multi-MB bootstraps), up to 15s; renders early once a codex
-            // row lands.
-            for _ in 0..<30 {
-                try? await Task.sleep(nanoseconds: 500_000_000)
-                if store.sessions.contains(where: { $0.provider == "codex" }) { break }
+            // The store reads its state files synchronously in `init`, so a
+            // populated directory is already loaded here. One short wait
+            // remains for the empty case, where a fixture may still be landing.
+            for _ in 0..<4 where store.sessions.isEmpty {
+                try? await Task.sleep(nanoseconds: 250_000_000)
             }
             content = AnyView(MenuContentView(store: store))
         default:

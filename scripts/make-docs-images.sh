@@ -25,8 +25,8 @@ BINARY="$(swift build -c release --show-bin-path)/AgentTracker"
 echo "==> synthesizing sessions"
 python3 scripts/demo-sessions.py "$STAGE/state" "$STAGE/claude" > /dev/null
 # Empty overrides for the two live scanners: without these the render would
-# pick up the real Claude registry and Codex rollouts on this machine.
-mkdir -p "$STAGE/claude/sessions" "$STAGE/codex"
+# pick up the real Claude registry on this machine.
+mkdir -p "$STAGE/claude/sessions"
 
 mkdir -p "$OUT"
 # `--render-preview` exits non-zero on a failed render or write. The target is
@@ -42,7 +42,6 @@ render() {
   rm -f "$path"
   if ! AGENT_TRACKER_DIR="$STAGE/state" \
     AGENT_TRACKER_CLAUDE_DIR="$STAGE/claude" \
-    AGENT_TRACKER_CODEX_DIR="$STAGE/codex" \
     "$BINARY" --render-preview "$path" --view "$view" --appearance "$appearance" \
     > "$log" 2>&1; then
     cat "$log" >&2

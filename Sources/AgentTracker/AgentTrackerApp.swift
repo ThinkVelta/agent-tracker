@@ -72,10 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showOnboardingIfNeeded() {
         let environment = Onboarding.Environment(
             accessibilityGranted: TerminalFocuser.hasAccessibilityPermission,
-            claudeHookInstalled: HookSetup.claudeHookInstalled(),
-            codexHookInstalled: HookSetup.codexHookInstalled(),
+            hookInstalled: HookSetup.claudeHookInstalled(),
             claudePresent: HookSetup.claudePresent(),
-            codexPresent: HookSetup.codexPresent(),
             completedBefore: UserDefaults.standard.bool(forKey: Self.onboardingCompletedKey)
         )
         // `--onboarding` re-opens the window on demand (debugging, support,

@@ -20,24 +20,24 @@ final class MutedSessionsTests {
 
     @Test func mutingRoundTripsThroughStorage() {
         let store = defaults()
-        MutedSessions(defaults: store).toggle("claude-code-s1")
-        #expect(MutedSessions(defaults: store).isMuted("claude-code-s1"))
+        MutedSessions(defaults: store).toggle("s1")
+        #expect(MutedSessions(defaults: store).isMuted("s1"))
     }
 
     @Test func togglingTwiceLeavesNothingBehind() {
         let muted = MutedSessions(defaults: defaults())
-        muted.toggle("claude-code-s1")
-        muted.toggle("claude-code-s1")
-        #expect(muted.isMuted("claude-code-s1") == false)
+        muted.toggle("s1")
+        muted.toggle("s1")
+        #expect(muted.isMuted("s1") == false)
         #expect(muted.muted.isEmpty)
     }
 
     /// A mute belongs to one session, not to a project or a provider.
     @Test func mutingOneSessionLeavesItsNeighboursAlone() {
         let muted = MutedSessions(defaults: defaults())
-        muted.toggle("claude-code-s1")
-        #expect(muted.isMuted("codex-s1") == false)
-        #expect(muted.isMuted("claude-code-s2") == false)
+        muted.toggle("s1")
+        #expect(muted.isMuted("s9") == false)
+        #expect(muted.isMuted("s2") == false)
     }
 
     /// 2026-08-10T09:00:00Z. Absolute, so nothing here depends on a real clock.
@@ -51,16 +51,16 @@ final class MutedSessionsTests {
     @Test func aMuteIsDroppedOnceItsSessionEnds() {
         let store = defaults()
         let muted = MutedSessions(defaults: store)
-        muted.toggle("claude-code-s1")
+        muted.toggle("s1")
 
-        muted.reconcile(liveKeys: ["claude-code-s1"], now: start)
-        #expect(muted.isMuted("claude-code-s1"))
+        muted.reconcile(liveKeys: ["s1"], now: start)
+        #expect(muted.isMuted("s1"))
 
         muted.reconcile(liveKeys: [], now: later(1))
         muted.reconcile(liveKeys: [], now: later(MutedSessions.graceBeforeForgetting + 1))
-        #expect(muted.isMuted("claude-code-s1") == false)
+        #expect(muted.isMuted("s1") == false)
         // Persisted, not just forgotten in memory.
-        #expect(MutedSessions(defaults: store).isMuted("claude-code-s1") == false)
+        #expect(MutedSessions(defaults: store).isMuted("s1") == false)
     }
 
     /// The bug the grace exists for. The Codex scanner publishes its first rows
@@ -69,24 +69,24 @@ final class MutedSessionsTests {
     /// to had ever appeared, and with nothing on screen to explain it.
     @Test func aMuteSurvivesASourceThatHasNotReportedYet() {
         let muted = MutedSessions(defaults: defaults())
-        muted.toggle("codex-s1")
+        muted.toggle("s9")
 
         // Passes before the scanner has published anything.
         for second in 0..<4 {
-            muted.reconcile(liveKeys: ["claude-code-s1"], now: later(Double(second)))
-            #expect(muted.isMuted("codex-s1"))
+            muted.reconcile(liveKeys: ["s1"], now: later(Double(second)))
+            #expect(muted.isMuted("s9"))
         }
 
         // It arrives well inside the grace, and is still muted.
-        muted.reconcile(liveKeys: ["claude-code-s1", "codex-s1"], now: later(5))
-        #expect(muted.isMuted("codex-s1"))
+        muted.reconcile(liveKeys: ["s1", "s9"], now: later(5))
+        #expect(muted.isMuted("s9"))
 
         // Having come back, it starts counting again from scratch rather than
         // from when it was first missed — otherwise a session that appeared
         // late would be forgotten early.
         muted.reconcile(
-            liveKeys: ["claude-code-s1"], now: later(MutedSessions.graceBeforeForgetting))
-        #expect(muted.isMuted("codex-s1"))
+            liveKeys: ["s1"], now: later(MutedSessions.graceBeforeForgetting))
+        #expect(muted.isMuted("s9"))
     }
 
     /// The one the reviewer found, and the version of it I had wrong: the old
@@ -96,16 +96,16 @@ final class MutedSessionsTests {
     /// already-gone session is forgotten a grace later.
     @Test func aMuteWhoseSessionEndedWhileClosedIsForgottenToo() {
         let store = defaults()
-        MutedSessions(defaults: store).toggle("claude-code-s1")
+        MutedSessions(defaults: store).toggle("s1")
 
         // A new process: nothing in memory, and the session never appears.
         let restarted = MutedSessions(defaults: store)
-        #expect(restarted.isMuted("claude-code-s1"))
+        #expect(restarted.isMuted("s1"))
         restarted.reconcile(liveKeys: [], now: start)
-        #expect(restarted.isMuted("claude-code-s1"))
+        #expect(restarted.isMuted("s1"))
 
         restarted.reconcile(liveKeys: [], now: later(MutedSessions.graceBeforeForgetting))
-        #expect(restarted.isMuted("claude-code-s1") == false)
+        #expect(restarted.isMuted("s1") == false)
         #expect(MutedSessions(defaults: store).muted.isEmpty)
     }
 
@@ -113,13 +113,13 @@ final class MutedSessionsTests {
     /// an unchanged set would redraw the whole dropdown at that rate.
     @Test func aQuietPassChangesNothing() {
         let muted = MutedSessions(defaults: defaults())
-        muted.toggle("claude-code-s1")
+        muted.toggle("s1")
         var publishes = 0
         let subscription = muted.objectWillChange.sink { _ in publishes += 1 }
         defer { subscription.cancel() }
 
         for second in 0..<10 {
-            muted.reconcile(liveKeys: ["claude-code-s1"], now: later(Double(second)))
+            muted.reconcile(liveKeys: ["s1"], now: later(Double(second)))
         }
         #expect(publishes == 0)
 
@@ -135,29 +135,23 @@ final class MutedSessionsTests {
     /// what is missing outgrows the set it describes.
     @Test func unmutingForgetsItsAbsenceToo() {
         let muted = MutedSessions(defaults: defaults())
-        muted.toggle("claude-code-s1")
+        muted.toggle("s1")
         muted.reconcile(liveKeys: [], now: start)
-        muted.toggle("claude-code-s1")
+        muted.toggle("s1")
 
-        muted.toggle("claude-code-s1")
+        muted.toggle("s1")
         // Re-muted after the original grace would have expired: it must get a
         // fresh one rather than inherit the old absence.
         muted.reconcile(liveKeys: [], now: later(MutedSessions.graceBeforeForgetting + 1))
-        #expect(muted.isMuted("claude-code-s1"))
+        #expect(muted.isMuted("s1"))
     }
 
     /// Pasted into a shell, so a provider this version does not know gets
-    /// nothing rather than a guessed incantation. Both of these were read off
-    /// the shipping CLIs rather than remembered.
-    @Test func resumeCommandsMatchTheCLIs() {
-        var session = AgentSession(
-            provider: "claude-code", sessionId: "6b1f2c30-77aa-4d1e-9c55-2f0e8a1b4d77",
-            state: .idle)
+    /// Read off the shipping CLI rather than remembered: `-r, --resume [value]`.
+    @Test func theResumeCommandMatchesTheCLI() {
+        let session = AgentSession(
+            sessionId: "6b1f2c30-77aa-4d1e-9c55-2f0e8a1b4d77", state: .idle)
         #expect(session.resumeCommand == "claude --resume 6b1f2c30-77aa-4d1e-9c55-2f0e8a1b4d77")
-        session.provider = "codex"
-        #expect(session.resumeCommand == "codex resume 6b1f2c30-77aa-4d1e-9c55-2f0e8a1b4d77")
-        session.provider = "kimi"
-        #expect(session.resumeCommand == nil)
     }
 
     /// This lands on the clipboard and is pasted into a shell. Both providers
@@ -180,7 +174,7 @@ final class MutedSessionsTests {
 
     @Test func aResumeCommandCarriesTheQuotingThrough() {
         let session = AgentSession(
-            provider: "claude-code", sessionId: "a b; echo hi", state: .idle)
+            sessionId: "a b; echo hi", state: .idle)
         #expect(session.resumeCommand == "claude --resume 'a b; echo hi'")
     }
 }

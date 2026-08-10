@@ -24,7 +24,7 @@ final class ContinueSchedulesTests {
 
     private func schedule(_ id: String, repeats: Bool = false) -> ScheduledContinue {
         ScheduledContinue(
-            sessionId: id, provider: "claude-code", message: "Continue",
+            sessionId: id, message: "Continue",
             armedForResetAt: reset, repeats: repeats)
     }
 
@@ -158,9 +158,9 @@ final class ContinueSchedulesTests {
         schedules.arm(due)
 
         var session = AgentSession(
-            provider: "claude-code", sessionId: "a", cwd: "/Users/dev/demo", state: .needsYou)
+            sessionId: "a", cwd: "/Users/dev/demo", state: .needsYou)
         session.lastEvent = "Stop"
-        schedules.reconcile(sessions: [session], blockingResets: [:], now: Date())
+        schedules.reconcile(sessions: [session], blockingReset: nil, now: Date())
 
         // Bounded wait rather than a continuation, so a seam that never delivers
         // fails the test instead of hanging CI.

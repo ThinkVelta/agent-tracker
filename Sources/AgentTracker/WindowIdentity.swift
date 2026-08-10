@@ -3,9 +3,8 @@ import Foundation
 /// Structural identity for terminal windows.
 ///
 /// Window titles are not identities. Claude Code titles its window with a task
-/// summary, Codex with a bare project name, and plain shells with a path — so
-/// several sessions in one repo produce several identical titles, and matching
-/// on them is a coin flip between unrelated agents. macOS terminals expose the
+/// summary and plain shells show a path — so several sessions in one repo can
+/// produce identical titles, and matching on them is a coin flip. macOS terminals expose the
 /// window's live working directory through the Accessibility `AXDocument`
 /// attribute, which is a fact rather than a label: comparing it to a session's
 /// cwd rules out every window belonging to a different project outright.
@@ -19,8 +18,8 @@ import Foundation
 ///
 /// A real identity would be `session pid → tty → window`. The first half is
 /// trivial (`ps -o tty= -p <pid>`); the second has no implementation on the
-/// terminal this was built against. Measured against Ghostty 1.3.1 and Codex
-/// CLI on 2026-08-01/02, so it does not get re-derived:
+/// terminal this was built against. Measured against Ghostty 1.3.1 on
+/// 2026-08-01/02, so it does not get re-derived:
 ///
 /// - **No per-surface Accessibility data.** A window exposes `AXDocument` (the
 ///   cwd, which is what this type uses) and `AXIdentifier`, which is the string
@@ -34,13 +33,10 @@ import Foundation
 /// - **No process ancestry to walk.** Ghostty is a single process; every
 ///   surface's `/usr/bin/login` parents straight to it.
 /// - **We cannot write an identity either.** The obvious workaround is to have
-///   the hook emit an OSC 2 title naming the session. Codex repaints its own
-///   title every animation frame — two reads a second apart returned
+///   the hook emit an OSC 2 title naming the session. An agent CLI repaints its
+///   own title every animation frame — two reads a second apart returned
 ///   `⠋ Planner` then `⠙ Planner` — so anything written is overwritten
 ///   immediately.
-/// - **`agent_nickname` in Codex rollouts is a subagent field**, not a session
-///   name: every rollout carrying one also carries `parent_thread_id` and a
-///   `session_id` pointing at the parent.
 ///
 /// Ghostty *is* AppleScript-scriptable and its dictionary is richer than its AX
 /// tree — `window`/`tab`/`terminal` with a stable per-surface `id`, plus
@@ -115,11 +111,10 @@ enum WindowIdentity {
     /// Whether this window is demonstrably a *different* session's.
     ///
     /// Sharing a directory is not owning a window: six terminals sat in one
-    /// repo, three of them Claude Code, and clicking a Codex row raised the
-    /// Claude window whose directory happened to match — the reported
-    /// "brought to a completely different terminal, not even the same AI
-    /// agent". A window whose title exactly names another live session is
-    /// that session's, and no directory agreement outranks that.
+    /// repo and clicking one row raised a different session's window, whose
+    /// directory happened to match — the reported "brought to a completely
+    /// different terminal". A window whose title exactly names another live
+    /// session is that session's, and no directory agreement outranks that.
     ///
     /// Only an exact title match counts as ownership, and only when this
     /// session cannot claim the title too: siblings in one repo all answer to

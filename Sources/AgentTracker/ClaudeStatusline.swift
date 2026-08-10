@@ -9,7 +9,7 @@ import Foundation
 /// epoch-seconds `resets_at` for both windows on every render, before anything
 /// is refused.
 ///
-/// Pure and tolerant, like the Codex parser: this is Claude's format, not ours,
+/// Pure and tolerant: this is Claude's format, not ours,
 /// each window may be independently absent, and `rate_limits` is missing
 /// entirely for sessions Claude does not report it for. Absent means unknown,
 /// never "you have room left".
@@ -54,7 +54,7 @@ enum ClaudeStatusline {
             window: window,
             usedPercent: used,
             resetsAt: resetsAt,
-            // No flag here, unlike Codex: 100% used is the only thing the
+            // No explicit flag: 100% used is the only thing the
             // statusline says about being blocked.
             isReached: (used ?? 0) >= 100
         )

@@ -8,7 +8,7 @@ import Foundation
 /// user will be looking at when they wonder why nothing is happening.
 struct UsageLimit: Equatable {
     /// Which window, derived from its length rather than from the slot it
-    /// arrived in. Codex has reported only the weekly window since around
+    /// arrived in. One provider reported only the weekly window from around
     /// February 2026, and reports it in the slot named `primary` — so trusting
     /// the slot would label a weekly reset as a five-hour one.
     enum Window: Equatable, Hashable {
@@ -88,7 +88,7 @@ struct UsageLimit: Equatable {
 /// blocked. Keeping it per-session meant a blocked account explained one row and
 /// left the rest claiming to be ready.
 struct AccountLimits: Equatable {
-    private var byProvider: [String: [UsageLimit.Window: UsageLimit]] = [:]
+    private var byWindow: [UsageLimit.Window: UsageLimit] = [:]
 
     /// How far apart two resets can be and still be the same window.
     ///
@@ -110,17 +110,17 @@ struct AccountLimits: Equatable {
     /// reported by the statusline and by a refusal. Those merge by strength —
     /// usage only rises within a window, once reached it stays reached until the
     /// reset, and the later of two near-identical resets is the unrounded one.
-    mutating func record(_ limit: UsageLimit, for provider: String) {
-        guard let existing = byProvider[provider]?[limit.window] else {
-            byProvider[provider, default: [:]][limit.window] = limit
+    mutating func record(_ limit: UsageLimit) {
+        guard let existing = byWindow[limit.window] else {
+            byWindow[limit.window] = limit
             return
         }
         let new = limit.resetsAt ?? .distantPast
         let old = existing.resetsAt ?? .distantPast
         if new > old.addingTimeInterval(Self.sameWindowTolerance) {
-            byProvider[provider, default: [:]][limit.window] = limit
+            byWindow[limit.window] = limit
         } else if old <= new.addingTimeInterval(Self.sameWindowTolerance) {
-            byProvider[provider, default: [:]][limit.window] = UsageLimit(
+            byWindow[limit.window] = UsageLimit(
                 window: limit.window,
                 usedPercent: [existing.usedPercent, limit.usedPercent].compactMap { $0 }.max(),
                 resetsAt: [existing.resetsAt, limit.resetsAt].compactMap { $0 }.max(),
@@ -129,27 +129,24 @@ struct AccountLimits: Equatable {
         }
     }
 
-    /// The window standing between this provider and progress, soonest reset
-    /// first — that is the one the user is waiting on.
-    func blockingLimit(for provider: String, now: Date = Date()) -> UsageLimit? {
-        byProvider[provider]?.values
+    /// The window standing between you and progress, soonest reset first —
+    /// that is the one you are waiting on.
+    func blockingLimit(now: Date = Date()) -> UsageLimit? {
+        byWindow.values
             .filter { $0.isBlocking(now: now) }
             .min { ($0.resetsAt ?? .distantFuture) < ($1.resetsAt ?? .distantFuture) }
     }
 
-    func limits(for provider: String) -> [UsageLimit] {
-        Array(byProvider[provider]?.values ?? [:].values)
-    }
+    var all: [UsageLimit] { Array(byWindow.values) }
 }
 
-/// Decides when an account limit is what a row should say, in one place for
-/// every provider.
+/// Decides when an account limit is what a row should say.
 enum UsageLimitPresentation {
     /// Turn-end events, i.e. the reds that mean "your turn, nothing is wrong".
     /// A `Notification` red is a permission prompt: the user genuinely is
     /// needed, and overwriting that with a quota message would hide the one
     /// thing this app exists to surface.
-    private static let turnEndedEvents: Set<String> = ["Stop", "task_complete", "turn_aborted"]
+    private static let turnEndedEvents: Set<String> = ["Stop"]
 
     /// Whether this limit is what a row should say — i.e. the session stopped on
     /// a finished turn and the account is out of quota.
@@ -175,45 +172,5 @@ enum UsageLimitPresentation {
         var explained = session
         explained.reason = limit.reason(now: now)
         return explained
-    }
-}
-
-/// Reads Codex's own rate-limit reporting out of a rollout `token_count` event.
-///
-/// Pure, and deliberately tolerant: this is Codex's format, not ours, and the
-/// shape has already changed once (a `secondary` window that stopped being
-/// populated). Anything unrecognized yields nil rather than a guess.
-enum CodexUsageLimit {
-    /// The `rate_limits` object as it appears inside a `token_count` payload.
-    ///
-    /// - Parameter object: the value of `payload.rate_limits`.
-    static func parse(_ object: [String: Any]) -> UsageLimit? {
-        // `rate_limit_reached_type` is the explicit "you are blocked" flag;
-        // 100% used is the same thing said arithmetically. Either counts, since
-        // the flag was never non-null across 1258 local rollouts and cannot be
-        // relied on alone.
-        let reachedFlag = object["rate_limit_reached_type"] as? String
-        let windows = ["primary", "secondary"].compactMap { key -> UsageLimit? in
-            guard let window = object[key] as? [String: Any] else { return nil }
-            return parseWindow(window, reachedFlag: reachedFlag != nil)
-        }
-        // The window closest to its limit is the one that will block work, and
-        // the one worth reporting when both are known.
-        return windows.max { ($0.usedPercent ?? 0) < ($1.usedPercent ?? 0) }
-    }
-
-    private static func parseWindow(_ object: [String: Any], reachedFlag: Bool) -> UsageLimit? {
-        guard let minutes = object["window_minutes"] as? Int else { return nil }
-        let used = object["used_percent"] as? Double
-        let resetsAt = (object["resets_at"] as? Double).flatMap { seconds -> Date? in
-            // Epoch seconds. A zero or negative value is absent, not 1970.
-            seconds > 0 ? Date(timeIntervalSince1970: seconds) : nil
-        }
-        return UsageLimit(
-            window: UsageLimit.Window(minutes: minutes),
-            usedPercent: used,
-            resetsAt: resetsAt,
-            isReached: reachedFlag || (used ?? 0) >= 100
-        )
     }
 }

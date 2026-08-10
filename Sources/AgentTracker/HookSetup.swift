@@ -12,44 +12,10 @@ enum HookSetup {
         configReferencesHook(home.appendingPathComponent(".claude/settings.json"))
     }
 
-    /// Either file counts. The installer registers native hooks in hooks.json
-    /// and the legacy `notify` callback in config.toml, and it declines the
-    /// second when the user already points `notify` somewhere else — so
-    /// checking only config.toml would report a working install as missing.
-    static func codexHookInstalled(home: URL = FileManager.default.homeDirectoryForCurrentUser)
-        -> Bool
-    {
-        configReferencesHook(home.appendingPathComponent(".codex/hooks.json"))
-            || configReferencesHook(home.appendingPathComponent(".codex/config.toml"))
-    }
-
-    /// Registered, but not yet running — see `CodexHookTrust`, which decides it.
-    ///
-    /// Asks about trust rather than about whether this run changed anything: a
-    /// user who installed from the command line last week and never opened
-    /// Codex is already "installed", so an install-driven check would say
-    /// nothing to exactly the person who needs to hear it.
-    static func codexHooksAwaitTrust(home: URL = FileManager.default.homeDirectoryForCurrentUser)
-        -> Bool
-    {
-        let hooksFile = home.appendingPathComponent(".codex/hooks.json")
-        guard let hooksJSON = try? Data(contentsOf: hooksFile) else { return false }
-        let config =
-            (try? String(
-                contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8))
-            ?? ""
-        return CodexHookTrust.awaitsTrust(
-            hooksJSON: hooksJSON, configTOML: config, hooksPath: hooksFile.path)
-    }
-
     /// Presence means the CLI has left its home directory behind — the
     /// reliable signal from a GUI app, where PATH is not the user's shell's.
     static func claudePresent(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
         directoryExists(home.appendingPathComponent(".claude"))
-    }
-
-    static func codexPresent(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
-        directoryExists(home.appendingPathComponent(".codex"))
     }
 
     private static func configReferencesHook(_ file: URL) -> Bool {
@@ -85,23 +51,21 @@ enum HookSetup {
     }
 
     struct InstallOutcome {
-        let agent: Onboarding.Agent
         let succeeded: Bool
         /// Combined stdout+stderr, surfaced verbatim on failure — the
         /// installers print their own precise errors and manual fallbacks.
         let output: String
     }
 
-    /// Runs one agent's idempotent installer off the main thread. The
-    /// installers back up configs before editing and exit non-zero on refusal
-    /// (e.g. an unrelated Codex notify setting they will not clobber).
-    static func runInstaller(for agent: Onboarding.Agent) async -> InstallOutcome {
+    /// Runs the idempotent installer off the main thread. It backs up the
+    /// config before editing and exits non-zero on refusal.
+    static func runInstaller() async -> InstallOutcome {
         guard let directory = installerDirectory() else {
             return InstallOutcome(
-                agent: agent, succeeded: false,
-                output: "installer scripts not found — run ./install.sh from the repo instead")
+                succeeded: false,
+                output: "installer script not found — run ./install.sh from the repo instead")
         }
-        let script = directory.appendingPathComponent(agent.installerScript)
+        let script = directory.appendingPathComponent(Onboarding.installerScript)
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
@@ -122,13 +86,12 @@ enum HookSetup {
                     process.waitUntilExit()
                     continuation.resume(
                         returning: InstallOutcome(
-                            agent: agent,
                             succeeded: process.terminationStatus == 0,
                             output: String(data: data, encoding: .utf8) ?? ""))
                 } catch {
                     continuation.resume(
                         returning: InstallOutcome(
-                            agent: agent, succeeded: false,
+                            succeeded: false,
                             output: "could not launch installer: \(error.localizedDescription)"))
                 }
             }

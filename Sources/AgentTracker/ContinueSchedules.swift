@@ -240,7 +240,7 @@ final class ContinueSchedules: ObservableObject {
     // MARK: - The pass
 
     /// One pass. Called from `SessionStore.rebuild()` with that pass's `now`.
-    func reconcile(sessions: [AgentSession], blockingResets: [String: Date], now: Date) {
+    func reconcile(sessions: [AgentSession], blockingReset: Date?, now: Date) {
         guard !Self.isPreviewProcess else { return }
         let enabled = Preferences.shared.scheduledContinues
         // Nothing armed and nothing to arm: the common case, and it must cost a
@@ -256,7 +256,7 @@ final class ContinueSchedules: ObservableObject {
                 enabled: enabled,
                 schedules: schedules,
                 sessions: sessions,
-                blockingResets: blockingResets))
+                blockingReset: blockingReset))
 
         for receipt in plan.receipts {
             log("\(receipt.sessionId) — \(receipt.summary)")
@@ -308,12 +308,12 @@ final class ContinueSchedules: ObservableObject {
     {
         let enabled = await MainActor.run { Preferences.shared.scheduledContinues }
         let session = SessionStore.loadSessionFromDisk(
-            provider: fire.provider, sessionId: fire.sessionId)
+            sessionId: fire.sessionId)
         let context = SendContext(
             enabled: enabled,
             lastEvent: session?.lastEvent,
             // Transcript first, so Claude's behaviour is exactly what it was;
-            // the hook-written field is the fallback, and the only source Codex
+            // the hook-written field is the fallback, and the only source
             // has. Reversing these would put a whole shipped provider's gate on
             // a field that has existed for one release.
             permissionMode: session?.transcriptPath.flatMap {
@@ -373,7 +373,7 @@ final class ContinueSchedules: ObservableObject {
     /// machine has been awake that long instead — measured here as a 12-day gap
     /// over three weeks.
     ///
-    /// Punctuality only. The reload tick, the hook watcher and the Codex scanner
+    /// Punctuality only. The reload tick and the hook watcher
     /// all reach `reconcile` anyway, so a timer that never fires costs lateness
     /// bounded by the refresh interval, never a missed fire.
     private func arrangeWakeUp(at moment: Date?, now: Date) {

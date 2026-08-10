@@ -51,7 +51,7 @@ extension TerminalFocuser {
     /// sibling", which two sessions in one repo can never clear — their title
     /// candidates are byte-identical, so each scores exactly what the other
     /// does. Those rows could then never be cleared by clicking them, which is
-    /// the reported "clicking a Codex needs-you row doesn't make it idle".
+    /// the reported "clicking a needs-you row doesn't make it idle".
     ///
     /// The user chose the row and was taken to a window that could be its own;
     /// that is enough to call it seen. Passive acknowledgement

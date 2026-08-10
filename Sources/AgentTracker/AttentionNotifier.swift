@@ -20,9 +20,7 @@ struct AttentionAlert: Equatable {
         // The row's metadata line minus its reason, which is the body here.
         // Location earns its place for the same reason it does there: several
         // sessions in one repo otherwise arrive as identical banners.
-        subtitle = [session.providerDisplayName, session.locationContext]
-            .compactMap { $0 }
-            .joined(separator: " · ")
+        subtitle = session.locationContext ?? ""
         body = session.reason ?? SessionState.needsYou.label
     }
 }
@@ -52,9 +50,9 @@ struct AttentionTracker {
     ///   red before that are never announced — launching into red sessions is
     ///   not news, the same exemption the icon's pulse makes for its first
     ///   render. Stated as a moment rather than as "skip the first pass"
-    ///   because the two are not equivalent here: the Codex scanner's first
-    ///   results land a beat *after* launch, so a first-pass baseline alone
-    ///   would let every already-red Codex session through as a banner.
+    ///   because the two are not equivalent: a source that reports late would
+    ///   land its already-red sessions on the second pass, and a first-pass
+    ///   baseline alone would let every one of them through as a banner.
     init(since: Date = Date()) {
         self.since = since
     }

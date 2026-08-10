@@ -71,7 +71,6 @@ struct TerminalIdentity: Codable, Equatable {
 
 struct AgentSession: Codable, Identifiable, Equatable {
     var schema: Int?
-    var provider: String
     var sessionId: String
     var pid: Int?
     var cwd: String?
@@ -83,17 +82,12 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var transcriptPath: String?
     var termProgram: String?
     var lastMessage: String?
-    /// Which mechanism wrote this row: `"hook"` for a lifecycle hook, `"notify"`
-    /// for Codex's legacy turn-complete callback. Only Codex has two, and only
-    /// `CodexMerge` reads it — a hook watched the whole session, so its state
-    /// outranks anything derived from a rollout file after the fact.
-    var origin: String?
-    /// The mode the agent is running in, as its hook reported it. For Codex
+    /// The mode the agent is running in, as its hook reported it. For
     /// this is the only source: it publishes no transcript for the app to read
     /// one out of, and `ContinueDelivery` treats an absent mode as permitted.
     var permissionMode: String?
     /// Which terminal pane the session occupies, as the hook found it. Every
-    /// field is optional: it depends on the terminal, and sessions the Codex
+    /// field is optional: it depends on the terminal, and a session the
     /// scanner discovers never had a hook run at all.
     var terminal: TerminalIdentity?
 
@@ -110,32 +104,32 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// row still says what it wants; it simply does not turn red for it.
     var isMuted = false
     /// How full this session's context window is, 0-100. Joined in from
-    /// whichever source the provider has — `StatuslineDirectory` for Claude,
-    /// the rollout scanner for Codex — and never read from the state file: no
-    /// hook payload from either agent carries one.
+    /// `StatuslineDirectory`, and never read from the state file: no hook
+    /// payload carries one.
     var contextUsedPercent: Double?
 
     private enum CodingKeys: String, CodingKey {
-        case schema, provider, sessionId, pid, cwd, state, reason, lastEvent
+        case schema, sessionId, pid, cwd, state, reason, lastEvent
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
-        case terminal, origin, permissionMode
+        case terminal, permissionMode
     }
 
-    var id: String { "\(provider)-\(sessionId)" }
+    var id: String { sessionId }
 
     var projectName: String {
         guard let cwd, !cwd.isEmpty else { return "Session" }
         return (cwd as NSString).lastPathComponent
     }
 
-    /// What the row is titled: the working directory, for every provider.
+    /// What the row is titled: the working directory.
     ///
-    /// This deliberately ignores `registryName`. Only Claude Code publishes
-    /// one, so preferring it made the list inconsistent — Claude rows read
-    /// "agent-tracker-13" while Codex rows beside them read "agent-tracker" —
-    /// and the suffix Claude appends is disambiguation noise rather than
-    /// information the user recognizes. One rule for both providers reads
-    /// better than a better rule for one of them.
+    /// This deliberately ignores `registryName`. The original reason was
+    /// cross-provider consistency and no longer applies; what survives it is
+    /// that the numeric suffix Claude appends ("agent-tracker-13") is
+    /// disambiguation noise rather than information the user recognizes. That
+    /// is a weaker argument than the one it replaces, so preferring the
+    /// registry name is now a reasonable thing to reconsider — deliberately not
+    /// changed here, because it would retitle every row.
     ///
     /// The registry name stays searchable (it is what Claude shows in its own
     /// terminal), as does the full path.
@@ -247,28 +241,12 @@ struct AgentSession: Codable, Identifiable, Equatable {
         "worktrees", ".worktrees", ".claude", ".git",
     ]
 
-    var providerDisplayName: String {
-        switch provider {
-        case "claude-code": return "Claude"
-        case "codex": return "Codex"
-        default: return provider.capitalized
-        }
-    }
-
-    /// The command that brings this session back, for a provider that has one.
+    /// The command that brings this session back.
     ///
-    /// Verified against the shipping CLIs rather than remembered: Claude takes
-    /// `-r, --resume [value]` where the value is a session id, and Codex takes
-    /// `resume [SESSION_ID]` positionally. A provider this version has not been
-    /// told about gets nil rather than a guessed incantation — this lands on
-    /// the clipboard and is pasted into a shell.
-    var resumeCommand: String? {
-        let id = Self.shellArgument(sessionId)
-        switch provider {
-        case "claude-code": return "claude --resume \(id)"
-        case "codex": return "codex resume \(id)"
-        default: return nil
-        }
+    /// Verified against the shipping CLI rather than remembered: Claude takes
+    /// `-r, --resume [value]`, where the value is a session id.
+    var resumeCommand: String {
+        "claude --resume \(Self.shellArgument(sessionId))"
     }
 
     /// One shell word, quoted only if it needs to be.

@@ -146,7 +146,7 @@ struct TmuxSendTests {
 
     private func fire() -> ContinueScheduler.Fire {
         ContinueScheduler.Fire(
-            sessionId: "s1", provider: "claude-code", message: "Continue", delay: 0,
+            sessionId: "s1", message: "Continue", delay: 0,
             lateness: .onTime, target: nil, tmuxTarget: pane, agent: agent())
     }
 

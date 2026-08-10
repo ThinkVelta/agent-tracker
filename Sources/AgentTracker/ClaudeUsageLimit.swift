@@ -73,7 +73,7 @@ enum ClaudeUsageLimit {
     }
 
     private static func timestamp(_ raw: String) -> Date? {
-        CodexRolloutParser.parseDate(raw)
+        Timestamps.iso8601(raw)
     }
 
     /// `resets 1:20am (Europe/Brussels)` → the next 1:20am at or after `anchor`,
