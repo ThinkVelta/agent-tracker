@@ -263,10 +263,28 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// told about gets nil rather than a guessed incantation — this lands on
     /// the clipboard and is pasted into a shell.
     var resumeCommand: String? {
+        let id = Self.shellArgument(sessionId)
         switch provider {
-        case "claude-code": return "claude --resume \(sessionId)"
-        case "codex": return "codex resume \(sessionId)"
+        case "claude-code": return "claude --resume \(id)"
+        case "codex": return "codex resume \(id)"
         default: return nil
         }
+    }
+
+    /// One shell word, quoted only if it needs to be.
+    ///
+    /// Both providers issue UUIDs, so in practice nothing here ever needs
+    /// quoting — but this string goes to the clipboard to be pasted into a
+    /// shell, and "the id is always a UUID" is an assumption about someone
+    /// else's code that costs a command injection if it stops holding. Quoting
+    /// conditionally rather than always keeps the common paste clean, which is
+    /// the whole point of offering it.
+    static func shellArgument(_ value: String) -> String {
+        let safe = CharacterSet(charactersIn: "-._/")
+            .union(.alphanumerics)
+        if !value.isEmpty, value.unicodeScalars.allSatisfy(safe.contains) { return value }
+        // Single quotes take everything literally; the only thing they cannot
+        // hold is a single quote, which is closed, escaped and reopened.
+        return "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 }

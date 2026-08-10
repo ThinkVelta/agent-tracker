@@ -321,7 +321,7 @@ final class SessionStore: ObservableObject {
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
-        muted.reconcile(liveKeys: Set(sorted.map(\.id)))
+        muted.reconcile(liveKeys: Set(sorted.map(\.id)), now: now)
         usageWatcher.prune(liveSessionIds: Set(sorted.map(\.sessionId)))
         if !focusRotation.isEmpty {
             let live = Set(sorted.map(\.id))

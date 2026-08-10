@@ -44,12 +44,38 @@ final class MutedSessions: ObservableObject {
         } else {
             muted.insert(sessionKey)
         }
+        // Either direction starts the grace over. Unmuting must leave no
+        // bookkeeping behind, and a session muted again must not inherit an
+        // absence recorded before the user changed their mind — which would
+        // have it forgotten the moment the old clock ran out.
+        absentSince[sessionKey] = nil
         save()
     }
 
-    /// Muted sessions this run has actually seen on screen. In memory only, and
-    /// the whole reason `reconcile` is not a one-line intersection.
-    private var seenLive: Set<String> = []
+    /// How long a muted session must stay off the list before its mute is
+    /// forgotten.
+    ///
+    /// The grace is the whole mechanism, because **absent is not ended**. The
+    /// Codex scanner publishes its first rows a beat after launch, so dropping
+    /// keys the moment they are not in the live set would delete every Codex
+    /// mute during the gap — silently, and before the row it belongs to had
+    /// appeared. Any late source has the same shape, so this waits rather than
+    /// naming one.
+    ///
+    /// Five minutes because the two failure directions are not symmetric. A
+    /// mute forgotten too early costs the user a session that starts pulling at
+    /// them again, which they then have to notice and redo; a key kept too long
+    /// costs a few bytes in `UserDefaults` and matches nothing, since both
+    /// providers issue UUIDs. So the grace is set long enough to outlast any
+    /// plausible hiccup in a source rather than tuned to the scanner's usual
+    /// second or two.
+    static let graceBeforeForgetting: TimeInterval = 300
+
+    /// When each muted session was first noticed missing. In memory: a run that
+    /// starts with the session already gone simply begins timing at launch,
+    /// which is exactly the behaviour wanted for a session that ended while the
+    /// app was closed.
+    private var absentSince: [String: Date] = [:]
 
     /// Forgets sessions that have ended.
     ///
@@ -57,29 +83,29 @@ final class MutedSessions: ObservableObject {
     /// session in that directory is a different one and has not asked to be
     /// ignored. Left unpruned the list would also grow forever.
     ///
-    /// **Absent is not ended.** A mute for a session this run has never seen is
-    /// left alone, because the two are different things for a good part of a
-    /// second: the Codex scanner publishes its first rows a beat after launch,
-    /// so intersecting with the live set on every pass would delete every Codex
-    /// mute during the gap — silently, and before the row it belongs to ever
-    /// appeared. A key is only dropped once it has been watched leaving.
-    ///
-    /// The cost of that caution is a mute set while the app is running and
-    /// still stored after a quit that beat the session's own exit. One stale
-    /// key, which the next run drops as soon as its session is seen and gone.
-    ///
-    /// - Parameter liveKeys: every session currently on screen.
-    func reconcile(liveKeys: Set<String>) {
-        let ended = seenLive.subtracting(liveKeys)
-        seenLive.formUnion(muted.intersection(liveKeys))
-        guard !ended.isEmpty else { return }
-        seenLive.subtract(ended)
-        let survivors = muted.subtracting(ended)
+    /// - Parameters:
+    ///   - liveKeys: every session currently on screen.
+    ///   - now: the store's clock for this pass, so a mute and the row it
+    ///     belongs to can never disagree about what "now" is.
+    func reconcile(liveKeys: Set<String>, now: Date) {
+        for key in muted where absentSince[key] == nil && !liveKeys.contains(key) {
+            absentSince[key] = now
+        }
+        // A key that came back stops counting. Also drops entries for sessions
+        // that have since been unmuted, so this map cannot outgrow the set it
+        // describes.
+        absentSince = absentSince.filter { muted.contains($0.key) && !liveKeys.contains($0.key) }
+
+        let ended = muted.filter { key in
+            guard let since = absentSince[key] else { return false }
+            return now.timeIntervalSince(since) >= Self.graceBeforeForgetting
+        }
         // Only on a real change: this runs on every store pass, and an
         // unconditional write would republish the set once a second and take
         // the whole dropdown with it.
-        guard survivors != muted else { return }
-        muted = survivors
+        guard !ended.isEmpty else { return }
+        absentSince = absentSince.filter { !ended.contains($0.key) }
+        muted.subtract(ended)
         save()
     }
 
