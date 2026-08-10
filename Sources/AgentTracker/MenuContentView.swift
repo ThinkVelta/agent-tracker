@@ -754,9 +754,17 @@ struct SessionRow: View {
                         target: armedSchedule?.target,
                         tmuxTarget: armedSchedule?.tmuxTarget,
                         agent: armedSchedule?.agent),
-                    // The window title is how a Ghostty surface is identified at
-                    // all, and this is the app's best copy of it.
-                    expectedTitle: windowTitle ?? title ?? session.displayName)
+                    // The window title is how a Ghostty surface is identified
+                    // at all, and this is the app's best copy of it.
+                    //
+                    // Deliberately NOT the row's display title. That can be the
+                    // registry name on an ambiguous row, and the registry name
+                    // is measurably not what the window is called — the
+                    // registry says "agent-tracker-3c" where the window says
+                    // "Continue tool development with menu interaction". Using
+                    // it here would turn a fallback that can match into one
+                    // that provably cannot.
+                    expectedTitle: windowTitle ?? session.displayName)
                 editing = false
             },
             onCancel: {

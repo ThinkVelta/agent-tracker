@@ -20,9 +20,16 @@ import Foundation
 enum SessionNaming {
     /// Row titles keyed by session id.
     ///
-    /// - Parameter sessions: every row that will be on screen together. Rows
-    ///   filtered out of the list cannot be confused with anything, so passing
-    ///   the whole set would disambiguate against sessions the user cannot see.
+    /// - Parameter sessions: the rows the current filter and search admit —
+    ///   not every session, because a row cannot be confused with one the user
+    ///   has filtered away.
+    ///
+    ///   Deliberately *not* narrowed further to the rows actually painted. A
+    ///   collapsed section hides rows without removing them, and deriving names
+    ///   from what is painted would mean folding the idle section silently
+    ///   renames a running row. A title that changes when you fold something
+    ///   else is worse than a suffix whose sibling is one fold away: the suffix
+    ///   is never wrong, only occasionally unexplained until you look.
     static func titles(for sessions: [AgentSession]) -> [String: String] {
         var byLabel: [String: [AgentSession]] = [:]
         for session in sessions {
