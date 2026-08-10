@@ -673,6 +673,49 @@ final class CodexRolloutTests {
         #expect(CodexRolloutParser.mightBeSignificant(line))
     }
 
+    /// The reading has to survive grouping, which is where it is attached to
+    /// the row — and grouping is the step that could quietly hand a row its
+    /// subagent's number instead. Subagents share the root's `session_id` but
+    /// run their own context windows, so a fan-out worker filling its own says
+    /// nothing about the thread the row represents. The subagent here is both
+    /// newer and fuller, so picking it would be the easy mistake.
+    @Test func aRowCarriesItsOwnThreadsContextAndNotASubagents() {
+        var primary = CodexThreadAccumulator()
+        primary.consume(line: metaLine(sessionId: "S1", threadId: "T-root"))
+        primary.consume(line: contextLine(contextInfo(last: 129_200, total: 200_000)))
+
+        var subagent = CodexThreadAccumulator()
+        subagent.consume(
+            line: metaLine(sessionId: "S1", threadId: "T-sub", subagent: true))
+        subagent.consume(line: contextLine(contextInfo(last: 232_560, total: 900_000)))
+
+        let sessions = CodexSessionGrouper.sessions(from: [
+            snapshot(primary, fileActivityAt: date("2026-07-31T10:00:00Z")),
+            snapshot(subagent, fileActivityAt: date("2026-07-31T11:00:00Z")),
+        ])
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.contextUsedPercent == 50)
+    }
+
+    /// The other half of the same rule: a root thread that has reported no
+    /// tokens yet shows nothing, rather than borrowing a number from the
+    /// subagent that has.
+    @Test func aSubagentsContextCannotStandInForAMissingOne() {
+        var primary = CodexThreadAccumulator()
+        primary.consume(line: metaLine(sessionId: "S1", threadId: "T-root"))
+
+        var subagent = CodexThreadAccumulator()
+        subagent.consume(
+            line: metaLine(sessionId: "S1", threadId: "T-sub", subagent: true))
+        subagent.consume(line: contextLine(contextInfo(last: 232_560, total: 900_000)))
+
+        let sessions = CodexSessionGrouper.sessions(from: [
+            snapshot(primary), snapshot(subagent),
+        ])
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.contextUsedPercent == nil)
+    }
+
     /// Switching to a model with a smaller window mid-session is the way to
     /// exceed one legitimately. "Full" is the honest answer, not 140%.
     @Test func aShrunkenWindowReadsAsFullRatherThanImpossible() {
