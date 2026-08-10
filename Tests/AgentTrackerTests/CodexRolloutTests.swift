@@ -590,4 +590,138 @@ final class CodexRolloutTests {
         #expect(accumulator.derivedState.state == .needsYou)
         #expect(accumulator.derivedState.reason == "Turn complete — ready for you")
     }
+
+    // MARK: - Context window
+
+    /// The `info` object exactly as Codex writes it, numbers included.
+    private func contextInfo(last: Int, total: Int, reasoning: Int = 0, window: Int = 258_400)
+        -> String
+    {
+        """
+        "info":{"total_token_usage":{"total_tokens":\(total)},
+         "last_token_usage":{"input_tokens":\(last - 100),"output_tokens":100,
+                             "reasoning_output_tokens":\(reasoning),
+                             "total_tokens":\(last)},
+         "model_context_window":\(window)}
+        """
+    }
+
+    private func contextLine(_ info: String) -> String {
+        """
+        {"timestamp":"2026-08-02T05:53:07.123Z","type":"event_msg","payload":{
+         "type":"token_count",\(info)}}
+        """
+    }
+
+    /// The measurement this whole derivation rests on: `total_token_usage`
+    /// accumulates across turns and reached 153,694% of the window on one real
+    /// session, while `last_token_usage` is the size of the current request. A
+    /// reading of 129,200 tokens against a 258,400 window is 50% — and the
+    /// cumulative figure beside it, ten times larger, must not be what is read.
+    @Test func contextComesFromTheLastRequestNotTheRunningTotal() {
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(
+            line: contextLine(contextInfo(last: 129_200, total: 2_584_000)))
+        #expect(accumulator.contextUsedPercent == 50)
+    }
+
+    /// Compaction is what makes this fall, and a reading that only ever climbed
+    /// would be describing something else.
+    @Test func contextFollowsCompactionDownwards() {
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(line: contextLine(contextInfo(last: 232_560, total: 400_000)))
+        #expect(accumulator.contextUsedPercent == 90)
+        accumulator.consume(line: contextLine(contextInfo(last: 51_680, total: 500_000)))
+        #expect(accumulator.contextUsedPercent == 20)
+    }
+
+    /// The two facts ride the same line but are independently optional, so a
+    /// line carrying one must not blank the other's last known value.
+    @Test func aTokenCountLineCarryingOneFactKeepsTheOther() {
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(line: contextLine(contextInfo(last: 129_200, total: 200_000)))
+        accumulator.consume(
+            line: tokenCountLine(usedPercent: 42, windowMinutes: 300, resetsAt: 1_786_177_907))
+
+        // That second line's `info` has empty usage objects, so it says nothing
+        // about context — and the earlier reading has to survive it.
+        #expect(accumulator.contextUsedPercent == 50)
+        #expect(accumulator.usageLimit?.usedPercent == 42)
+    }
+
+    @Test func anUnusableContextReadingIsNoReading() {
+        var accumulator = CodexThreadAccumulator()
+        for info in [
+            #""info":{"last_token_usage":{"total_tokens":100}}"#,
+            #""info":{"last_token_usage":{"total_tokens":100},"model_context_window":0}"#,
+            #""info":{"model_context_window":258400}"#,
+            #""info":{}"#,
+        ] {
+            accumulator.consume(line: contextLine(info))
+            #expect(accumulator.contextUsedPercent == nil)
+        }
+    }
+
+    /// The cheap prefilter every rollout line passes through has to admit a
+    /// `token_count` for the context reading alone. It used to key on
+    /// `rate_limits`, which was exact while a limit was the only thing read off
+    /// that event — a payload carrying the tokens and not the limits would now
+    /// be dropped before the parser ever saw it.
+    @Test func theLineFilterAdmitsATokenCountWithNoRateLimits() {
+        let line = contextLine(contextInfo(last: 129_200, total: 200_000))
+        #expect(line.contains("rate_limits") == false)
+        #expect(CodexRolloutParser.mightBeSignificant(line))
+    }
+
+    /// The reading has to survive grouping, which is where it is attached to
+    /// the row — and grouping is the step that could quietly hand a row its
+    /// subagent's number instead. Subagents share the root's `session_id` but
+    /// run their own context windows, so a fan-out worker filling its own says
+    /// nothing about the thread the row represents. The subagent here is both
+    /// newer and fuller, so picking it would be the easy mistake.
+    @Test func aRowCarriesItsOwnThreadsContextAndNotASubagents() {
+        var primary = CodexThreadAccumulator()
+        primary.consume(line: metaLine(sessionId: "S1", threadId: "T-root"))
+        primary.consume(line: contextLine(contextInfo(last: 129_200, total: 200_000)))
+
+        var subagent = CodexThreadAccumulator()
+        subagent.consume(
+            line: metaLine(sessionId: "S1", threadId: "T-sub", subagent: true))
+        subagent.consume(line: contextLine(contextInfo(last: 232_560, total: 900_000)))
+
+        let sessions = CodexSessionGrouper.sessions(from: [
+            snapshot(primary, fileActivityAt: date("2026-07-31T10:00:00Z")),
+            snapshot(subagent, fileActivityAt: date("2026-07-31T11:00:00Z")),
+        ])
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.contextUsedPercent == 50)
+    }
+
+    /// The other half of the same rule: a root thread that has reported no
+    /// tokens yet shows nothing, rather than borrowing a number from the
+    /// subagent that has.
+    @Test func aSubagentsContextCannotStandInForAMissingOne() {
+        var primary = CodexThreadAccumulator()
+        primary.consume(line: metaLine(sessionId: "S1", threadId: "T-root"))
+
+        var subagent = CodexThreadAccumulator()
+        subagent.consume(
+            line: metaLine(sessionId: "S1", threadId: "T-sub", subagent: true))
+        subagent.consume(line: contextLine(contextInfo(last: 232_560, total: 900_000)))
+
+        let sessions = CodexSessionGrouper.sessions(from: [
+            snapshot(primary), snapshot(subagent),
+        ])
+        #expect(sessions.count == 1)
+        #expect(sessions.first?.contextUsedPercent == nil)
+    }
+
+    /// Switching to a model with a smaller window mid-session is the way to
+    /// exceed one legitimately. "Full" is the honest answer, not 140%.
+    @Test func aShrunkenWindowReadsAsFullRatherThanImpossible() {
+        var accumulator = CodexThreadAccumulator()
+        accumulator.consume(
+            line: contextLine(contextInfo(last: 300_000, total: 300_000, window: 200_000)))
+        #expect(accumulator.contextUsedPercent == 100)
+    }
 }

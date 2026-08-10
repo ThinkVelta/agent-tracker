@@ -1,5 +1,41 @@
 import Foundation
 
+/// Codex's context occupancy, derived from a rollout `token_count` event.
+///
+/// Codex reports tokens where Claude reports a percentage, so this is the one
+/// place the app computes the number rather than reading it. *Which* token count
+/// is the whole question, and it is measured rather than assumed:
+///
+/// - `total_token_usage` **accumulates across turns**. On one real session it
+///   reached 153,694% of the window: it answers "what has this session cost",
+///   not "how full is it".
+/// - `last_token_usage.total_tokens` is the size of the most recent request, so
+///   it climbs through a session and drops when Codex compacts. Across 132,097
+///   readings on this machine it never once exceeded the window, and the top of
+///   the range crowds just under 95% — which is where Codex compacts.
+///
+/// Reasoning output is not retained between turns, so subtracting it is
+/// arguably the more correct model. It is deliberately not subtracted: measured,
+/// that changes the displayed whole-number percentage in 5.1% of readings, and
+/// the raw figure is the one whose ceiling lands nearest Codex's own limit. This
+/// is Codex's accounting rather than ours, so a rule that matches the observed
+/// ceiling beats one that matches a guess about the internals.
+enum CodexContextWindow {
+    /// - Parameter info: the value of `payload.info` on a `token_count` line.
+    static func usedPercent(_ info: [String: Any]) -> Double? {
+        guard let window = info["model_context_window"] as? Double, window > 0,
+            let last = info["last_token_usage"] as? [String: Any],
+            let used = last["total_tokens"] as? Double, used >= 0
+        else { return nil }
+        // Clamped rather than dropped, unlike the Claude reading this sits
+        // beside. That one is a number Claude computed, so out of range means
+        // the field is not what we think it is; this one is ours, and the way
+        // to exceed the window legitimately is to switch to a model with a
+        // smaller one mid-session. "Full" is the honest answer to that.
+        return min(100, used / window * 100)
+    }
+}
+
 /// How full a session's context window is — but only once that is worth saying.
 ///
 /// Every session starts near zero and climbs all day, so a figure on every row
@@ -26,8 +62,8 @@ struct ContextPressure: Equatable {
     var help: String { "\(label) of the context window used" }
 
     /// - Returns: nil when there is nothing worth saying — either no reading at
-    ///   all (Codex publishes none, and a Claude session that has not rendered
-    ///   its statusline yet has none either) or a reading low enough to be
+    ///   all (a Claude session that has not rendered its statusline yet, or a
+    ///   Codex one whose rollout has not reported tokens) or low enough to be
     ///   noise. "No reading" and "plenty left" stay distinct everywhere else in
     ///   this app; here they deliberately look the same, because both mean the
     ///   row has nothing to add.

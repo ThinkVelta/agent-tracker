@@ -96,6 +96,10 @@ enum CodexMerge {
             // pid stays the scanner's: it comes from whichever process holds the
             // rollout open, which is what the store's liveness prune asks about.
             session.pid = session.pid ?? hook.pid
+            // `contextUsedPercent` is absent from this list on purpose. It is
+            // not a field the hook wins and loses — no Codex hook payload
+            // carries one, so the rollout is its only source, and the scanner's
+            // value survives by not being overwritten here.
             return session
         }
         return resolution

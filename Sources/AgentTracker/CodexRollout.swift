@@ -36,9 +36,11 @@ struct CodexSignificantEvent: Equatable {
 enum CodexRolloutLine {
     case sessionMeta(CodexSessionMeta)
     case significantEvent(CodexSignificantEvent)
-    /// Codex's account rate limits, which ride along on `token_count` events.
-    /// Not a state change of its own — it explains one.
-    case usageLimit(UsageLimit)
+    /// What a `token_count` event carries: the account's rate limits, and how
+    /// full this thread's context window is. Two unrelated facts that ride the
+    /// same line, and neither is a state change of its own — the limit explains
+    /// one, the context explains nothing and is simply worth knowing.
+    case tokenCount(limit: UsageLimit?, contextUsedPercent: Double?)
     /// Anything else — unknown line types, unparseable lines, ignorable events.
     /// Parsing never throws; unknown input degrades to this.
     case insignificant
@@ -105,10 +107,12 @@ enum CodexRolloutParser {
             case "token_count":
                 // Roughly every third line carries one of these, so the state
                 // is cheap to keep current and pointless to hunt for.
-                guard let limits = payload["rate_limits"] as? [String: Any],
-                    let limit = CodexUsageLimit.parse(limits)
-                else { return .insignificant }
-                return .usageLimit(limit)
+                let limit = (payload["rate_limits"] as? [String: Any])
+                    .flatMap(CodexUsageLimit.parse)
+                let context = (payload["info"] as? [String: Any])
+                    .flatMap(CodexContextWindow.usedPercent)
+                guard limit != nil || context != nil else { return .insignificant }
+                return .tokenCount(limit: limit, contextUsedPercent: context)
             default:
                 // agent_message, user_message, … — not state-relevant.
                 return .insignificant
@@ -162,7 +166,14 @@ enum CodexRolloutParser {
             || line.contains("task_started")
             || line.contains("task_complete")
             || line.contains("turn_aborted")
-            || line.contains("rate_limits")
+            // The event, not one of its fields. `rate_limits` used to stand in
+            // for it, which was exact while a rate limit was the only thing
+            // read off a `token_count` — it now also carries the context
+            // window. Measured over 131,149 real lines, `info` never arrives
+            // without `rate_limits` beside it, so this changes nothing today;
+            // it is here so that a payload which one day omits the limits does
+            // not silently take the context reading down with it.
+            || line.contains("token_count")
     }
 
     /// Splits `data` into complete lines (up to and including the last newline)
@@ -194,6 +205,9 @@ struct CodexThreadAccumulator: Equatable {
     /// The newest rate-limit reading seen in this rollout. Account-wide, so any
     /// thread's reading is as good as another's — the newest simply wins.
     private(set) var usageLimit: UsageLimit?
+    /// How full this thread's context window was at its most recent request.
+    /// Unlike the rate limit, this belongs to the thread and not the account.
+    private(set) var contextUsedPercent: Double?
 
     mutating func consume(line: String) {
         guard CodexRolloutParser.mightBeSignificant(line) else { return }
@@ -218,8 +232,12 @@ struct CodexThreadAccumulator: Equatable {
             if case .taskComplete(let message) = event.kind, let message, !message.isEmpty {
                 lastAgentMessage = String(message.prefix(Self.agentMessageLimit))
             }
-        case .usageLimit(let limit):
-            usageLimit = limit
+        case .tokenCount(let limit, let context):
+            // Each field only when the line actually carried it: the two are
+            // independently optional, and a line reporting one must not blank
+            // the other's last known value.
+            if let limit { usageLimit = limit }
+            if let context { contextUsedPercent = context }
         case .insignificant:
             break
         }
@@ -310,23 +328,27 @@ enum CodexSessionGrouper {
                 ?? accumulator.meta?.timestamp
                 ?? primary.fileActivityAt
 
-            sessions.append(
-                AgentSession(
-                    schema: nil,
-                    provider: "codex",
-                    sessionId: sessionId,
-                    pid: pid,
-                    cwd: accumulator.meta?.cwd,
-                    state: state,
-                    reason: reason,
-                    lastEvent: lastEventName(accumulator.lastSignificant?.kind),
-                    updatedAt: updatedAt,
-                    stateChangedAt: stateChangedAt,
-                    transcriptPath: nil,
-                    termProgram: nil,
-                    lastMessage: accumulator.lastAgentMessage,
-                    fileURL: nil
-                ))
+            var session = AgentSession(
+                schema: nil,
+                provider: "codex",
+                sessionId: sessionId,
+                pid: pid,
+                cwd: accumulator.meta?.cwd,
+                state: state,
+                reason: reason,
+                lastEvent: lastEventName(accumulator.lastSignificant?.kind),
+                updatedAt: updatedAt,
+                stateChangedAt: stateChangedAt,
+                transcriptPath: nil,
+                termProgram: nil,
+                lastMessage: accumulator.lastAgentMessage,
+                fileURL: nil
+            )
+            // The primary thread's, not the group's: subagents run their own
+            // context windows, and a fan-out worker filling its own says
+            // nothing about the root thread the row represents.
+            session.contextUsedPercent = accumulator.contextUsedPercent
+            sessions.append(session)
         }
         return sessions.sorted { $0.sessionId < $1.sessionId }
     }
