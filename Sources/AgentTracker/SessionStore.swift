@@ -339,7 +339,16 @@ final class SessionStore: ObservableObject {
         // hook event and timer tick so the change filter is what keeps the
         // log quiet.
         let counts = counts
-        let rows = sessions.map { "\($0.provider):\($0.projectName)(\($0.state.rawValue))" }
+        // Context and mute ride along because "why is my row not showing a
+        // percentage" and "why has this stopped turning red" are the two
+        // questions this line is now most likely to be read for, and neither is
+        // answerable from the state alone — one is joined in from another
+        // source, the other deliberately rewrites the state it prints.
+        let rows = sessions.map { session -> String in
+            let context = session.contextUsedPercent.map { " ctx=\(Int($0.rounded()))%" } ?? ""
+            return "\(session.provider):\(session.projectName)"
+                + "(\(session.state.rawValue))\(session.isMuted ? " muted" : "")\(context)"
+        }
         let tallies =
             "\(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle"
         let summary =
