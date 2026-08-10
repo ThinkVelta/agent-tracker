@@ -137,4 +137,35 @@ final class AgentSessionTests {
         #expect(session(cwd: "").projectName == "Session")
         #expect(session(cwd: "/Users/dev/planner").projectName == "planner")
     }
+
+    /// Read off the shipping CLI rather than remembered: `-r, --resume [value]`.
+    @Test func theResumeCommandMatchesTheCLI() {
+        let session = AgentSession(
+            sessionId: "6b1f2c30-77aa-4d1e-9c55-2f0e8a1b4d77", state: .idle)
+        #expect(session.resumeCommand == "claude --resume 6b1f2c30-77aa-4d1e-9c55-2f0e8a1b4d77")
+    }
+
+    /// This lands on the clipboard and is pasted into a shell. Both providers
+    /// issue UUIDs today, so quoting is defence against someone else's format
+    /// changing rather than against anything observed — which is exactly the
+    /// kind of assumption worth not betting a command injection on.
+    @Test func anIdIsQuotedOnlyWhenItHasToBe() {
+        // The real case stays clean, which is the point of offering a command
+        // someone is meant to read before running.
+        #expect(AgentSession.shellArgument("6b1f2c30-77aa-4d1e") == "6b1f2c30-77aa-4d1e")
+        #expect(AgentSession.shellArgument("a.b_c/d") == "a.b_c/d")
+
+        #expect(AgentSession.shellArgument("two words") == "'two words'")
+        #expect(AgentSession.shellArgument("") == "''")
+        #expect(AgentSession.shellArgument("a;rm -rf /") == "'a;rm -rf /'")
+        #expect(AgentSession.shellArgument("$(whoami)") == "'$(whoami)'")
+        // The one thing single quotes cannot hold: close, escape, reopen.
+        #expect(AgentSession.shellArgument("it's") == #"'it'\''s'"#)
+    }
+
+    @Test func aResumeCommandCarriesTheQuotingThrough() {
+        let session = AgentSession(
+            sessionId: "a b; echo hi", state: .idle)
+        #expect(session.resumeCommand == "claude --resume 'a b; echo hi'")
+    }
 }

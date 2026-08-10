@@ -44,16 +44,24 @@ struct MenuContentView: View {
         SessionNaming.titles(for: filteredSessions)
     }
 
+    /// Pinned rows, in the store's own order. Held out of the state sections
+    /// rather than duplicated into a strip above them: a row in two places is a
+    /// row you can click twice and acknowledge once.
+    private var pinnedRows: [AgentSession] {
+        filteredSessions.filter(\.isPinned)
+    }
+
     private var sections: [SessionSections.Section] {
         // A filter or search always expands idle — hiding matches would lie
         // about how many things matched — and the preference decides the rest.
         let folding = preferences.idleFolding
         let narrowing = store.selectedFilter != nil || !query.isEmpty
         return SessionSections.build(
-            from: filteredSessions,
+            from: filteredSessions.filter { !$0.isPinned },
             overrides: SessionSections.overridesForNarrowing(
                 sectionOverrides, narrowing: narrowing),
             autoCollapseIdle: !narrowing && folding != .never,
+            budget: max(0, Theme.Metrics.maxVisibleRows - pinnedRows.count),
             idleAutoCollapseThreshold: {
                 switch folding {
                 case .never: return Int.max
@@ -201,6 +209,12 @@ struct MenuContentView: View {
                 noMatchesState
             } else {
                 let sections = sections
+                if !pinnedRows.isEmpty {
+                    PinnedHeader(count: pinnedRows.count)
+                    ForEach(pinnedRows) { session in
+                        row(for: session)
+                    }
+                }
                 ForEach(sections) { section in
                     sectionHeader(section)
                     ForEach(section.rows) { session in
@@ -418,6 +432,35 @@ struct MenuContentView: View {
 /// The bar carries no colour until the number is worth reacting to. A gauge that
 /// is amber at 50% teaches people to ignore it, and this sits in a window opened
 /// to answer a different question.
+/// The pinned group's rule.
+///
+/// Deliberately without the chevron its neighbours have: a pinned group is what
+/// the user asked to keep visible, so offering to hide it is offering to undo
+/// the thing they just did. Unpinning is on the row's own menu.
+private struct PinnedHeader: View {
+    let count: Int
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(.tertiary)
+            Text("PINNED")
+                .font(Theme.Typography.sectionHeader)
+                .foregroundStyle(.secondary)
+            Rectangle()
+                .fill(Color.secondary.opacity(0.18))
+                .frame(height: 1)
+            Text("\(count)")
+                .font(Theme.Typography.sectionHeader)
+                .foregroundStyle(.tertiary)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, Theme.Metrics.rowHorizontalPadding)
+        .frame(height: Theme.Metrics.sectionHeaderHeight)
+    }
+}
+
 private struct UsageChip: View {
     let reading: UsageReading
 
@@ -602,6 +645,7 @@ struct SessionRow: View {
                 // with no way out.
                 Button("Mark as seen", action: onAcknowledge)
             }
+            Button(session.isPinned ? "Unpin" : "Pin to top") { pinned.toggle(session.id) }
             Button(session.isMuted ? "Unmute" : "Mute") { muted.toggle(session.id) }
             Button("Copy resume command") {
                 NSPasteboard.general.clearContents()
@@ -622,7 +666,8 @@ struct SessionRow: View {
     /// `RenderPreview`.
     @ObservedObject private var continues = ContinueSchedules.shared
     @ObservedObject private var preferences = Preferences.shared
-    @ObservedObject private var muted = MutedSessions.shared
+    @ObservedObject private var muted = SessionKeySet.muted
+    @ObservedObject private var pinned = SessionKeySet.pinned
 
     @State private var editing = false
     @State private var draft = ContinueDraft()
