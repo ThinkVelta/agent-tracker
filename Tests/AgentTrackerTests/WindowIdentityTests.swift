@@ -230,9 +230,9 @@ final class WindowIdentityTests {
     /// directory tie.
     @Test func aWindowNamingAnotherSessionIsNotOurs() {
         let codex = AgentSession(
-            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+            sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let claude = AgentSession(
-            provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
+            sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
         let summary = "Fix the checkout redirect loop on expired sessions"
         let codexCandidates = TerminalFocuser.titleCandidates(for: codex, exactTitle: nil)
         let claudeCandidates = TerminalFocuser.titleCandidates(for: claude, exactTitle: summary)
@@ -252,9 +252,9 @@ final class WindowIdentityTests {
     /// click with nothing to raise at all.
     @Test func aTitleBothSessionsAnswerToIsNotOwnedByEither() {
         let first = AgentSession(
-            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+            sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let second = AgentSession(
-            provider: "codex", sessionId: "c2", cwd: "/Users/dev/Planner", state: .running)
+            sessionId: "c2", cwd: "/Users/dev/Planner", state: .running)
         #expect(
             !WindowIdentity.ownedByAnotherSession(
                 windowTitle: "⠸ Planner",
@@ -266,9 +266,9 @@ final class WindowIdentityTests {
     /// session (no rivals loaded yet) must exclude nothing.
     @Test func unclaimedTitlesAndEmptyRostersExcludeNothing() {
         let session = AgentSession(
-            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+            sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let other = AgentSession(
-            provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Marrow", state: .idle)
+            sessionId: "k1", cwd: "/Users/dev/Marrow", state: .idle)
         let own = TerminalFocuser.titleCandidates(for: session, exactTitle: nil)
         let rival = TerminalFocuser.titleCandidates(
             for: other, exactTitle: "Initial setup and access granted")

@@ -5,7 +5,7 @@ import Testing
 
 final class TerminalFocuserTests {
     private func claudeSession(id: String, cwd: String) -> AgentSession {
-        AgentSession(provider: "claude-code", sessionId: id, cwd: cwd, state: .needsYou)
+        AgentSession(sessionId: id, cwd: cwd, state: .needsYou)
     }
 
     // MARK: - Which terminal owns a session
@@ -240,9 +240,9 @@ final class TerminalFocuserTests {
     /// Landing on a window that could be this session's is enough.
     @Test func siblingSessionsInOneRepoCanStillBeAcknowledgedByClicking() {
         let first = AgentSession(
-            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+            sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let second = AgentSession(
-            provider: "codex", sessionId: "c2", cwd: "/Users/dev/Planner", state: .needsYou)
+            sessionId: "c2", cwd: "/Users/dev/Planner", state: .needsYou)
         let all = [(first, String?.none), (second, String?.none)]
         #expect(
             TerminalFocuser.isPlausibleMatch(
@@ -253,9 +253,9 @@ final class TerminalFocuserTests {
     /// is still that session's, and clicking must not silence this one on it.
     @Test func plausibleMatchStillRefusesAnotherSessionsWindow() {
         let codex = AgentSession(
-            provider: "codex", sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
+            sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
         let claude = AgentSession(
-            provider: "claude-code", sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
+            sessionId: "k1", cwd: "/Users/dev/Planner", state: .running)
         let summary = "Fix the checkout redirect loop on expired sessions"
         #expect(
             !TerminalFocuser.isPlausibleMatch(
@@ -279,7 +279,6 @@ final class TerminalFocuserTests {
         ]
         for (sessionIndex, exactTitle) in exactTitles.enumerated() {
             let session = AgentSession(
-                provider: exactTitle == nil ? "codex" : "claude-code",
                 sessionId: "s\(sessionIndex)", cwd: cwd, state: .running
             )
             let candidates = TerminalFocuser.titleCandidates(for: session, exactTitle: exactTitle)
@@ -315,7 +314,7 @@ final class TerminalFocuserTests {
         // Two Claude sessions in one repo, one working and one waiting: the
         // tie-break has to separate them exactly as it does for Codex.
         let session = AgentSession(
-            provider: "claude-code", sessionId: "c1", cwd: "/Users/dev/planner", state: .needsYou)
+            sessionId: "c1", cwd: "/Users/dev/planner", state: .needsYou)
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let ranking = WindowIdentity.rankTitles(
             ["⠂ planner", "planner"], candidates: candidates, state: .needsYou)
@@ -337,7 +336,7 @@ final class TerminalFocuserTests {
     /// the one waiting at its prompt, and the menu lists the busy one first.
     @Test func needsYouSessionSkipsTheStillSpinningSiblingWindow() {
         let session = AgentSession(
-            provider: "codex", sessionId: "c1",
+            sessionId: "c1",
             cwd: "/Users/dev/Documents/ProjectsVelta/Planner", state: .needsYou
         )
         let candidates = TerminalFocuser.titleCandidates(for: session)
@@ -350,7 +349,7 @@ final class TerminalFocuserTests {
 
     @Test func runningSessionPrefersTheSpinningWindow() {
         let session = AgentSession(
-            provider: "codex", sessionId: "c2", cwd: "/Users/dev/planner", state: .running)
+            sessionId: "c2", cwd: "/Users/dev/planner", state: .running)
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let ranking = WindowIdentity.rankTitles(
             ["planner", "⠸ planner"], candidates: candidates, state: .running)
@@ -360,7 +359,7 @@ final class TerminalFocuserTests {
 
     @Test func activityNeverOutranksAStrongerTitleMatch() {
         let session = AgentSession(
-            provider: "claude-code", sessionId: "c3", cwd: "/Users/dev/planner", state: .needsYou)
+            sessionId: "c3", cwd: "/Users/dev/planner", state: .needsYou)
         let candidates = TerminalFocuser.titleCandidates(
             for: session, exactTitle: "Fix the flaky scanner test")
         // The exact-title window is spinning (stale title paint) and the bare
@@ -373,7 +372,7 @@ final class TerminalFocuserTests {
 
     @Test func trulyIdenticalWindowsReportTheTie() {
         let session = AgentSession(
-            provider: "codex", sessionId: "c4", cwd: "/Users/dev/planner", state: .needsYou)
+            sessionId: "c4", cwd: "/Users/dev/planner", state: .needsYou)
         let candidates = TerminalFocuser.titleCandidates(for: session)
         let ranking = WindowIdentity.rankTitles(
             ["planner", "planner"], candidates: candidates, state: .needsYou)
@@ -383,7 +382,7 @@ final class TerminalFocuserTests {
 
     @Test func rankingIgnoresNonMatchingTitlesEntirely() {
         let session = AgentSession(
-            provider: "codex", sessionId: "c5", cwd: "/Users/dev/planner", state: .needsYou)
+            sessionId: "c5", cwd: "/Users/dev/planner", state: .needsYou)
         let candidates = TerminalFocuser.titleCandidates(for: session)
         #expect(
             WindowIdentity.rankTitles(["Mail", "Slack"], candidates: candidates, state: .needsYou)

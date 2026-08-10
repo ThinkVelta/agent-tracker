@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """Event handler for agent-tracker.
 
-Invoked by agent CLIs on lifecycle events, translates them into per-session
+Invoked by Claude Code on lifecycle events, translates them into per-session
 state files under ~/.agent-tracker/sessions/ which the menu bar app watches.
 
 Usage:
-  agent-tracker-hook.py claude          # Claude Code hook: reads JSON on stdin
-  agent-tracker-hook.py codex-hook      # Codex native hook: reads JSON on stdin
-  agent-tracker-hook.py codex <json>    # Codex legacy notify: JSON as final argument
+  agent-tracker-hook.py claude          # reads the hook payload as JSON on stdin
 
 Design constraints: must never block or break the agent session (always exits
 0, prints nothing on success) and must be dependency-free (stdlib only).
 """
 
-import calendar
 import functools
 import json
 import os
@@ -23,31 +20,16 @@ import time
 
 SCHEMA_VERSION = 1
 
-# How long a hook-written row stays authoritative over Codex's legacy `notify`.
-#
-# A live hook writes on every prompt, tool call and turn end, so two minutes of
-# silence at the exact moment a turn ends means the hooks are not covering this
-# session. The same 120 seconds the app uses elsewhere for "these two sources
-# are talking about the same moment".
-#
-# Erring either way is safe, and unequally so: too short and notify takes over a
-# turn a live hook also reported, costing a held schedule; too long and a dead
-# hook's last word stands, which is the one that could authorise a send. Short
-# wins ties.
-HOOK_LIVENESS_WINDOW = 120
 
 # Wall-clock budget for the whole process-tree walk, across every `ps` it runs.
 #
-# Load-bearing rather than tidiness: Codex runs its hooks synchronously
-# (`async: true` is parsed but skipped — "async hooks are not supported yet"),
-# and one of the events we register for is `PermissionRequest`, which sits in
-# the approval path. A hook that overruns its configured timeout there is not a
-# missed state update, it is an approval prompt we interfered with. The happy
-# path takes ~40ms; this only bites when `ps` itself is wedged.
+# Load-bearing rather than tidiness: hooks run in the session's own path, so one
+# that overruns is not a missed state update — it is an agent left waiting on
+# us. The happy path takes ~40ms; this only bites when `ps` itself is wedged.
 PROCESS_WALK_BUDGET = 2.0
 
 # Process names that identify a long-lived agent CLI when walking up the tree.
-AGENT_PROCESS_HINTS = ("claude", "codex", "node", "bun")
+AGENT_PROCESS_HINTS = ("claude", "node", "bun")
 
 # Which terminal pane the session occupies, as the environment reports it.
 # Captured here because it is free at hook time and unrecoverable afterwards:
@@ -141,25 +123,16 @@ def terminal_identity(tty):
     return {key: value for key, value in identity.items() if value}
 
 
-def state_path(provider, session_id):
+# The filename keeps its provider prefix, and the payload keeps its `provider`
+# field, from when this served more than one agent. Both are deliberate: an
+# upgrade must not orphan the state file of a session that is still running, and
+# an app build from before this change still reads what this writes.
+STATE_FILE_PREFIX = "claude-code"
+
+
+def state_path(session_id):
     safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in session_id)
-    return os.path.join(sessions_dir(), f"{provider}-{safe}.json")
-
-
-def wrote_recently(stamp, within=HOOK_LIVENESS_WINDOW):
-    """Whether `stamp` is recent enough to mean a live writer produced it.
-
-    Absent or unparseable counts as not recent: this decides whether to *defer*
-    to another writer, and deferring to one we cannot date is how a stale row
-    outlives the thing that wrote it.
-    """
-    if not stamp:
-        return False
-    try:
-        seen = calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
-    except (ValueError, TypeError):
-        return False
-    return 0 <= time.time() - seen <= within
+    return os.path.join(sessions_dir(), f"{STATE_FILE_PREFIX}-{safe}.json")
 
 
 def load_state(path):
@@ -177,8 +150,8 @@ def write_state(path, data):
     os.replace(tmp, path)
 
 
-def update(provider, session_id, event, state, reason, extra):
-    path = state_path(provider, session_id)
+def update(session_id, event, state, reason, extra):
+    path = state_path(session_id)
     current = load_state(path)
     pid, tty = agent_process()
     data = {**current}
@@ -189,7 +162,7 @@ def update(provider, session_id, event, state, reason, extra):
     data.update(
         {
             "schema": SCHEMA_VERSION,
-            "provider": provider,
+            "provider": STATE_FILE_PREFIX,
             "sessionId": session_id,
             "lastEvent": event,
             "updatedAt": now(),
@@ -225,47 +198,8 @@ def claude_states(payload):
     }
 
 
-def codex_states(payload):
-    """Codex's native hook events, as states.
-
-    Deliberately parallel to `claude_states`: Codex's hooks carry the same
-    stdin payload shape, and "PermissionRequest" plays the part "Notification"
-    plays for Claude — the one event that means a prompt is waiting rather than
-    a turn having finished. That distinction is the whole reason to prefer
-    these hooks over the legacy `notify`, which cannot see it.
-
-    No subagent guard here, and that is measured rather than assumed: across
-    1213 rollouts on a real multi-agent machine, every one of the 1171 subagent
-    threads carried the *root* session's `session_id` — only the thread id
-    differs, with `parent_thread_id` pointing up the tree — and all 19 sessions
-    that had subagents shared one `session_id` with their root. So a hook fired
-    inside a subagent writes to the root session's file, which is what we want:
-    its `PreToolUse` reads as the session working, and its `PermissionRequest`
-    turns the session red, because the user really does have to approve it.
-    This is what the legacy `notify` gets wrong — it reports a thread id, which
-    is why `CodexSubagentLedger` and `threadIdToSession` exist.
-    """
-    tool = payload.get("tool_name")
-    return {
-        "SessionStart": ("idle", "Session started"),
-        "UserPromptSubmit": ("running", "Working…"),
-        "PreToolUse": ("running", f"Using {tool}" if tool else "Working…"),
-        "PreCompact": ("running", "Compacting context"),
-        "Stop": ("needsYou", "Turn complete — ready for you"),
-        "PermissionRequest": (
-            "needsYou",
-            f"Approve {tool}?" if tool else "Waiting on your approval",
-        ),
-    }
-
-
-def handle_hook(provider, states):
-    """Handle one stdin-delivered hook payload.
-
-    Shared by Claude Code and Codex, which agree on the wire format down to the
-    field names (`hook_event_name`, `session_id`, `cwd`, `transcript_path`).
-    Only the event vocabulary differs, which is what `states` supplies.
-    """
+def handle_hook():
+    """Handle one stdin-delivered hook payload."""
     try:
         payload = json.load(sys.stdin)
     except Exception:  # noqa: BLE001 — malformed input must not break a session
@@ -276,100 +210,30 @@ def handle_hook(provider, states):
         "cwd": payload.get("cwd"),
         "transcriptPath": payload.get("transcript_path"),
         "termProgram": os.environ.get("TERM_PROGRAM"),
-        # Which mechanism wrote this. For Codex the app has a second, weaker
-        # view of the same session (rollout files), and it needs to know which
-        # rows came from something that watched the whole lifecycle.
-        "origin": "hook",
-        # Whether this session acts without asking. Both providers put it on
-        # every payload, which for Codex is the only way to get it at all —
-        # there is no transcript to read it out of, and the gate that refuses an
-        # unrecognized mode treats "absent" as permitted.
+        # Whether this session acts without asking. The scheduled-continue gate
+        # reads it, and treats "absent" as permitted, so it is worth recording
+        # even though the transcript carries it too.
         "permissionMode": payload.get("permission_mode"),
     }
 
     if event == "SessionEnd":
         try:
-            os.remove(state_path(provider, session_id))
+            os.remove(state_path(session_id))
         except FileNotFoundError:
             pass
         return
 
-    state, reason = states(payload).get(event, (None, None))
-    update(provider, session_id, event or "unknown", state, reason, extra)
-
-
-def handle_codex(args):
-    """Codex's legacy `notify` callback: one event, fired after a turn ends.
-
-    Superseded by `codex-hook` above, which sees the whole lifecycle. Kept
-    because a session that was already running when the hooks were installed
-    still reports through this, and because `notify` remains in config.toml
-    until the user uninstalls it.
-    """
-    try:
-        payload = json.loads(args[0]) if args else {}
-    except Exception:  # noqa: BLE001 — malformed input must not break a session
-        payload = {}
-
-    def get(*keys):
-        for key in keys:
-            value = payload.get(key)
-            if value:
-                return value
-        return None
-
-    # thread-id is stable across turns; fall back to the agent pid so repeated
-    # notifications from one Codex process collapse into a single session.
-    session_id = get("thread-id", "thread_id") or f"pid-{agent_process()[0]}"
-
-    # Stand down if the hooks are *currently* covering this session. For a root
-    # thread Codex's thread id IS its session id, so both mechanisms write this
-    # same file, and both fire at the end of a turn. Whichever landed last would
-    # win: notify would leave `lastEvent` reading "agent-turn-complete", where
-    # the app's gate for sending into a terminal requires "Stop". A race decided
-    # by scheduling is not a thing to leave in the path of that.
-    #
-    # "Currently" is load-bearing. Standing down unconditionally would mean that
-    # if the hooks ever stop — trust invalidated by an edit to hooks.json, say —
-    # the row freezes at its last hook event forever, and notify could never
-    # correct it. A frozen "Stop" is the dangerous one: the session moves on to
-    # an approval prompt, the file still says the turn ended, and the send gate
-    # believes it. So a hook that has not written recently is treated as absent.
-    current = load_state(state_path("codex", session_id))
-    if current.get("origin") == "hook" and wrote_recently(current.get("updatedAt")):
-        return
-    last_message = get("last-assistant-message", "last_assistant_message")
-    if last_message and len(last_message) > 200:
-        last_message = last_message[:200] + "…"
-    extra = {
-        "cwd": get("cwd") or os.getcwd(),
-        "termProgram": os.environ.get("TERM_PROGRAM"),
-        "lastMessage": last_message,
-        "origin": "notify",
-    }
-
-    event = get("type") or "unknown"
-    if event == "agent-turn-complete":
-        update(
-            "codex",
-            session_id,
-            event,
-            "needsYou",
-            "Turn complete — ready for you",
-            extra,
-        )
-    else:
-        update("codex", session_id, event, "needsYou", "Needs your attention", extra)
+    state, reason = claude_states(payload).get(event, (None, None))
+    update(session_id, event or "unknown", state, reason, extra)
 
 
 def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else "claude"
-    if mode == "claude":
-        handle_hook("claude-code", claude_states)
-    elif mode == "codex-hook":
-        handle_hook("codex", codex_states)
-    elif mode == "codex":
-        handle_codex(sys.argv[2:])
+    # Any other mode is a no-op that still exits 0. An install from before this
+    # app was Claude-only may still have a registration for another agent
+    # pointing here, and a hook that errors is a hook that interrupts somebody's
+    # session — the uninstaller removes those, this makes them harmless first.
+    if (sys.argv[1] if len(sys.argv) > 1 else "claude") == "claude":
+        handle_hook()
     return 0
 
 

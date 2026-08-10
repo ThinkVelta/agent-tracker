@@ -61,8 +61,7 @@ final class StatuslineDirectory {
     }
 
     /// How full this session's context window is, 0-100, when it has ever been
-    /// reported. Claude publishes this ready-made; Codex reports tokens
-    /// instead, and `CodexContextWindow` does the division.
+    /// reported.
     func contextUsedPercent(for sessionId: String) -> Double? {
         contextUsedPercent[sessionId]
     }

@@ -19,8 +19,7 @@ import Foundation
 final class MutedSessions: ObservableObject {
     static let shared = MutedSessions()
 
-    /// `AgentSession.id`, so a Claude and a Codex session that somehow shared a
-    /// session id could not mute each other.
+    /// `AgentSession.id`.
     @Published private(set) var muted: Set<String> = []
 
     /// Its own key, never shared with another value in this domain — the
@@ -55,12 +54,10 @@ final class MutedSessions: ObservableObject {
     /// How long a muted session must stay off the list before its mute is
     /// forgotten.
     ///
-    /// The grace is the whole mechanism, because **absent is not ended**. The
-    /// Codex scanner publishes its first rows a beat after launch, so dropping
-    /// keys the moment they are not in the live set would delete every Codex
-    /// mute during the gap — silently, and before the row it belongs to had
-    /// appeared. Any late source has the same shape, so this waits rather than
-    /// naming one.
+    /// The grace is the whole mechanism, because **absent is not ended**. A
+    /// source that reports late — or a run that starts before the state files
+    /// are read — would otherwise have its mutes deleted during the gap,
+    /// silently, and before the rows they belong to had appeared.
     ///
     /// Five minutes because the two failure directions are not symmetric. A
     /// mute forgotten too early costs the user a session that starts pulling at

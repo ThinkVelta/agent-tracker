@@ -169,7 +169,7 @@ private struct GeneralSettingsTab: View {
                     title: "Scheduled continues",
                     detail: "Lets a session that stopped on a usage limit be armed to resume "
                         + "itself when the window resets — a clock appears on those rows. "
-                        + "Claude Code and Codex. Sending needs permission to control Ghostty, "
+                        + "Sending needs permission to control Ghostty, "
                         + "which macOS asks for once. Never wakes the Mac."
                 ) {
                     Toggle("", isOn: $preferences.scheduledContinues)

@@ -23,7 +23,7 @@ final class RegistryEnrichmentTests {
         changedAt: Date? = Date(timeIntervalSince1970: 1000)
     ) -> AgentSession {
         AgentSession(
-            provider: provider, sessionId: "s1", cwd: cwd, state: state, stateChangedAt: changedAt)
+            sessionId: "s1", cwd: cwd, state: state, stateChangedAt: changedAt)
     }
 
     private func stopped(changedAt: Date = Date(timeIntervalSince1970: 1000)) -> AgentSession {
@@ -130,17 +130,12 @@ final class RegistryEnrichmentTests {
         #expect(empty.displayName == "Session")
     }
 
-    /// Without a registry entry nothing changes — Codex sessions and older
-    /// Claude versions keep the directory name.
+    /// Without a registry entry nothing changes — an older Claude version
+    /// keeps the directory name.
     @Test func rowsWithoutARegistryEntryAreUntouched() {
         let plain = session()
         #expect(RegistryEnrichment.apply(to: plain, entry: nil) == plain)
         #expect(plain.displayName == "planner-backend")
-    }
-
-    @Test func theRegistryIsClaudeOnly() {
-        let codex = session(provider: "codex")
-        #expect(RegistryEnrichment.apply(to: codex, entry: entry()) == codex)
     }
 
     /// The hook records where the agent works, the registry where its terminal

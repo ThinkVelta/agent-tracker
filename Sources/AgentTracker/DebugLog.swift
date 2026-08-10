@@ -1,6 +1,6 @@
 import Foundation
 
-/// The app's trace channel (`[ui]`, `[focus]`, `[store]`, `[codex-scan]`,
+/// The app's trace channel (`[ui]`, `[focus]`, `[store]`,
 /// `[auto-ack]`). Every line goes to stdout — visible under `swift run` — AND
 /// to `~/.agent-tracker/logs/agent-tracker.log`, because the installed app is
 /// launched by `open` and its stdout goes nowhere: without the file, "paste

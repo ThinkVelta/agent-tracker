@@ -51,7 +51,7 @@ final class ContinueSenderTests {
         -> ContinueScheduler.Fire
     {
         ContinueScheduler.Fire(
-            sessionId: "s1", provider: "claude-code", message: "Continue", delay: 0,
+            sessionId: "s1", message: "Continue", delay: 0,
             lateness: .onTime, target: target ?? armedTarget, agent: armed ?? agent())
     }
 
@@ -184,7 +184,7 @@ final class ContinueSenderTests {
     @Test func aScheduleWithNoRecordedPaneRefuses() {
         let recorder = Recorder()
         let bare = ContinueScheduler.Fire(
-            sessionId: "s1", provider: "claude-code", message: "Continue", delay: 0,
+            sessionId: "s1", message: "Continue", delay: 0,
             lateness: .onTime, target: nil, agent: nil)
         let result = ContinueSender.send(bare, context: context(), ops: ops(recorder: recorder))
         #expect(result.outcome == .refused)

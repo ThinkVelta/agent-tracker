@@ -13,27 +13,23 @@ final class ContinueSchedulerTests {
 
     private func session(
         _ id: String = "s1",
-        provider: String = "claude-code",
-        lastEvent: String? = "Stop",
-        origin: String? = "hook"
+        lastEvent: String? = "Stop"
     ) -> AgentSession {
         var session = AgentSession(
-            provider: provider, sessionId: id, cwd: "/Users/dev/demo", state: .needsYou)
+            sessionId: id, cwd: "/Users/dev/demo", state: .needsYou)
         session.lastEvent = lastEvent
-        session.origin = origin
         return session
     }
 
     private func schedule(
         _ id: String = "s1",
-        provider: String = "claude-code",
         repeats: Bool = false,
         sendsOnWake: Bool = true,
         settledThrough: Date? = nil,
         resetsAt: Date? = nil
     ) -> ScheduledContinue {
         ScheduledContinue(
-            sessionId: id, provider: provider, armedForResetAt: resetsAt ?? reset,
+            sessionId: id, armedForResetAt: resetsAt ?? reset,
             repeats: repeats, sendsOnWake: sendsOnWake, settledThrough: settledThrough)
     }
 
@@ -44,7 +40,7 @@ final class ContinueSchedulerTests {
         enabled: Bool = true,
         schedules: [ScheduledContinue],
         sessions: [AgentSession]? = nil,
-        blockingResets: [String: Date] = [:]
+        blockingReset: Date? = nil
     ) -> ContinueScheduler.Pass {
         ContinueScheduler.Pass(
             now: now,
@@ -53,7 +49,7 @@ final class ContinueSchedulerTests {
             enabled: enabled,
             schedules: schedules,
             sessions: sessions ?? [session()],
-            blockingResets: blockingResets)
+            blockingReset: blockingReset)
     }
 
     /// The safety pad is waited out, so "due" is the reset plus the pad.
@@ -137,7 +133,7 @@ final class ContinueSchedulerTests {
         let sameWindow = ContinueScheduler.plan(
             pass(
                 now: fireMoment.addingTimeInterval(60), schedules: [settled],
-                blockingResets: ["claude-code": reset.addingTimeInterval(90)]))
+                blockingReset: reset.addingTimeInterval(90)))
         #expect(sameWindow.fires.isEmpty)
         #expect(sameWindow.schedules.first?.armedForResetAt == reset)
         #expect(sameWindow.receipts.isEmpty)
@@ -146,7 +142,7 @@ final class ContinueSchedulerTests {
         let rolled = ContinueScheduler.plan(
             pass(
                 now: fireMoment.addingTimeInterval(60), schedules: [settled],
-                blockingResets: ["claude-code": nextWindow]))
+                blockingReset: nextWindow))
         #expect(rolled.fires.isEmpty)
         #expect(rolled.schedules.first?.armedForResetAt == nextWindow)
         #expect(rolled.schedules.first?.isSettled == false)
@@ -163,13 +159,13 @@ final class ContinueSchedulerTests {
         let refined = ContinueScheduler.plan(
             pass(
                 now: reset.addingTimeInterval(-600), schedules: [schedule()],
-                blockingResets: ["claude-code": later]))
+                blockingReset: later))
         #expect(refined.schedules.first?.armedForResetAt == later)
 
         let earlier = ContinueScheduler.plan(
             pass(
                 now: reset.addingTimeInterval(-600), schedules: [schedule()],
-                blockingResets: ["claude-code": reset.addingTimeInterval(-45)]))
+                blockingReset: reset.addingTimeInterval(-45)))
         #expect(earlier.schedules.first?.armedForResetAt == reset)
     }
 
@@ -325,23 +321,10 @@ final class ContinueSchedulerTests {
     @Test func codexFiresLikeClaudeDoes() {
         let plan = ContinueScheduler.plan(
             pass(
-                now: fireMoment, schedules: [schedule("c1", provider: "codex")],
-                sessions: [session("c1", provider: "codex")]))
+                now: fireMoment, schedules: [schedule("c1")],
+                sessions: [session("c1")]))
         #expect(plan.fires.count == 1)
         #expect(plan.fires.first?.sessionId == "c1")
-    }
-
-    /// A provider whose turn state the app cannot read is still refused, and the
-    /// refusal still names it. The gate moved from one literal to a set; it did
-    /// not go away.
-    @Test func anUnknownProviderIsStillRefused() {
-        let plan = ContinueScheduler.plan(
-            pass(
-                now: fireMoment, schedules: [schedule("k1", provider: "kimi")],
-                sessions: [session("k1", provider: "kimi")]))
-        #expect(plan.fires.isEmpty)
-        #expect(plan.schedules.isEmpty)
-        #expect(plan.receipts.first?.summary.contains("cannot be resumed automatically") == true)
     }
 
     /// The gate is checked before anything is derived, so turning the feature off
@@ -371,7 +354,7 @@ final class ContinueSchedulerTests {
         // Applied by the record too, not just available to be called.
         #expect(
             ScheduledContinue(
-                sessionId: "s", provider: "claude-code", message: "a\nb", armedForResetAt: reset
+                sessionId: "s", message: "a\nb", armedForResetAt: reset
             )
             .message == "a")
     }
@@ -393,7 +376,7 @@ final class ContinueSchedulerTests {
         let rolled = ContinueScheduler.plan(
             pass(
                 now: fireMoment.addingTimeInterval(60), schedules: [settled],
-                blockingResets: ["claude-code": nextWindow]))
+                blockingReset: nextWindow))
         #expect(rolled.schedules.first?.pendingMoment == nextWindow)
     }
 
@@ -452,30 +435,6 @@ final class ContinueSchedulerTests {
         let off = ContinueScheduler.availability(
             for: session(), armableResetBySession: resets, enabled: false)
         #expect(off.reason?.contains("Settings") == true)
-
-        let unknown = ContinueScheduler.availability(
-            for: session("k", provider: "kimi"), armableResetBySession: ["k": reset], enabled: true
-        )
-        #expect(unknown.reason?.contains("cannot be resumed automatically") == true)
-
-        let codex = ContinueScheduler.availability(
-            for: session("c", provider: "codex"), armableResetBySession: ["c": reset], enabled: true
-        )
-        #expect(codex == .available(resetsAt: reset))
-
-        // A Codex row the rollout scanner produced can never satisfy R1, so
-        // offering the clock would promise a send that is held every pass and
-        // then abandoned. Refused while there is still someone reading.
-        let scannerOnly = ContinueScheduler.availability(
-            for: session("c2", provider: "codex", lastEvent: "task_complete", origin: nil),
-            armableResetBySession: ["c2": reset], enabled: true)
-        #expect(scannerOnly.reason?.contains("hook review prompt") == true)
-
-        // Claude has no hookless row to refuse — a Claude row exists because a
-        // hook wrote it — so the same absence must not lock Claude out.
-        let claudeWithoutOrigin = ContinueScheduler.availability(
-            for: session(origin: nil), armableResetBySession: resets, enabled: true)
-        #expect(claudeWithoutOrigin == .available(resetsAt: reset))
 
         let notBlocked = ContinueScheduler.availability(
             for: session(), armableResetBySession: [:], enabled: true)

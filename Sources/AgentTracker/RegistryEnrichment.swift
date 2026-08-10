@@ -20,7 +20,7 @@ enum RegistryEnrichment {
         entry: ClaudeSessionRegistry.Entry?
     ) -> AgentSession {
         // Provider-scoped: the registry only knows about Claude Code.
-        guard session.provider == "claude-code", let entry else { return session }
+        guard let entry else { return session }
         var enriched = session
         enriched.registryName = entry.name
         enriched.registryCwd = entry.cwd

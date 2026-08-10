@@ -186,10 +186,10 @@ final class StatusIconRendererTests {
 
     @Test func sessionCountsTallyByState() {
         let sessions = [
-            AgentSession(provider: "claude-code", sessionId: "a", state: .needsYou),
-            AgentSession(provider: "claude-code", sessionId: "b", state: .running),
-            AgentSession(provider: "codex", sessionId: "c", state: .running),
-            AgentSession(provider: "codex", sessionId: "d", state: .idle),
+            AgentSession(sessionId: "a", state: .needsYou),
+            AgentSession(sessionId: "b", state: .running),
+            AgentSession(sessionId: "c", state: .running),
+            AgentSession(sessionId: "d", state: .idle),
         ]
         let tallies = SessionCounts(of: sessions)
         #expect(tallies.needsYou == 1)

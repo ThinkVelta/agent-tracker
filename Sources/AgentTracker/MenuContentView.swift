@@ -32,7 +32,6 @@ struct MenuContentView: View {
                 // Not displayed, but still findable: this is the name Claude
                 // Code shows in its own terminal, so a user may well type it.
                 || (session.registryName?.localizedCaseInsensitiveContains(query) ?? false)
-                || session.providerDisplayName.localizedCaseInsensitiveContains(query)
                 || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
                 || (session.primaryDirectory?.localizedCaseInsensitiveContains(query) ?? false)
         }
@@ -306,7 +305,7 @@ struct MenuContentView: View {
                 .padding(.bottom, 2)
             Text("No agent sessions")
                 .font(.system(size: 12, weight: .medium))
-            Text("Start a Claude Code or Codex session,\nor run the installers in integrations/.")
+            Text("Start a Claude Code session,\nor run ./install.sh from the repo.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -316,8 +315,8 @@ struct MenuContentView: View {
     }
 
     // No Refresh button: reloads are event-driven (every hook write triggers
-    // one) with a periodic safety-net reload (cadence in Settings) — a manual button implied staleness
-    // that doesn't exist, and it never covered the codex scanner anyway.
+    // one) with a periodic safety-net reload (cadence in Settings) — a manual
+    // button implied a staleness that does not exist.
     /// Settings far left, quit far right — a routine control and a
     /// destructive one should not be adjacent (user feedback: quit felt
     /// misclickable next to the gear). The count sits between symmetric
@@ -436,7 +435,7 @@ private struct UsageChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Text("\(reading.providerLabel) \(reading.windowLabel)")
+            Text(reading.windowLabel)
                 .font(Theme.Typography.footer)
                 .foregroundStyle(.tertiary)
             Capsule()
@@ -591,11 +590,9 @@ struct SessionRow: View {
                 Button("Mark as seen", action: onAcknowledge)
             }
             Button(session.isMuted ? "Unmute" : "Mute") { muted.toggle(session.id) }
-            if let command = session.resumeCommand {
-                Button("Copy resume command") {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(command, forType: .string)
-                }
+            Button("Copy resume command") {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(session.resumeCommand, forType: .string)
             }
             if armedSchedule != nil {
                 Button("Cancel scheduled continue") {
@@ -691,12 +688,10 @@ struct SessionRow: View {
     /// acts without asking is worth saying out loud before the user arms it.
     private func readPermissionMode() {
         let sessionId = session.sessionId
-        let provider = session.provider
         Task {
             let mode = await Task.detached { () -> String? in
                 guard
-                    let row = SessionStore.loadSessionFromDisk(
-                        provider: provider, sessionId: sessionId)
+                    let row = SessionStore.loadSessionFromDisk(sessionId: sessionId)
                 else {
                     return nil
                 }
@@ -736,7 +731,6 @@ struct SessionRow: View {
                 continues.armResolvingPane(
                     ScheduledContinue(
                         sessionId: session.sessionId,
-                        provider: session.provider,
                         message: draft.message,
                         armedForResetAt: moment,
                         repeats: draft.repeats,
@@ -862,8 +856,7 @@ struct SessionRow: View {
             // and without this the row would be quietly lying about a session
             // that is in fact waiting on someone.
             session.isMuted ? "Muted" : nil,
-            session.providerDisplayName, session.locationContext,
-            session.reason ?? session.state.label,
+            session.locationContext, session.reason ?? session.state.label,
         ]
         .compactMap { $0 }
         .joined(separator: " · ")

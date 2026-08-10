@@ -4,7 +4,7 @@
 
 # Agent Tracker
 
-**Know which AI coding session needs you, without hunting through terminals.**
+**Know which Claude Code session needs you, without hunting through terminals.**
 
 [![macOS 14+](https://img.shields.io/badge/macOS-14%2B-000000?logo=apple&logoColor=white)](https://github.com/ThinkVelta/agent-tracker/releases/latest)
 [![Download](https://img.shields.io/badge/download-latest%20release-2ea44f)](https://github.com/ThinkVelta/agent-tracker/releases/latest)
@@ -19,9 +19,9 @@
 
 ## Why
 
-Run more than one coding agent and the same question keeps coming back: *which
-one is waiting on me?* Answering it means cycling through terminal windows
-across Spaces, and the answer goes stale while you look.
+Run more than one Claude Code session and the same question keeps coming back:
+*which one is waiting on me?* Answering it means cycling through terminal
+windows across Spaces, and the answer goes stale while you look.
 
 Agent Tracker keeps it in your menu bar. Three dots, three counts:
 
@@ -41,8 +41,8 @@ stops asking for attention. Click a *dot* to open the list already filtered to
 that state. Visit a session's terminal yourself and it clears on its own after a
 few seconds.
 
-No daemon, no telemetry, no account. Your agent CLIs report through the hook
-mechanisms they already support, and the app reads plain JSON off disk.
+No daemon, no telemetry, no account. Claude Code reports through the hooks it
+already supports, and the app reads plain JSON off disk.
 
 ## Install
 
@@ -70,7 +70,7 @@ Or download it by hand:
 2. Unzip it and drag **AgentTracker.app** to `/Applications`.
 
 Either way, launch it: a first-run window walks you through granting
-Accessibility, connecting your agent CLIs, and starting at login.
+Accessibility, connecting Claude Code, and starting at login.
 
 > [!IMPORTANT]
 > **The first launch is blocked, and the dialog's default button deletes the
@@ -150,7 +150,7 @@ whether to start something big is readable at a glance rather than discovered
 when a request is refused. Grey until 75%, amber to 90%, red past it; hover for
 the reset time. Shown only when a reading exists, because "nothing known" and
 "nothing used" are not the same thing. Claude's numbers need the statusline
-wrapper (below); Codex reports its own in the rollouts the app already tails.
+wrapper (below).
 
 **Context pressure, but only when it is pressure.** A Claude row shows how full
 its context window is once that passes 70% — amber, then red past 90% — and says
@@ -158,12 +158,8 @@ nothing below it. Every session climbs from zero all day, so a number on every
 row would be one more thing to read past; the threshold is what makes it worth
 looking at. It sits in its own slot rather than in the row's metadata line,
 because that line truncates and this is precisely the number you would not want
-cut. Both agents, from different arithmetic: Claude reports a percentage on its
-statusline payload (which needs the wrapper, below), while Codex reports tokens
-in its rollouts and the app divides. Codex's own numbers make that division
-worth stating — the cumulative total it also reports reached 153,694% of the
-window on one real session, so the figure here is the size of the **current**
-request, which is the one that falls when Codex compacts.
+cut. Needs the statusline wrapper (below), which is where the percentage
+comes from.
 
 **A banner, if you want one.** Off by default: the menu bar is the passive
 channel this app was built to be, and a notification is the most intrusive thing
@@ -183,48 +179,27 @@ gave, so the row still reads `Muted · Claude · api-gateway · Approve Bash?` �
 it says what it wants, it just does not pull you. Counts, sections and
 notifications all follow, because they read the state. The mute lasts as long as
 the session does; the next session in that directory has not asked to be
-ignored. *Copy resume command* puts `claude --resume <id>` or
-`codex resume <id>` on the clipboard, which is what you want once a session has
-ended and you would like it back.
-
-**Both agents, one mechanism.** Claude Code and Codex both report through their
-native hooks. Codex is additionally tracked live by reading its own session
-files, so a session that predates the hooks still shows up.
+ignored. *Copy resume command* puts `claude --resume <id>` on the clipboard,
+which is what you want once a session has ended and you would like it back.
 
 ## How it works
 
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.png">
-  <img alt="Agent CLIs write state files; Agent Tracker watches them; you get a menu bar icon, a session list and click-to-focus" src="assets/architecture-light.png" width="700">
+  <img alt="Claude Code writes state files; Agent Tracker watches them; you get a menu bar icon, a session list and click-to-focus" src="assets/architecture-light.png" width="700">
 </picture>
 </div>
 
-- **No daemon; event-driven at the core.** Agent CLIs push events through their
-  native hook mechanisms; a tiny dependency-free Python script
+- **No daemon; event-driven at the core.** Claude Code pushes events through
+  its native hook mechanism; a tiny dependency-free Python script
   (`integrations/agent-tracker-hook.py`) translates each event into a per-session
   JSON state file, and the app watches those directories with dispatch
-  sources/FSEvents. Two light timers back that up: a 1-second re-read (tunable
-  in Settings) because FSEvents does not fire for appends to a file Codex holds
-  open, and a 30-second `lsof` pass to notice when a `codex` process has gone.
-- **Codex has a second, weaker view of itself**, and the app keeps both. The
-  hooks in `~/.codex/hooks.json` are the primary source; underneath, the app
-  also watches Codex's own rollout files in `~/.codex/sessions` (read-only) for
-  `task_started`/`task_complete`/`turn_aborted`, which covers sessions that
-  started before the hooks were installed, a Codex too old to have them, and
-  the case where the hooks are configured but not yet trusted (Codex runs a
-  hook only after you approve it, and `codex exec` skips untrusted hooks
-  silently). Where both describe the same session **the hook wins** — a rollout
-  records no line meaning "an approval prompt is open", so the file-reader
-  would paint a waiting session as busy. Codex multi-agent fan-out is collapsed
-  into its root session: subagent threads get their own rollouts and even fire
-  `notify` per subagent turn, and the app identifies and absorbs them (one
-  session, one row) instead of showing a phantom "needs you" per finished
-  subagent.
+  sources/FSEvents. One light timer backs that up: a 1-second re-read (tunable
+  in Settings) that prunes dead sessions and refreshes relative timestamps.
 - **Dead sessions are pruned** automatically: each state file records the agent
   CLI's pid, and the app removes files whose process is gone (killed terminal,
-  crash) even without a clean `SessionEnd`. Codex sessions are pruned via an
-  `lsof`-based liveness check when their `codex` process exits.
+  crash) even without a clean `SessionEnd`.
 - **Click-to-focus** uses the Accessibility API: it matches the session to a
   terminal window by title, then raises the window. macOS switches to its
   Space automatically. For Claude Code the exact window title is learned live
@@ -237,8 +212,7 @@ files, so a session that predates the hooks still shows up.
   task summaries ("✳ &lt;task summary&gt;") and working-directory fragments
   remain as fallbacks when neither exists.
 - **A session waiting on a usage limit says so** instead of claiming it is
-  ready. Codex reports its windows in the rollouts the app already tails;
-  Claude reports a refusal into its transcript, and — if you opt into the
+  ready. Claude reports a refusal into its transcript, and — if you opt into the
   statusline wrapper (`./install.sh --statusline`) — how much of the 5-hour and
   7-day windows is used and when each resets, *before* anything is refused.
   The wrapper occupies the single `statusLine` slot in `settings.json` and runs
@@ -259,11 +233,9 @@ files, so a session that predates the hooks still shows up.
 
 ## Scheduled continues
 
-A session that stops on a usage limit — Claude Code or Codex — can be armed, from
-the clock on its row, to resume itself when the window resets. Codex's window is
-weekly rather than five-hourly, which changes nothing here: both providers report
-the moment their window resets, and that moment is what gets scheduled.
-**Off by default** — it is the
+A session that stops on a usage limit can be armed, from the clock on its row,
+to resume itself when the window resets. The moment comes from Claude's own
+reporting, never from a guess. **Off by default** — it is the
 only thing this app does that acts on a session rather than reporting on one, so
 it has its own switch in Settings › General.
 
@@ -302,10 +274,7 @@ delivery refuses far more often than it fires, and always says why:
   or a recycled pid all refuse.
 - **Only Ghostty and tmux.** Terminal.app is excluded permanently: its entire
   scripting dictionary has one text-injecting command, `do script`, which *runs*
-  what you give it. Claude Code and Codex are both armable, on the same terms — each
-  reports a finished turn through its own hooks, and a session tracked only by
-  reading Codex's rollout files is refused, because a rollout cannot say
-  "waiting on you" and a send at a prompt would answer it.
+  what you give it.
 
 Every attempt is recorded — sent, refused or failed. The most recent outcome for a
 session shows in its scheduling panel (click the clock), and every one is written
@@ -327,11 +296,10 @@ arming panel says so plainly for those modes rather than refusing. A mode this
 version does not recognise *is* refused, because a mode nobody has seen cannot be
 reasoned about.
 
-Where the mode comes from differs. Claude writes it into its transcript, which is
-read on arming; Codex publishes no transcript, so the mode arrives on its hook
-payloads instead. That matters more than it sounds: an absent mode counts as
-permitted, so a Codex session with no source at all would have slipped this gate
-rather than been stopped by it.
+Claude writes the mode into its transcript, which is read on arming, and also
+onto every hook payload, which is the fallback. That redundancy matters more
+than it sounds: an absent mode counts as permitted, so a session with no source
+at all would slip this gate rather than be stopped by it.
 
 ## Known limitations
 
@@ -341,7 +309,7 @@ rather than been stopped by it.
   flip: the rows are spread across the candidate windows rather than all pointing
   at the first, and clicking again walks the rest, so two rows normally open two
   terminals. What is *not* guaranteed is that each one opens its own. Neither
-  Ghostty nor Codex exposes a per-window identity that would settle it;
+  Ghostty exposes no per-window identity that would settle it;
   `WindowIdentity` documents the four routes that were tried and closed.
 - **Window matching is exact only when a title source exists.** Claude Code
   sessions get exact titles from the statusline payload, which means either your
@@ -354,18 +322,6 @@ rather than been stopped by it.
   set in a project's own settings shadows the user-level one, and nothing runs
   for `-p`, background agents, SDK sessions or an untrusted workspace, so those
   sessions report no usage at all.
-- **Codex only reports what it has been trusted to report.** Codex runs a hook
-  only after you approve it in its own review prompt, and `codex exec` skips
-  untrusted hooks without saying so. Until then Codex falls back to rollout
-  reading, which cannot see approval prompts — they stay green rather than red.
-- **A session inside tmux or screen can't be traced back to its window.** The
-  multiplexer's server is not a child of the terminal that started it, and tmux
-  overwrites the variable that would otherwise name the host, so click-to-focus
-  only works there if exactly one terminal app is running. Scheduled continues
-  are the exception and go the other way: inside tmux they are *more* reliable,
-  because the pane identifies itself.
-- Terminal support is tested with **Ghostty**; iTerm2, Terminal.app, WezTerm and
-  kitty are wired up but untested.
 
 ## Build from source
 
@@ -394,19 +350,12 @@ identity once (Keychain Access → Certificate Assistant → Create a Certificat
 
 Prefer the command line for the agent hookup? `./install.sh` is the same
 onboarding as a checkbox picker (non-interactive:
-`./install.sh --agents claude,codex --yes`), orchestrating
-`./integrations/install-claude-code.sh` and `./integrations/install-codex.sh`.
+`./install.sh --agents claude --yes`), orchestrating
+`./integrations/install-claude-code.sh`.
 Everything is idempotent and configs are backed up before editing. To remove it
 all again (hooks, the statusline wrapper, the installed app, its preferences),
 run `./integrations/uninstall.sh` (add `--purge` to also delete
 `~/.agent-tracker`).
-
-**Codex needs one manual step afterwards.** The installer registers hooks in
-`~/.codex/hooks.json` (appended after any you already have, so the trust you
-granted those survives) and adds the legacy `notify` line to `config.toml`. But
-Codex runs a hook only once you have trusted it: your next Codex launch shows a
-hook review prompt naming agent-tracker, and until you accept it nothing runs —
-`codex exec` skips untrusted hooks silently, so nothing else will tell you.
 
 Claude's usage windows and context pressure are a separate opt-in, because
 capturing them means
@@ -422,12 +371,9 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 - [ ] Homebrew tap: `brew install --cask agent-tracker`
 - [x] **Scheduled continues** — arm a session that stopped on a usage limit to
       resume itself when the window resets, from the clock on its row. Claude
-      Code and Codex. Off by default (Settings › General). See below.
+      Code. Off by default (Settings › General). See below.
 - [x] **Notifications** when a session flips to needs-you — opt-in, click to jump
       to that terminal (Settings › Sessions). See below.
-- [x] Migrate the Codex integration to its native hooks engine (approval-request
-      red states)
-- [ ] More providers (Kimi, GLM, …), since the state file schema is provider-agnostic
 - [x] Onboarding: install as .app + login item
 - [x] Downloadable releases, signed so the Accessibility grant survives an update
 

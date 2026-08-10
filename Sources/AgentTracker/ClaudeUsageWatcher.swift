@@ -36,7 +36,7 @@ final class ClaudeUsageWatcher {
     func check(_ sessions: [AgentSession]) -> [UsageLimit] {
         var found: [UsageLimit] = []
         for session in sessions {
-            guard session.provider == "claude-code", let path = session.transcriptPath else {
+            guard let path = session.transcriptPath else {
                 continue
             }
             if let limit = check(sessionId: session.sessionId, path: path) {
@@ -85,10 +85,10 @@ final class ClaudeUsageWatcher {
             let data = try? handle.read(upToCount: Int(size - readFrom)), !data.isEmpty
         else { return nil }
 
-        // Shared with the Codex scanner: consuming only up to the last newline is
+        // Consuming only up to the last newline is
         // what makes the next read resume on a line boundary, and what stops a
         // half-written trailing line from being parsed as garbage.
-        let (lines, consumed) = CodexRolloutParser.completeLines(in: data)
+        let (lines, consumed) = LineBuffer.completeLines(in: data)
 
         // Last one wins: a delta can hold a refusal and then a later resumption.
         var latest: UsageLimit?

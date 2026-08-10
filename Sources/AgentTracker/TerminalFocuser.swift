@@ -5,7 +5,7 @@ import ApplicationServices
 ///
 /// Strategy: verify Accessibility permission, then find the window whose title
 /// best matches the session (Claude Code sets window titles to "✳ <task
-/// summary>"; plain shells and the Codex TUI show the working directory or
+/// summary>"; a plain shell shows the working directory or
 /// project name) and raise it. Raising a window on another Space makes macOS
 /// switch to it.
 ///
@@ -93,7 +93,7 @@ enum TerminalFocuser {
         rotation: WindowIdentity.FocusRotation = .alone
     ) -> Outcome {
         log(
-            "focusing \(session.providerDisplayName) session \(session.sessionId) "
+            "focusing session \(session.sessionId) "
                 + "(cwd: \(session.cwd ?? "?"))"
         )
 
@@ -183,10 +183,10 @@ enum TerminalFocuser {
             return nil
         }
 
-        // A shared directory is the weakest kind of agreement: several agents
-        // routinely sit in one repo. Windows that exactly name another live
-        // session are hers, not this session's — dropping them is what stops
-        // a Codex row raising a Claude Code window.
+        // A shared directory is the weakest kind of agreement: several
+        // sessions routinely sit in one repo. Windows that exactly name another
+        // live session are hers, not this session's — dropping them is what
+        // stops one row raising another session's window.
         let hits = matched.filter { !target.ownedByAnother(AXAccess.title(of: windows[$0]) ?? "") }
         guard !hits.isEmpty else {
             log(
@@ -408,16 +408,14 @@ enum TerminalFocuser {
 
     /// Whether the window's live busy indicator agrees with the session's
     /// state. Used only to break ties between equally-titled windows: two
-    /// Codex sessions in one repo both title their window "Planner", and the
-    /// spinner is the only thing separating the one still working from the one
-    /// waiting at its prompt (user-reported: clicking a needs-you row raised
-    /// the sibling that was still running).
+    /// sessions in one repo can title their window identically, and the spinner
+    /// is the only thing separating the one still working from the one waiting
+    /// at its prompt (user-reported: clicking a needs-you row raised the
+    /// sibling that was still running).
     ///
-    /// Deliberately provider-agnostic. Review suggested gating this to Codex,
-    /// but both tracked CLIs paint braille frames while a turn is in flight —
-    /// verified against live windows, e.g. a running `claude-code` session
-    /// titled "⠂ Generate alternative LinkedIn post options". Gating it would
-    /// disable a working signal for the more common provider. Add a gate only
+    /// The braille frames are verified against live windows, e.g. a running
+    /// session titled "⠂ Generate alternative LinkedIn post options". Add a
+    /// gate only
     /// for a provider actually observed not to spin.
     static func activityAgrees(windowTitle: String, state: SessionState) -> Bool {
         showsBusySpinner(windowTitle) == (state == .running)

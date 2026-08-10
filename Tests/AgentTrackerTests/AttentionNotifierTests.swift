@@ -10,14 +10,13 @@ struct AttentionNotifierTests {
 
     private func session(
         _ id: String = "s1",
-        provider: String = "claude-code",
         state: SessionState = .needsYou,
         cwd: String = "/Users/dev/demo",
         reason: String? = nil,
         changedAt: TimeInterval = 60
     ) -> AgentSession {
         var session = AgentSession(
-            provider: provider, sessionId: id, cwd: cwd, state: state)
+            sessionId: id, cwd: cwd, state: state)
         session.reason = reason
         session.stateChangedAt = launch.addingTimeInterval(changedAt)
         return session
@@ -42,7 +41,7 @@ struct AttentionNotifierTests {
         var tracker = AttentionTracker(since: launch)
         _ = tracker.update(with: [session(changedAt: -3600)])
         let changes = tracker.update(with: [
-            session(changedAt: -3600), session("codex1", provider: "codex", changedAt: -900),
+            session(changedAt: -3600), session("codex1", changedAt: -900),
         ])
         #expect(changes.isEmpty)
     }
@@ -53,7 +52,7 @@ struct AttentionNotifierTests {
         _ = tracker.update(with: [session(state: .running)])
 
         let flip = tracker.update(with: [session(reason: "Approve Bash?")])
-        #expect(flip.began.map(\.sessionKey) == ["claude-code-s1"])
+        #expect(flip.began.map(\.sessionKey) == ["s1"])
 
         // The store republishes on every hook event and every timer tick, and
         // the session stays red until someone acknowledges it.
@@ -81,10 +80,10 @@ struct AttentionNotifierTests {
 
         let acknowledged = tracker.update(with: [session(state: .idle)])
         #expect(acknowledged.began.isEmpty)
-        #expect(acknowledged.ended == ["claude-code-s1"])
+        #expect(acknowledged.ended == ["s1"])
 
         let again = tracker.update(with: [session(changedAt: 300)])
-        #expect(again.began.map(\.sessionKey) == ["claude-code-s1"])
+        #expect(again.began.map(\.sessionKey) == ["s1"])
     }
 
     /// A session whose terminal was closed vanishes from the list entirely. Its
@@ -94,19 +93,7 @@ struct AttentionNotifierTests {
     func vanishedSessionEnds() {
         var tracker = AttentionTracker(since: launch)
         _ = tracker.update(with: [session()])
-        #expect(tracker.update(with: []).ended == ["claude-code-s1"])
-    }
-
-    /// The row identity everything else keys on is provider-qualified, so this
-    /// must be too, or one provider's session would silence the other's.
-    @Test("alerts are keyed by row identity, not by session id alone")
-    func keyedByRowIdentity() {
-        var tracker = AttentionTracker(since: launch)
-        _ = tracker.update(with: [
-            session(state: .running), session(provider: "codex", state: .running),
-        ])
-        let changes = tracker.update(with: [session(), session(provider: "codex")])
-        #expect(changes.began.map(\.sessionKey) == ["claude-code-s1", "codex-s1"])
+        #expect(tracker.update(with: []).ended == ["s1"])
     }
 
     @Test("the banner says what the row says")
@@ -114,7 +101,7 @@ struct AttentionNotifierTests {
         let alert = AttentionAlert(
             session: session(cwd: "/Users/dev/work/demo", reason: "Approve Bash?"))
         #expect(alert.title == "demo")
-        #expect(alert.subtitle == "Claude · work")
+        #expect(alert.subtitle == "work")
         #expect(alert.body == "Approve Bash?")
     }
 
@@ -132,7 +119,7 @@ struct AttentionNotifierTests {
     func safeWithoutABundle() async {
         guard !Notifications.isAvailable else { return }
         await AttentionNotifier.post(AttentionAlert(session: session()))
-        AttentionNotifier.withdraw(["claude-code-s1"])
+        AttentionNotifier.withdraw(["s1"])
         AttentionNotifier.withdraw([])
     }
 }

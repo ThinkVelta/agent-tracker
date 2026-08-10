@@ -58,22 +58,23 @@ For multi-step tasks, state a brief plan with a verify check per step.
 ## 5. Swift conventions
 
 - **Concurrency:** UI-facing state lives in `@MainActor final class … : ObservableObject` stores
-  (`SessionStore`, `CodexSessionScanner`). Heavy/background work goes in a plain worker class
-  confined to a private serial `DispatchQueue` (marked `@unchecked Sendable`, queue-confined
-  methods carry a `…Locked` suffix — see `CodexScanWorker`), publishing back to the main actor
-  via `Task { @MainActor in … }`. Don't introduce new concurrency patterns beside these.
+  (`SessionStore`, `ContinueSchedules`). Heavy/background work goes off the main actor via
+  `Task.detached` (see `ContinueSchedules.resolvePane`, kept off it because the Automation
+  preflight was measured taking over 100 seconds), publishing back with
+  `Task { @MainActor in … }`. Don't introduce new concurrency patterns beside these.
 - **SwiftUI:** the menu bar is a raw `NSStatusItem` + `NSPopover` owned by the `AppDelegate`
   (per-dot click zones — `MenuBarExtra`'s label is a single click target), hosting SwiftUI
   content via `NSHostingController`; `@ObservedObject` passed down. Build views from small
   `private var` computed subviews rather than nested closures or per-view view-model classes.
 - **Error handling:** degrade gracefully instead of throwing — `guard`/early-return with `try?`
-  for I/O, and parsers that never throw (unknown input maps to an "insignificant"/nil case, see
-  `CodexRolloutParser`). Malformed external input (state files, rollouts, tool output) must
-  never crash the app. No force-unwraps.
+  for I/O, and parsers that never throw (unknown input maps to nil rather than an error, see
+  `ClaudeStatusline` and `StatuslineDirectory.parse`). Malformed external input (state files,
+  transcripts, tool output) must never crash the app. No force-unwraps.
 - **Organization:** flat `Sources/AgentTracker/`, one concern per file. Stateless helpers are
   caseless `enum` namespaces with static methods (`StatusIconRenderer`, `TerminalFocuser`).
-  Keep pure parsing/derivation logic I/O-free and separate from watchers (`CodexRollout.swift`
-  vs `CodexSessionScanner.swift`) so it stays unit-testable.
+  Keep pure parsing/derivation logic I/O-free and separate from watchers
+  (`ClaudeStatusline.swift` vs `StatuslineDirectory.swift`, `ContinueScheduler.swift` vs
+  `ContinueSchedules.swift`) so it stays unit-testable.
 - **Dependencies:** none. Swift stdlib + Apple frameworks only; `Package.swift` declares no
   external packages and must stay that way.
 - **Formatting:** `swift format` with the repo's `.swift-format` — 4-space indent, 100 columns.

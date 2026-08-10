@@ -89,16 +89,11 @@ final class SessionStore: ObservableObject {
     /// redraw the menu bar icon on each one.
     @Published private(set) var usage: [UsageReading] = []
     private var lastClockBucket = 0
-    private var codexScanner: CodexSessionScanner?
     private let statuslineDirectory: StatuslineDirectory
     private let claudeRegistry: ClaudeSessionRegistry
-    private var scannerSubscription: AnyCancellable?
-    /// Sessions loaded from ~/.agent-tracker state files (hook-written).
+    /// Sessions loaded from ~/.agent-tracker state files (hook-written). The
+    /// only source there is: every row on screen was written by a hook.
     private var fileSessions: [AgentSession] = []
-    /// In-memory acknowledgements for scanner-derived codex rows — they have no
-    /// state file to rewrite. A session displays idle while ackDate is newer
-    /// than its stateChangedAt.
-    private var codexAcknowledgedAt: [String: Date] = [:]
     private let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
@@ -108,11 +103,9 @@ final class SessionStore: ObservableObject {
     var counts: SessionCounts { SessionCounts(of: sessions) }
 
     /// The session's live terminal window title, when known — the top-weight
-    /// candidate for window matching. Claude-only: Codex tab titles are bare
-    /// project names that already exact-match via the path candidates.
+    /// candidate for window matching.
     func exactWindowTitle(for session: AgentSession) -> String? {
-        guard session.provider == "claude-code" else { return nil }
-        return statuslineDirectory.title(for: session.sessionId)
+        statuslineDirectory.title(for: session.sessionId)
     }
 
     init() {
@@ -148,21 +141,6 @@ final class SessionStore: ObservableObject {
             .sink { [weak self] interval in
                 Task { @MainActor in self?.scheduleRefreshTimer(interval: interval) }
             }
-
-        // Kept now that Codex reports through its own hooks, because three
-        // kinds of session still have nothing else: one that started before the
-        // hooks were installed, a Codex too old to have them, and hooks that
-        // are registered but not yet trusted — which `codex exec` skips
-        // silently. It is also the only source of Codex usage limits, which no
-        // hook payload carries. `CodexMerge` decides where the two overlap.
-        let scanner = CodexSessionScanner()
-        codexScanner = scanner
-        scannerSubscription = scanner.$sessions
-            .combineLatest(scanner.$threadIdToSession, scanner.$subagentThreadIds)
-            .sink { [weak self] _, _, _ in
-                // Hop a tick so the scanner's published properties are set.
-                Task { @MainActor in self?.rebuild() }
-            }
     }
 
     private func scheduleRefreshTimer(interval: TimeInterval) {
@@ -186,13 +164,8 @@ final class SessionStore: ObservableObject {
         // session, so a watcher would fire far more often than the display can
         // use, and re-reading ~1.5 KB on the tick we already run is cheaper.
         for limit in ClaudeStatusline.limits(at: Self.claudeStatuslineURL) {
-            accountLimits.record(limit, for: "claude-code")
+            accountLimits.record(limit)
         }
-        // FSEvents does not reliably report appends to Codex's rollouts, so the
-        // scanner's cheap re-read rides this same tick. Without it, a turn
-        // starting or finishing in a session the hooks do not cover stayed
-        // invisible until the scanner's 30s liveness pass.
-        codexScanner?.refreshFiles()
         let fileManager = FileManager.default
         var loaded: [AgentSession] = []
         if let files = try? fileManager.contentsOfDirectory(
@@ -215,8 +188,7 @@ final class SessionStore: ObservableObject {
         rebuild()
     }
 
-    /// Merges hook-written state-file sessions with scanner-derived codex
-    /// sessions, deduping the codex state-file rows the scanner supersedes.
+    /// Turns the state files on disk into the rows the menu bar draws.
     private func rebuild() {
         // One clock read for the whole pass. Every decision below is time-based —
         // which sweep window this is, whether a usage limit has expired, whether
@@ -226,15 +198,8 @@ final class SessionStore: ObservableObject {
         var merged = fileSessions.map { session -> AgentSession in
             var enriched = RegistryEnrichment.apply(
                 to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId))
-            // Claude-only, for exactly the reason `exactWindowTitle` is: this
-            // map is built from Claude's statusline payload and keyed by
-            // session id alone, so without the guard a Codex row could inherit
-            // a Claude reading. The two lookups read the same map and had
-            // different rules, which is the part worth fixing.
-            if session.provider == "claude-code" {
-                enriched.contextUsedPercent = statuslineDirectory.contextUsedPercent(
-                    for: session.sessionId)
-            }
+            enriched.contextUsedPercent = statuslineDirectory.contextUsedPercent(
+                for: session.sessionId)
             return enriched
         }
         // Claude reports a refusal only in the transcript of the session that hit
@@ -242,36 +207,9 @@ final class SessionStore: ObservableObject {
         // running cannot be blocked; the 30-second bucket sweeps the rest as a
         // fallback, for the case where a refusal produces no hook at all.
         let sweeping = lastClockBucket != Self.clockBucket(at: now)
-        let claudeCandidates = merged.filter {
-            $0.provider == "claude-code" && (sweeping || $0.state == .needsYou)
-        }
-        for limit in usageWatcher.check(claudeCandidates) {
-            accountLimits.record(limit, for: "claude-code")
-        }
-
-        if let scanner = codexScanner {
-            for limit in scanner.usageLimits { accountLimits.record(limit, for: "codex") }
-            let scanned = scanner.sessions
-            var codexRows: [AgentSession] = []
-            merged.removeAll { row in
-                guard row.provider == "codex" else { return false }
-                codexRows.append(row)
-                return true
-            }
-            let resolution = CodexMerge.resolve(
-                fileRows: codexRows,
-                scanned: scanned,
-                threadMap: scanner.threadIdToSession,
-                subagentThreads: scanner.subagentThreadIds)
-            for fileURL in resolution.filesToDelete {
-                try? FileManager.default.removeItem(at: fileURL)
-            }
-            if !codexAcknowledgedAt.isEmpty {
-                let liveIds = Set(scanned.map(\.sessionId))
-                codexAcknowledgedAt = codexAcknowledgedAt.filter { liveIds.contains($0.key) }
-            }
-            merged.append(contentsOf: resolution.fallbackRows)
-            merged.append(contentsOf: resolution.scannerRows.map(applyAcknowledgement))
+        let candidates = merged.filter { sweeping || $0.state == .needsYou }
+        for limit in usageWatcher.check(candidates) {
+            accountLimits.record(limit)
         }
 
         // The limit is account-wide, so two rows must not straddle its reset and
@@ -282,12 +220,12 @@ final class SessionStore: ObservableObject {
         // reset. The session one is for the UI: only a row the limit actually
         // explains may be armed, and a provider-keyed lookup would offer the
         // clock on every Claude row the moment any one of them was blocked.
-        var blockingResetByProvider: [String: Date] = [:]
+        var blockingReset: Date?
         var armableBySession: [String: Date] = [:]
         merged = merged.map { session in
-            let limit = accountLimits.blockingLimit(for: session.provider, now: now)
+            let limit = accountLimits.blockingLimit(now: now)
             if let moment = limit?.resetsAt {
-                blockingResetByProvider[session.provider] = moment
+                blockingReset = moment
                 if UsageLimitPresentation.explains(session, limit: limit, now: now) {
                     armableBySession[session.sessionId] = moment
                 }
@@ -295,8 +233,7 @@ final class SessionStore: ObservableObject {
             return UsageLimitPresentation.apply(limit, to: session, now: now)
         }
         armableResetBySession = armableBySession
-        let readings = UsageSummary.readings(
-            from: accountLimits, providers: Set(merged.map(\.provider)), now: now)
+        let readings = UsageSummary.readings(from: accountLimits, now: now)
         if usage != readings { usage = readings }
 
         // After every other rule has decided what a row is, and before sorting:
@@ -333,7 +270,7 @@ final class SessionStore: ObservableObject {
         // disagree about the present, which is the bug class that bit this
         // feature's predecessors three times.
         continueSchedules.reconcile(
-            sessions: sessions, blockingResets: blockingResetByProvider, now: now)
+            sessions: sessions, blockingReset: blockingReset, now: now)
         // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
         // report from the installed app useful, and rebuilds fire on every
         // hook event and timer tick so the change filter is what keeps the
@@ -346,7 +283,7 @@ final class SessionStore: ObservableObject {
         // source, the other deliberately rewrites the state it prints.
         let rows = sessions.map { session -> String in
             let context = session.contextUsedPercent.map { " ctx=\(Int($0.rounded()))%" } ?? ""
-            return "\(session.provider):\(session.projectName)"
+            return "\(session.projectName)"
                 + "(\(session.state.rawValue))\(session.isMuted ? " muted" : "")\(context)"
         }
         let tallies =
@@ -374,17 +311,6 @@ final class SessionStore: ObservableObject {
         guard bucket != lastClockBucket else { return }
         lastClockBucket = bucket
         clockTick &+= 1
-    }
-
-    private func applyAcknowledgement(_ session: AgentSession) -> AgentSession {
-        guard session.state == .needsYou,
-            let ackDate = codexAcknowledgedAt[session.sessionId],
-            ackDate > (session.stateChangedAt ?? .distantPast)
-        else { return session }
-        var acknowledged = session
-        acknowledged.state = .idle
-        acknowledged.reason = "Seen"
-        return acknowledged
     }
 
     /// How many times each row has been clicked. Keyed by session id and pruned
@@ -468,10 +394,6 @@ final class SessionStore: ObservableObject {
                 try? updated.write(to: fileURL, options: .atomic)
             }
             reload()
-        } else if session.provider == "codex" {
-            // Scanner-derived row: no file to edit, overlay in memory instead.
-            codexAcknowledgedAt[session.sessionId] = Date()
-            rebuild()
         }
     }
 
@@ -482,14 +404,7 @@ final class SessionStore: ObservableObject {
     /// one "the turn had finished" is a claim about the past. Reading the file
     /// rather than the published array is also what keeps this callable from the
     /// detached delivery task without hopping to the main actor.
-    /// - Parameter provider: narrows the search when the caller knows it. Two
-    ///   providers minting the same session id is not a thing that happens —
-    ///   both issue UUIDs — but the fire path uses this row to decide whether to
-    ///   type into a terminal, and a lookup that *cannot* answer with the wrong
-    ///   session is worth more than one that merely does not.
-    nonisolated static func loadSessionFromDisk(
-        provider: String? = nil, sessionId: String
-    ) -> AgentSession? {
+    nonisolated static func loadSessionFromDisk(sessionId: String) -> AgentSession? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         guard
@@ -499,8 +414,7 @@ final class SessionStore: ObservableObject {
         for file in files where file.pathExtension == "json" {
             guard let data = try? Data(contentsOf: file),
                 let session = try? decoder.decode(AgentSession.self, from: data),
-                session.sessionId == sessionId,
-                provider == nil || session.provider == provider
+                session.sessionId == sessionId
             else { continue }
             return session
         }

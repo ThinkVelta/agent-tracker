@@ -6,7 +6,7 @@ final class SessionSectionsTests {
     private func sessions(_ state: SessionState, _ count: Int) -> [AgentSession] {
         (0..<count).map {
             AgentSession(
-                provider: "claude-code", sessionId: "\(state.rawValue)-\($0)", state: state)
+                sessionId: "\(state.rawValue)-\($0)", state: state)
         }
     }
 

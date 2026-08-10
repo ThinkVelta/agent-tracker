@@ -8,7 +8,7 @@ from the repo root.
 
 Usage:
   onboard.py                              # interactive checkbox picker
-  onboard.py --agents claude,codex --yes  # non-interactive (CI, scripts)
+  onboard.py --agents claude --yes  # non-interactive (CI, scripts)
   onboard.py --agents claude --statusline --yes   # …and capture usage windows
 
 Design constraints: dependency-free (stdlib only) and must degrade gracefully
@@ -71,33 +71,6 @@ AGENTS = [
                 "register agent-tracker hooks in settings.json — merge-only, your "
                 "existing settings are untouched; the hooks always exit 0 and can "
                 "never block or modify a session"
-            ),
-        ],
-    },
-    {
-        "key": "codex",
-        "name": "Codex CLI",
-        "script": "install-codex.sh",
-        "detect": lambda: (
-            bool(shutil.which("codex"))
-            or os.path.exists(os.path.expanduser("~/.codex"))
-        ),
-        "plan": [
-            "copy the hook script to ~/.agent-tracker/bin/",
-            "back up ~/.codex/hooks.json and config.toml alongside themselves",
-            (
-                "register agent-tracker hooks in ~/.codex/hooks.json — merge-only, "
-                "appended after any hooks you already have; they always exit 0 and "
-                "can never approve, deny or modify anything"
-            ),
-            (
-                "prepend one 'notify = [...]' line to config.toml — the legacy "
-                "turn-complete callback, kept so sessions already running when you "
-                "install still report something"
-            ),
-            (
-                "AFTERWARDS: Codex runs a hook only once you have trusted it, so "
-                "accept the hook review prompt on your next Codex launch"
             ),
         ],
     },
@@ -320,12 +293,6 @@ def print_outro():
         "  3. Only NEW agent sessions are tracked — restart any that are "
         "already running."
     )
-    print(dim("     (Codex sessions are also tracked automatically by watching"))
-    print(
-        dim(
-            "     ~/.codex/sessions read-only — no Codex restart needed for that part.)"
-        )
-    )
     print()
 
 
@@ -338,8 +305,7 @@ def main():
     parser.add_argument(
         "--agents",
         metavar="LIST",
-        help="comma-separated agents to set up (claude,codex); "
-        "skips the interactive picker",
+        help="comma-separated agents to set up (claude); skips the interactive picker",
     )
     parser.add_argument(
         "--yes",

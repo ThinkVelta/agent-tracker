@@ -66,7 +66,7 @@ final class ClaudeUsageWatcherTests {
 
     private func session(_ url: URL, id: String = "s1") -> AgentSession {
         var session = AgentSession(
-            provider: "claude-code", sessionId: id, cwd: "/Users/dev/demo", state: .needsYou)
+            sessionId: id, cwd: "/Users/dev/demo", state: .needsYou)
         session.transcriptPath = url.path
         return session
     }
@@ -129,13 +129,9 @@ final class ClaudeUsageWatcherTests {
         #expect(watcher.check([session(second)]).count == 1)
     }
 
-    @Test func sessionsWithoutATranscriptOrProviderAreSkipped() throws {
+    @Test func sessionsWithoutATranscriptAreSkipped() throws {
         let url = try transcript([refusalLine])
         let watcher = ClaudeUsageWatcher()
-
-        var codex = session(url, id: "codex-1")
-        codex.provider = "codex"
-        #expect(watcher.check([codex]).isEmpty)
 
         var pathless = session(url, id: "s2")
         pathless.transcriptPath = nil

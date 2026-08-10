@@ -1,6 +1,6 @@
 import Foundation
 
-/// Short-lived subprocess probes (lsof, pgrep) used for Codex liveness checks.
+/// Short-lived subprocess probes (lsof, pgrep).
 enum ProcessProbe {
     /// Runs a short-lived tool with a hard timeout, off the main thread.
     /// Returns stdout on normal termination (any exit code), nil on launch

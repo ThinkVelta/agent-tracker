@@ -5,7 +5,7 @@ import Testing
 
 final class AgentSessionTests {
     private func session(cwd: String?) -> AgentSession {
-        AgentSession(provider: "claude-code", sessionId: "s", cwd: cwd, state: .idle)
+        AgentSession(sessionId: "s", cwd: cwd, state: .idle)
     }
 
     // MARK: - State file decoding

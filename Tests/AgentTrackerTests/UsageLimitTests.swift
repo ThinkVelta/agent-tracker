@@ -16,13 +16,12 @@ final class UsageLimitTests {
     }
 
     private func session(
-        provider: String = "codex",
         state: SessionState = .needsYou,
-        lastEvent: String? = "task_complete",
+        lastEvent: String? = "Stop",
         reason: String? = "Turn complete — ready for you"
     ) -> AgentSession {
         var session = AgentSession(
-            provider: provider, sessionId: "s1", cwd: "/Users/dev/demo", state: state)
+            sessionId: "s1", cwd: "/Users/dev/demo", state: state)
         session.lastEvent = lastEvent
         session.reason = reason
         return session
@@ -30,21 +29,18 @@ final class UsageLimitTests {
 
     // MARK: - The account slot
 
-    /// One slot per provider per window. The evidence arrives in whichever
-    /// session hit the wall, but every session of that account is blocked, so
-    /// the reading cannot live on a row.
-    @Test func aReadingIsKeptPerProviderAndWindow() {
+    /// One slot per window. The evidence arrives in whichever session hit the
+    /// wall, but every session on the account is blocked, so the reading cannot
+    /// live on a row.
+    @Test func aReadingIsKeptPerWindow() {
         var limits = AccountLimits()
-        limits.record(limit(.weekly, resetsAt: reset), for: "codex")
-        limits.record(limit(.fiveHour, used: 50, resetsAt: reset, reached: false), for: "codex")
-        limits.record(limit(.fiveHour, resetsAt: reset), for: "claude-code")
+        #expect(limits.all.isEmpty)
+        limits.record(limit(.weekly, resetsAt: reset))
+        limits.record(limit(.fiveHour, used: 50, resetsAt: reset, reached: false))
 
-        #expect(limits.limits(for: "codex").count == 2)
-        #expect(limits.limits(for: "claude-code").count == 1)
-        #expect(limits.limits(for: "unknown").isEmpty)
-        // Providers do not bleed into each other.
-        #expect(limits.blockingLimit(for: "claude-code", now: reset.addingTimeInterval(-60)) != nil)
-        #expect(limits.blockingLimit(for: "gemini", now: reset.addingTimeInterval(-60)) == nil)
+        #expect(limits.all.count == 2)
+        // The windows do not bleed into each other: only the reached one blocks.
+        #expect(limits.blockingLimit(now: reset.addingTimeInterval(-60))?.window == .weekly)
     }
 
     /// Readings carry no observation time, so "later reset wins" is the only
@@ -52,14 +48,14 @@ final class UsageLimitTests {
     /// window.
     @Test func theLaterResetWinsForTheSameWindow() {
         var limits = AccountLimits()
-        limits.record(limit(.weekly, resetsAt: reset), for: "codex")
+        limits.record(limit(.weekly, resetsAt: reset))
         limits.record(
-            limit(.weekly, used: 92, resetsAt: reset.addingTimeInterval(3600)), for: "codex")
-        #expect(limits.limits(for: "codex").first?.usedPercent == 92)
+            limit(.weekly, used: 92, resetsAt: reset.addingTimeInterval(3600)))
+        #expect(limits.all.first?.usedPercent == 92)
 
         // An older reading arriving late does not overwrite the newer one.
-        limits.record(limit(.weekly, used: 100, resetsAt: reset), for: "codex")
-        #expect(limits.limits(for: "codex").first?.usedPercent == 92)
+        limits.record(limit(.weekly, used: 100, resetsAt: reset))
+        #expect(limits.all.first?.usedPercent == 92)
     }
 
     /// Equal resets are the COMMON case: every session on one account shares that
@@ -74,11 +70,11 @@ final class UsageLimitTests {
         // Both orders must agree, and both must keep the block.
         for readings in [[reached, plenty], [plenty, reached]] {
             var limits = AccountLimits()
-            for reading in readings { limits.record(reading, for: "codex") }
-            let merged = limits.limits(for: "codex").first
+            for reading in readings { limits.record(reading) }
+            let merged = limits.all.first
             #expect(merged?.isReached == true, "a real block was dropped")
             #expect(merged?.usedPercent == 100)
-            #expect(limits.blockingLimit(for: "codex", now: reset.addingTimeInterval(-60)) != nil)
+            #expect(limits.blockingLimit(now: reset.addingTimeInterval(-60)) != nil)
         }
     }
 
@@ -94,13 +90,13 @@ final class UsageLimitTests {
 
         for readings in [[truncated, exact], [exact, truncated]] {
             var limits = AccountLimits()
-            for reading in readings { limits.record(reading, for: "claude-code") }
-            let merged = limits.limits(for: "claude-code").first
+            for reading in readings { limits.record(reading) }
+            let merged = limits.all.first
             #expect(merged?.isReached == true, "the refusal was outranked by a stale percentage")
             #expect(merged?.usedPercent == 100)
             // The unrounded instant is the one worth keeping.
             #expect(merged?.resetsAt == reset.addingTimeInterval(37))
-            #expect(limits.limits(for: "claude-code").count == 1)
+            #expect(limits.all.count == 1)
         }
     }
 
@@ -109,34 +105,33 @@ final class UsageLimitTests {
     @Test func aGenuineNewWindowStillReplacesTheOldOne() {
         var limits = AccountLimits()
         limits.record(
-            limit(.fiveHour, used: 100, resetsAt: reset, reached: true), for: "claude-code")
+            limit(.fiveHour, used: 100, resetsAt: reset, reached: true))
         limits.record(
             limit(
-                .fiveHour, used: 3, resetsAt: reset.addingTimeInterval(5 * 3600), reached: false),
-            for: "claude-code")
-        let current = limits.limits(for: "claude-code").first
+                .fiveHour, used: 3, resetsAt: reset.addingTimeInterval(5 * 3600), reached: false))
+        let current = limits.all.first
         #expect(current?.isReached == false)
         #expect(current?.usedPercent == 3)
-        #expect(limits.blockingLimit(for: "claude-code", now: reset.addingTimeInterval(60)) == nil)
+        #expect(limits.blockingLimit(now: reset.addingTimeInterval(60)) == nil)
     }
 
     /// Two windows can both be exhausted; the one the user is actually waiting
     /// on is the one that frees up first.
     @Test func theSoonestResetIsWhatTheUserIsWaitingOn() {
         var limits = AccountLimits()
-        limits.record(limit(.weekly, resetsAt: reset.addingTimeInterval(86400)), for: "codex")
-        limits.record(limit(.fiveHour, resetsAt: reset), for: "codex")
-        let blocking = limits.blockingLimit(for: "codex", now: reset.addingTimeInterval(-60))
+        limits.record(limit(.weekly, resetsAt: reset.addingTimeInterval(86400)))
+        limits.record(limit(.fiveHour, resetsAt: reset))
+        let blocking = limits.blockingLimit(now: reset.addingTimeInterval(-60))
         #expect(blocking?.window == .fiveHour)
     }
 
     @Test func anExpiredReadingStopsBlockingWithoutBeingRemoved() {
         var limits = AccountLimits()
-        limits.record(limit(.weekly, resetsAt: reset), for: "codex")
-        #expect(limits.blockingLimit(for: "codex", now: reset.addingTimeInterval(-1)) != nil)
-        #expect(limits.blockingLimit(for: "codex", now: reset.addingTimeInterval(1)) == nil)
+        limits.record(limit(.weekly, resetsAt: reset))
+        #expect(limits.blockingLimit(now: reset.addingTimeInterval(-1)) != nil)
+        #expect(limits.blockingLimit(now: reset.addingTimeInterval(1)) == nil)
         // Still remembered — it simply no longer applies.
-        #expect(limits.limits(for: "codex").count == 1)
+        #expect(limits.all.count == 1)
     }
 
     // MARK: - What a row says
