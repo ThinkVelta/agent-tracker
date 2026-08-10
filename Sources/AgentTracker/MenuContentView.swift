@@ -29,12 +29,19 @@ struct MenuContentView: View {
         guard !query.isEmpty else { return sessions }
         return sessions.filter { session in
             session.displayName.localizedCaseInsensitiveContains(query)
-                // Not displayed, but still findable: this is the name Claude
-                // Code shows in its own terminal, so a user may well type it.
+                // Shown only on ambiguous rows, but findable on every one: this
+                // is the name Claude Code shows in the session's own terminal,
+                // so a user may well type it whether the row wears it or not.
                 || (session.registryName?.localizedCaseInsensitiveContains(query) ?? false)
                 || (session.reason?.localizedCaseInsensitiveContains(query) ?? false)
                 || (session.primaryDirectory?.localizedCaseInsensitiveContains(query) ?? false)
         }
+    }
+
+    /// Derived from the rows that will be on screen, not from every session:
+    /// a row cannot be confused with one the filter has already removed.
+    private var rowTitles: [String: String] {
+        SessionNaming.titles(for: filteredSessions)
     }
 
     private var sections: [SessionSections.Section] {
@@ -261,6 +268,7 @@ struct MenuContentView: View {
                 for: session, armableResetBySession: store.armableResetBySession,
                 enabled: preferences.scheduledContinues),
             windowTitle: store.exactWindowTitle(for: session),
+            title: rowTitles[session.sessionId],
             onSelect: {
                 store.focus(session)
                 dismiss()
@@ -537,6 +545,11 @@ struct SessionRow: View {
     /// The session's live terminal window title, which is how a Ghostty surface
     /// is identified at all. Supplied by the parent, which owns the store.
     var windowTitle: String?
+    /// What to call this row. Decided by the parent rather than the row,
+    /// because whether the project name is ambiguous is a fact about the *list*
+    /// — a row cannot see its own siblings. Defaults to the project name so the
+    /// row's other construction sites (previews) need no change.
+    var title: String?
     let onSelect: () -> Void
 
     @State private var hovering = false
@@ -741,8 +754,16 @@ struct SessionRow: View {
                         target: armedSchedule?.target,
                         tmuxTarget: armedSchedule?.tmuxTarget,
                         agent: armedSchedule?.agent),
-                    // The window title is how a Ghostty surface is identified at
-                    // all, and this is the app's best copy of it.
+                    // The window title is how a Ghostty surface is identified
+                    // at all, and this is the app's best copy of it.
+                    //
+                    // Deliberately NOT the row's display title. That can be the
+                    // registry name on an ambiguous row, and the registry name
+                    // is measurably not what the window is called — the
+                    // registry says "agent-tracker-3c" where the window says
+                    // "Continue tool development with menu interaction". Using
+                    // it here would turn a fallback that can match into one
+                    // that provably cannot.
                     expectedTitle: windowTitle ?? session.displayName)
                 editing = false
             },
@@ -766,7 +787,7 @@ struct SessionRow: View {
                     .frame(width: Theme.Metrics.accentBarWidth)
 
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(session.displayName)
+                    Text(title ?? session.displayName)
                         .font(Theme.Typography.sessionName)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -838,7 +859,7 @@ struct SessionRow: View {
         .animation(Theme.Motion.quick, value: showsPath)
         .accessibilityLabel(
             [
-                session.displayName, metadata,
+                title ?? session.displayName, metadata,
                 ContextPressure(usedPercent: session.contextUsedPercent)?.help,
                 session.primaryDirectory,
             ]

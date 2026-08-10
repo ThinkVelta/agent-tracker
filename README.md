@@ -152,6 +152,15 @@ the reset time. Shown only when a reading exists, because "nothing known" and
 "nothing used" are not the same thing. Claude's numbers need the statusline
 wrapper (below).
 
+**Two sessions in one repo stop looking identical.** Rows are titled by project,
+which is right until two of them share one — then the list shows the same word
+twice and the only way to tell which is which is to click one and find out.
+Claude already names every session for itself (`api-gateway-02`, the name it
+shows in that session's own terminal), so an ambiguous row wears that instead.
+Only an ambiguous one: a name like that on every row would be noise on the
+majority of lists, which have no duplicate at all. The name is searchable
+either way.
+
 **Context pressure, but only when it is pressure.** A Claude row shows how full
 its context window is once that passes 70% — amber, then red past 90% — and says
 nothing below it. Every session climbs from zero all day, so a number on every
