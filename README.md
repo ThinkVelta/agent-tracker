@@ -158,8 +158,12 @@ nothing below it. Every session climbs from zero all day, so a number on every
 row would be one more thing to read past; the threshold is what makes it worth
 looking at. It sits in its own slot rather than in the row's metadata line,
 because that line truncates and this is precisely the number you would not want
-cut. Needs the statusline wrapper (below), and Claude Code only: Codex publishes
-no equivalent.
+cut. Both agents, from different arithmetic: Claude reports a percentage on its
+statusline payload (which needs the wrapper, below), while Codex reports tokens
+in its rollouts and the app divides. Codex's own numbers make that division
+worth stating — the cumulative total it also reports reached 153,694% of the
+window on one real session, so the figure here is the size of the **current**
+request, which is the one that falls when Codex compacts.
 
 **A banner, if you want one.** Off by default: the menu bar is the passive
 channel this app was built to be, and a notification is the most intrusive thing

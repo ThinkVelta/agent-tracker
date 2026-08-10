@@ -105,9 +105,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// Where the session's terminal is, per the registry. Differs from `cwd`
     /// when the agent works in a subdirectory such as a worktree.
     var registryCwd: String?
-    /// How full this session's context window is, 0-100. Claude Code only, and
-    /// only once its statusline has rendered — joined in from
-    /// `StatuslineDirectory`, never read from the state file.
+    /// How full this session's context window is, 0-100. Joined in from
+    /// whichever source the provider has — `StatuslineDirectory` for Claude,
+    /// the rollout scanner for Codex — and never read from the state file: no
+    /// hook payload from either agent carries one.
     var contextUsedPercent: Double?
 
     private enum CodingKeys: String, CodingKey {
