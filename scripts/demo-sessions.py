@@ -124,7 +124,7 @@ def main():
             json.dumps(
                 {
                     "session_id": "demo-api-gateway-02",
-                    "context_window": {"used_percentage": 76},
+                    "context_window": {"used_percentage": 34},
                 },
                 indent=2,
                 sort_keys=True,
