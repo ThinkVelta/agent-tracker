@@ -39,9 +39,22 @@ jobs:
     # PR for a reason they can neither see nor fix. Skipping reads as "not
     # applicable" instead. Nothing is lost: a maintainer reviews fork PRs by
     # hand, and pushing the branch into this repo runs the reviewer normally.
+    #
+    # Skipped for release PRs too. `/release` opens them on `chore/release-*`
+    # with a one-line `VERSION` diff derived from commits the reviewer has
+    # already been through once each — there is nothing left to review, and a
+    # 15-minute cycle on it delays the one PR whose whole point is to be a
+    # formality. `release-pr.yml` runs the checks that DO make sense there.
+    #
+    # Skipping leaves no `Codex review` status at all, exactly as it already
+    # does for dependabot and forks. Harmless while `main` is unprotected
+    # (verified: no branch protection, no rulesets). If it is ever protected,
+    # every one of these three skips needs an always-runs job reporting
+    # success — this adds a case to that problem, it does not create it.
     if: >-
       github.event.pull_request.user.login != 'dependabot[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
+      && !startsWith(github.head_ref, 'chore/release-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

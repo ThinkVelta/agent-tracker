@@ -1,0 +1,80 @@
+name: Release PR
+
+run-name: 'Release PR - #${{ github.event.pull_request.number }}'
+
+# Only the PR that bumps VERSION. `/release` opens it on a `chore/release-*`
+# branch and nothing else uses that prefix, so the branch name is the trigger.
+#
+# These checks all exist in the `/release` skill already, as Step 5. They are
+# repeated here because a skill step is a thing a tired human can skip and CI is
+# not, and because the cost of getting them wrong is asymmetric: a tag is the
+# irreversible act, and every one of these is cheap to run and impossible to
+# undo afterwards.
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    if: startsWith(github.head_ref, 'chore/release-')
+    name: VERSION is releasable
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Tags are needed to answer "does this version already exist".
+          fetch-depth: 0
+
+      - name: Check VERSION
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "VERSION declares: $version"
+
+          # `UpdateCheck.swift` compares dotted integers and ignores anything
+          # else, so a version like 0.3.0-rc1 would publish and then be
+          # invisible in Settings > About. Refusing here is the only place that
+          # catches it before the tag.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+            echo "::error::VERSION must be dotted integers (got '$version'):" \
+              "the in-app update check ignores anything else, so this would" \
+              "publish and then never be offered as an update."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "::error::v$version is already tagged. A published version" \
+              "number is spent: the digest cannot be reproduced and every" \
+              "installed copy already advertises it. Roll forward instead."
+            exit 1
+          fi
+
+          latest="$(gh release list --limit 1 --json tagName --jq '.[0].tagName // ""' \
+            | sed 's/^v//')"
+          if [ -z "$latest" ]; then
+            echo "No published release yet — nothing to compare against."
+            exit 0
+          fi
+          echo "Latest published release: $latest"
+
+          # `sort -V` orders dotted versions properly, so the newer of the two
+          # is whichever it puts last.
+          highest="$(printf '%s\n%s\n' "$version" "$latest" | sort -V | tail -1)"
+          if [ "$version" = "$latest" ] || [ "$highest" != "$version" ]; then
+            echo "::error::VERSION ($version) must be strictly greater than" \
+              "the latest published release ($latest)."
+            exit 1
+          fi
+          echo "OK: $version is a new, releasable version."
