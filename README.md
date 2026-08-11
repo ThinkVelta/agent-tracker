@@ -169,14 +169,16 @@ no duplicate at all. A name *you* chose is always shown, because suppressing it
 would be the app overruling you about your own session. Either kind is
 searchable.
 
-**Context pressure, but only when it is pressure.** A Claude row shows how full
-its context window is once that passes 70% — amber, then red past 90% — and says
-nothing below it. Every session climbs from zero all day, so a number on every
-row would be one more thing to read past; the threshold is what makes it worth
-looking at. It sits in its own slot rather than in the row's metadata line,
-because that line truncates and this is precisely the number you would not want
-cut. Needs the statusline wrapper (below), which is where the percentage
-comes from.
+**Context pressure, shown quietly until it is pressure.** Every row *with a
+reading* says how full its context window is. Below 70% the number is set
+exactly like the timestamp beside it and recedes into the line; past 70% it
+takes weight and turns amber, and red past 90%. So a glance costs nothing and
+still tells you which session is running out of room — and a row with no reading
+at all stays blank rather than showing a zero, so "plenty left" and "nothing
+known" never look the same. It sits in its own slot rather than in the row's
+metadata line, because that line truncates and this is precisely the number you
+would not want cut. The reading arrives once that session's statusline has
+rendered, which needs the statusline wrapper (below).
 
 **A banner, if you want one.** Off by default: the menu bar is the passive
 channel this app was built to be, and a notification is the most intrusive thing

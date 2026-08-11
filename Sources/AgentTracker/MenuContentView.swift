@@ -847,15 +847,17 @@ struct SessionRow: View {
                 // being worth interrupting you would be the first thing cut.
                 if let pressure = ContextPressure(usedPercent: session.contextUsedPercent) {
                     Text(pressure.label)
-                        // Semibold, unlike the timestamp it sits beside. Same
-                        // size and weight as a neutral number made the colour
-                        // do all the work, and colour alone at 11pt over a
-                        // translucent panel is not enough work to do.
-                        .font(Theme.Typography.contextReading)
-                        .foregroundStyle(
-                            pressure.isUrgent
-                                ? Theme.Palette.critical : Theme.Palette.warning
+                        // Quiet readings are set exactly like the timestamp
+                        // beside them, so the row reads as one line until the
+                        // number has something to say. Weight arrives with the
+                        // colour: colour alone at 11pt over a translucent panel
+                        // is not enough to carry a warning.
+                        .font(
+                            pressure.emphasis == .quiet
+                                ? Theme.Typography.timestamp
+                                : Theme.Typography.contextReading
                         )
+                        .foregroundStyle(contextTint(pressure.emphasis))
                         .help(pressure.help)
                 }
 
@@ -886,6 +888,17 @@ struct SessionRow: View {
             ]
             .compactMap { $0 }
             .joined(separator: ", "))
+    }
+
+    /// `AnyShapeStyle` so the quiet case can be `.tertiary` — the hierarchical
+    /// style the timestamp uses, not a colour approximating it. Matching the
+    /// neighbour exactly is the whole point of the quiet state.
+    private func contextTint(_ emphasis: ContextPressure.Emphasis) -> AnyShapeStyle {
+        switch emphasis {
+        case .quiet: return AnyShapeStyle(.tertiary)
+        case .warning: return AnyShapeStyle(Theme.Palette.warning)
+        case .critical: return AnyShapeStyle(Theme.Palette.critical)
+        }
     }
 
     /// One dimmed line under the name: provider, where it lives, what it is
