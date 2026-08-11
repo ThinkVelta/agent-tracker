@@ -60,13 +60,20 @@ enum UsageSummary {
 
     /// A total order, because `AccountLimits` stores windows in a dictionary
     /// and hands them back in whatever order it feels like. Length decides it;
-    /// the label is the last resort and exists only so two windows of equal
-    /// length cannot swap places between passes, republishing the strip each
-    /// time for no reason anyone could see.
+    /// the id is the last resort and exists only so two windows of equal length
+    /// cannot swap places between passes, republishing the strip each time for
+    /// no reason anyone could see.
+    ///
+    /// The id rather than the label, which is a rendering and not an identity:
+    /// two different windows of equal length can print the same string, so
+    /// falling back to it would leave the order depending on which the
+    /// dictionary yielded first — the exact thing this exists to stop. The id
+    /// comes from the window itself, and `AccountLimits` keys on windows, so it
+    /// is unique by construction.
     private static func shorterWindowFirst(_ lhs: UsageReading, _ rhs: UsageReading) -> Bool {
         if lhs.window.minutes != rhs.window.minutes {
             return lhs.window.minutes < rhs.window.minutes
         }
-        return lhs.windowLabel < rhs.windowLabel
+        return lhs.id < rhs.id
     }
 }
