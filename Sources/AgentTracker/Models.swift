@@ -93,9 +93,13 @@ struct AgentSession: Codable, Identifiable, Equatable {
 
     // Set by the store when loading; not part of the on-disk schema.
     var fileURL: URL?
-    /// Claude Code's own name for this session ("planner-e8") — the slug the
+    /// Claude Code's own name for this session ("planner-e8") — the name the
     /// user sees in their own terminal. Joined in from the session registry.
     var registryName: String?
+    /// Whether that name was chosen by the user (`--name`, or `/rename`) rather
+    /// than derived by Claude. A chosen name is worth showing on its own; a
+    /// derived slug only earns its place when two rows would be identical.
+    var registryNameIsChosen = false
     /// Where the session's terminal is, per the registry. Differs from `cwd`
     /// when the agent works in a subdirectory such as a worktree.
     var registryCwd: String?

@@ -6,18 +6,18 @@ import Testing
 final class RegistryEnrichmentTests {
     private func entry(
         name: String? = "planner-e8",
+        nameIsChosen: Bool = false,
         cwd: String? = "/Users/dev/Planner",
         status: ClaudeSessionRegistry.Status = .busy,
         statusUpdatedAt: Date? = Date(),
         waitingFor: String? = nil
     ) -> ClaudeSessionRegistry.Entry {
         ClaudeSessionRegistry.Entry(
-            sessionId: "s1", pid: nil, cwd: cwd, name: name,
+            sessionId: "s1", pid: nil, cwd: cwd, name: name, nameIsChosen: nameIsChosen,
             status: status, statusUpdatedAt: statusUpdatedAt, waitingFor: waitingFor)
     }
 
     private func session(
-        provider: String = "claude-code",
         state: SessionState = .running,
         cwd: String? = "/Users/dev/Planner/planner-backend/.claude/worktrees/pln-388",
         changedAt: Date? = Date(timeIntervalSince1970: 1000)

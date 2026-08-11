@@ -8,10 +8,12 @@ struct SessionNamingTests {
     private func session(
         _ id: String,
         cwd: String,
-        registryName: String? = nil
+        registryName: String? = nil,
+        chosen: Bool = false
     ) -> AgentSession {
         var session = AgentSession(sessionId: id, cwd: cwd, state: .running)
         session.registryName = registryName
+        session.registryNameIsChosen = chosen
         return session
     }
 
@@ -94,5 +96,36 @@ struct SessionNamingTests {
         let titles = SessionNaming.titles(for: sessions)
         #expect(titles.count == sessions.count)
         #expect(titles.values.allSatisfy { !$0.isEmpty })
+    }
+
+    /// `/rename` is somebody saying what this session is. Answering that with
+    /// the directory name, on the grounds that the app judged the row
+    /// unambiguous, would be overruling them about their own session.
+    @Test("a name the user chose shows even when nothing is ambiguous")
+    func aChosenNameAlwaysShows() {
+        let titles = SessionNaming.titles(for: [
+            session(
+                "s1", cwd: "/Users/dev/acme/planner", registryName: "billing spike",
+                chosen: true),
+            session("s2", cwd: "/Users/dev/acme/checkout", registryName: "checkout-b2"),
+        ])
+        #expect(titles["s1"] == "billing spike")
+        #expect(titles["s2"] == "checkout")
+    }
+
+    /// The two rules coexist: a chosen name wins on its own, and a derived slug
+    /// beside it still earns its place by disambiguating.
+    @Test("chosen and derived names can sit in the same group")
+    func chosenAndDerivedTogether() {
+        let titles = SessionNaming.titles(for: [
+            session(
+                "s1", cwd: "/Users/dev/acme/planner", registryName: "the migration",
+                chosen: true),
+            session("s2", cwd: "/Users/dev/acme/planner", registryName: "planner-ac"),
+            session("s3", cwd: "/Users/dev/acme/planner", registryName: "planner-5b"),
+        ])
+        #expect(titles["s1"] == "the migration")
+        #expect(titles["s2"] == "planner-ac")
+        #expect(titles["s3"] == "planner-5b")
     }
 }

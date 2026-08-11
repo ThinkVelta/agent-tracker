@@ -23,6 +23,7 @@ enum RegistryEnrichment {
         guard let entry else { return session }
         var enriched = session
         enriched.registryName = entry.name
+        enriched.registryNameIsChosen = entry.nameIsChosen
         enriched.registryCwd = entry.cwd
         enriched.state = resolvedState(for: session, entry: entry)
         if enriched.state != session.state {
