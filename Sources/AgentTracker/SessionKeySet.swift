@@ -14,25 +14,9 @@ import Foundation
 final class SessionKeySet: ObservableObject {
     /// Mutes: a session told to stop asking. Its row displays idle, keeps its
     /// reason, and reads "Muted · …".
-    static let muted = SessionKeySet(defaults: sharedDefaults, storageKey: "mutedSessions")
+    static let muted = SessionKeySet(defaults: AppDefaults.shared, storageKey: "mutedSessions")
     /// Pins: a session held at the top of the list, whatever it is doing.
-    static let pinned = SessionKeySet(defaults: sharedDefaults, storageKey: "pinnedSessions")
-
-    /// Where the shared sets read from — the real domain, except while
-    /// rendering the README's images.
-    ///
-    /// The docs renderer runs the real app against synthetic sessions, but
-    /// these marks live in `UserDefaults` rather than in the fixture, so it
-    /// would read whichever sessions the person regenerating the images had
-    /// muted or pinned. Their own work would land in a committed picture. An
-    /// isolated suite, wiped on entry, is what keeps a render reproducible by
-    /// anyone.
-    private static let sharedDefaults: UserDefaults = {
-        guard CommandLine.arguments.contains("--render-preview") else { return .standard }
-        let name = "com.thinkvelta.agent-tracker.render-preview"
-        UserDefaults.standard.removePersistentDomain(forName: name)
-        return UserDefaults(suiteName: name) ?? .standard
-    }()
+    static let pinned = SessionKeySet(defaults: AppDefaults.shared, storageKey: "pinnedSessions")
 
     /// `AgentSession.id`.
     @Published private(set) var keys: Set<String> = []

@@ -17,7 +17,7 @@ struct MenuContentView: View {
     @State private var searchText = ""
     /// Explicit collapse choices, which override the automatic idle folding
     /// below. Absent means "whatever the list thinks is sensible".
-    @State private var sectionOverrides: [SessionState: Bool] = [:]
+    @State private var sectionOverrides: [String: Bool] = [:]
 
     private var query: String { searchText.trimmingCharacters(in: .whitespaces) }
 
@@ -66,6 +66,7 @@ struct MenuContentView: View {
         let narrowing = store.selectedFilter != nil || !query.isEmpty
         return SessionSections.build(
             from: filteredSessions.filter { !$0.isPinned },
+            grouping: preferences.grouping,
             overrides: SessionSections.overridesForNarrowing(
                 sectionOverrides, narrowing: narrowing),
             autoCollapseIdle: !narrowing && folding != .never,
@@ -97,10 +98,6 @@ struct MenuContentView: View {
                 sessionList
             }
             Divider()
-            if !store.usage.isEmpty {
-                usageStrip
-                Divider()
-            }
             footer
         }
         .frame(width: Theme.Metrics.popoverWidth)
@@ -252,14 +249,14 @@ struct MenuContentView: View {
     private func sectionHeader(_ section: SessionSections.Section) -> some View {
         Button {
             withAnimation(Theme.Motion.quick) {
-                sectionOverrides[section.state] = !section.isCollapsed
+                sectionOverrides[section.id] = !section.isCollapsed
             }
         } label: {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(section.state.color)
+                    .fill(section.accent.color)
                     .frame(width: 6, height: 6)
-                Text(section.state.label.uppercased())
+                Text(section.title.uppercased())
                     .font(Theme.Typography.sectionHeader)
                     .kerning(0.8)
                     .foregroundStyle(.tertiary)
@@ -281,8 +278,8 @@ struct MenuContentView: View {
         .buttonStyle(.plain)
         .help(
             section.isCollapsed
-                ? "Show \(section.state.label) sessions"
-                : "Hide \(section.state.label) sessions")
+                ? "Show \(section.title) sessions"
+                : "Hide \(section.title) sessions")
     }
 
     private func row(for session: AgentSession) -> some View {
@@ -351,29 +348,27 @@ struct MenuContentView: View {
     // No Refresh button: reloads are event-driven (every hook write triggers
     // one) with a periodic safety-net reload (cadence in Settings) — a manual
     // button implied a staleness that does not exist.
-    /// Settings far left, quit far right — a routine control and a
-    /// destructive one should not be adjacent (user feedback: quit felt
-    /// misclickable next to the gear). The count sits between symmetric
-    /// spacers, so it lands dead center.
-    /// Quota, where it can be read without looking for it.
+    /// Settings far left, quit far right — a routine control and a destructive
+    /// one should not be adjacent (user feedback: quit felt misclickable next
+    /// to the gear). That is the one rule this bar has always had, and the only
+    /// one the quota did not change.
     ///
-    /// Above the footer rather than inside it: the footer's three items are
-    /// controls and a count, and quota is neither. Shown only when a reading
-    /// exists — an empty strip would imply "nothing used" where the truth is
-    /// "nothing known", and those are the two states this must never merge.
-    private var usageStrip: some View {
-        HStack(spacing: 10) {
-            ForEach(store.usage) { reading in
-                UsageChip(reading: reading)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Theme.Metrics.gutter)
-        .padding(.vertical, 5)
-    }
-
+    /// One bar, not two. Quota lived on its own row above this one and read as
+    /// a second footer for the sake of two numbers; the controls, the count and
+    /// the quota are all "about the list rather than in it", so they belong on
+    /// the same line.
+    ///
+    /// The count gives up its centred position for it. Centring only looked
+    /// deliberate while the row held one thing — with the quota on the left it
+    /// would read as approximately-centred, which is worse than plainly
+    /// right-aligned. Two groups now: settings and quota at the leading edge,
+    /// count and quit at the trailing one.
+    ///
+    /// A window with no reading simply is not there, so a footer stays a footer
+    /// on a machine that has never run the statusline wrapper. An empty strip
+    /// would have implied "nothing used" where the truth is "nothing known".
     private var footer: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             FooterIconButton(systemName: "gearshape", help: "Settings (⌘,)") {
                 // Close the panel first or the settings window opens behind
                 // it; activate because an accessory app's windows otherwise
@@ -382,11 +377,15 @@ struct MenuContentView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
             }
-            Spacer()
+            ForEach(store.usage) { reading in
+                UsageChip(reading: reading)
+            }
+            Spacer(minLength: 4)
             Text(sessionSummary)
                 .font(Theme.Typography.footer)
                 .foregroundStyle(.tertiary)
-            Spacer()
+                .lineLimit(1)
+                .layoutPriority(1)
             FooterIconButton(systemName: "power", help: "Quit AgentTracker") {
                 requestQuit()
             }
@@ -608,7 +607,6 @@ struct SessionRow: View {
     let onSelect: () -> Void
 
     @State private var hovering = false
-    @State private var showsPath = false
 
     /// The trailing control is a SIBLING of the row button, never inside its
     /// label. #28 (`99608db`) removed exactly such a nested control with the
@@ -633,20 +631,7 @@ struct SessionRow: View {
             // the control, which put the pointer back over the button, which
             // re-hovered the row. Hover drove hit-testing and hit-testing drove
             // hover, and the pair oscillated at screen refresh rate.
-            .onHover { hovering in
-                self.hovering = hovering
-                guard hovering else {
-                    showsPath = false
-                    return
-                }
-                // Our own delay rather than .help(): AppKit's tooltip timer is
-                // system-owned and takes over a second, which is far too slow
-                // for a list you are scanning.
-                Task {
-                    try? await Task.sleep(for: .milliseconds(280))
-                    if self.hovering { showsPath = true }
-                }
-            }
+            .onHover { self.hovering = $0 }
             if editing { editorPanel }
         }
         .contextMenu {
@@ -893,33 +878,6 @@ struct SessionRow: View {
             )
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .bottomLeading) {
-            // Not while the arming panel is open: the card floats below the
-            // row and would land on top of the panel's own text. Hovering to
-            // read a path and reading the panel are different activities, and
-            // the panel is the one the user deliberately opened.
-            if showsPath, !editing, let cwd = session.primaryDirectory {
-                Text(cwd)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .truncationMode(.head)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(.background)
-                            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
-                    )
-                    .frame(maxWidth: Theme.Metrics.popoverWidth - 32, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .offset(x: 8, y: 18)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-                    .zIndex(1)
-            }
-        }
-        .animation(Theme.Motion.quick, value: showsPath)
         .accessibilityLabel(
             [
                 title ?? session.displayName, metadata,

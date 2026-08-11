@@ -94,6 +94,14 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(idleFolding.stored, forKey: Keys.idleFolding) }
     }
 
+    // MARK: - Grouping
+
+    /// What the dropdown's sections divide on. State by default: the app's
+    /// question is "which one needs me", and that is a state.
+    @Published var grouping: SessionSections.Grouping {
+        didSet { defaults.set(grouping.rawValue, forKey: Keys.grouping) }
+    }
+
     // MARK: - Refresh cadence
 
     /// How often the safety-net reload runs. Session *events* arrive by
@@ -178,6 +186,7 @@ final class Preferences: ObservableObject {
     private enum Keys {
         static let appearance = "appearanceOverride"
         static let idleFolding = "idleFoldingThreshold"
+        static let grouping = "sessionGrouping"
         static let autoAckDwell = "autoAckDwellSeconds"
         static let refreshInterval = "refreshIntervalSeconds"
         static let confirmQuit = "confirmQuit"
@@ -195,8 +204,10 @@ final class Preferences: ObservableObject {
     private let defaults: UserDefaults
 
     /// `defaults` is injectable so tests run against their own suite and the
-    /// real domain is never touched.
-    init(defaults: UserDefaults = .standard) {
+    /// real domain is never touched. The default is `AppDefaults.shared` rather
+    /// than `.standard` so a docs render does not inherit the settings of
+    /// whoever regenerated the images.
+    init(defaults: UserDefaults = AppDefaults.shared) {
         self.defaults = defaults
         appearanceOverride =
             AppearanceOverride(rawValue: defaults.string(forKey: Keys.appearance) ?? "")
@@ -225,6 +236,9 @@ final class Preferences: ObservableObject {
                 Self.refreshOptions.contains { $0.seconds == interval } ? interval : nil
             } ?? SessionStore.defaultRefreshInterval
 
+        grouping =
+            SessionSections.Grouping(rawValue: defaults.string(forKey: Keys.grouping) ?? "")
+            ?? .state
         confirmQuit = defaults.object(forKey: Keys.confirmQuit) as? Bool ?? true
 
         // Monochrome used to BE a mode; it is now a switch crossed with every
