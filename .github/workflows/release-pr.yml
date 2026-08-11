@@ -1,0 +1,166 @@
+name: Release PR
+
+run-name: 'Release PR - #${{ github.event.pull_request.number }}'
+
+# Only the PR that bumps VERSION. `/release` opens it on a `chore/release-*`
+# branch and nothing else uses that prefix, so the branch name is the trigger.
+#
+# These checks all exist in the `/release` skill already, as Step 5. They are
+# repeated here because a skill step is a thing a tired human can skip and CI is
+# not, and because the cost of getting them wrong is asymmetric: a tag is the
+# irreversible act, and every one of these is cheap to run and impossible to
+# undo afterwards.
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    if: startsWith(github.head_ref, 'chore/release-')
+    name: VERSION is releasable
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Tags are needed to answer "does this version already exist", and
+          # the base commit to answer "is this really only a version bump".
+          fetch-depth: 0
+
+      - name: Only VERSION changed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          changed="$(git diff --name-only "$BASE_SHA...HEAD")"
+          echo "Changed files:"
+          echo "$changed"
+          if [ "$changed" != "VERSION" ]; then
+            echo "::error::A chore/release-* PR must change VERSION and nothing" \
+              "else. The AI reviewer skips this branch prefix precisely because" \
+              "there is nothing to review — so anything else here would reach" \
+              "main unreviewed."
+            exit 1
+          fi
+
+      - name: Check VERSION
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The app's ordering, not the shell's. `UpdateCheck.isNewer` compares
+          # dotted integers segment by segment and pads a missing segment with
+          # zero, so it reads 1.0 and 1.0.0 as the SAME version — while
+          # `sort -V` reads 1.0.0 as newer. Using `sort -V` here would let a
+          # release pass this check and then never be offered to anybody
+          # already on 1.0, silently, which is the exact failure the check
+          # exists to prevent. `UpdateCheckTests` already pins that behaviour
+          # (`!isNewer("1.0.0", than: "1.0")`), so the Swift side is anchored;
+          # this is the copy that has to be kept in step with it.
+          is_newer() {
+            local -a lhs rhs
+            IFS='.' read -r -a lhs <<< "$1"
+            IFS='.' read -r -a rhs <<< "$2"
+            local count=${#lhs[@]}
+            [ "${#rhs[@]}" -gt "$count" ] && count=${#rhs[@]}
+            local index left right
+            for ((index = 0; index < count; index++)); do
+              left="${lhs[index]:-0}"
+              right="${rhs[index]:-0}"
+              ((10#$left > 10#$right)) && return 0
+              ((10#$left < 10#$right)) && return 1
+            done
+            return 1
+          }
+
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "VERSION declares: $version"
+
+          # `UpdateCheck.numericVersion` returns nil for anything that is not
+          # dotted integers, and a nil candidate is never newer — so a version
+          # like 0.3.0-rc1 would publish and then be invisible in Settings >
+          # About. Refusing here is the only place that catches it before the
+          # tag.
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+            echo "::error::VERSION must be dotted integers (got '$version'):" \
+              "the in-app update check ignores anything else, so this would" \
+              "publish and then never be offered as an update."
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/v$version" > /dev/null; then
+            echo "::error::v$version is already tagged. A published version" \
+              "number is spent: the digest cannot be reproduced and every" \
+              "installed copy already advertises it. Roll forward instead."
+            exit 1
+          fi
+
+          # The same endpoint the app polls. `gh release list --limit 1` is
+          # "most recently created", which includes prereleases and drafts and
+          # so can name a release the app would never compare against.
+          #
+          # Fails CLOSED. This gates an irreversible act, and the first version
+          # of it swallowed every error into "no releases yet" — so a rate
+          # limit, an expired token or a GitHub outage would have skipped the
+          # monotonicity guard entirely and reported success. A gate that
+          # passes when it cannot do its job is worse than no gate, because it
+          # is the one you stop checking behind.
+          #
+          # Only a genuine 404 means "nothing published yet", which is the one
+          # case that legitimately has nothing to compare against.
+          set +e
+          latest_raw="$(gh api "repos/${{ github.repository }}/releases/latest" \
+            --jq '.tag_name // ""' 2> gh_error)"
+          status=$?
+          set -e
+
+          if [ "$status" -ne 0 ]; then
+            if grep -q '404' gh_error; then
+              echo "No published release yet — nothing to compare against."
+              exit 0
+            fi
+            echo "::error::Could not read the latest release, so this version" \
+              "cannot be checked against it. Refusing rather than assuming."
+            cat gh_error
+            exit 1
+          fi
+
+          # Both cases, because `UpdateCheck.numericVersion` strips both — a
+          # tag of `V1.2.3` is a version to the app and would have been a
+          # nonsense segment list here.
+          latest="${latest_raw#[vV]}"
+          if [ -z "$latest" ]; then
+            echo "::error::The latest release carries no tag name, which should" \
+              "not be possible. Refusing rather than assuming."
+            exit 1
+          fi
+          # The app answers a malformed latest tag by offering the update
+          # anyway (`isNewer` treats an unreadable *current* version as always
+          # upgradable). CI must not copy that: a release tagged with something
+          # it cannot parse is a thing for a human to look at, not to wave
+          # through on the way to another tag.
+          if ! printf '%s' "$latest" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+            echo "::error::The latest release is tagged '$latest_raw', which is" \
+              "not a numeric dotted version. Refusing rather than guessing how" \
+              "it orders."
+            exit 1
+          fi
+          echo "Latest published release: $latest"
+
+          if ! is_newer "$version" "$latest"; then
+            echo "::error::VERSION ($version) is not newer than the latest" \
+              "published release ($latest) by the app's own comparison, so it" \
+              "would never be offered as an update."
+            exit 1
+          fi
+          echo "OK: $version is a new, releasable version."
