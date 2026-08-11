@@ -47,6 +47,10 @@ enum Theme {
         static let sessionName = Font.system(size: 13, weight: .semibold)
         static let sessionMeta = Font.system(size: 11)
         static let timestamp = Font.system(size: 11).monospacedDigit()
+        /// The context percentage. Heavier than the timestamp beside it: it
+        /// only appears when it wants attention, so it should not read as one
+        /// more neutral number.
+        static let contextReading = Font.system(size: 11, weight: .semibold).monospacedDigit()
         static let sectionHeader = Font.system(size: 10, weight: .semibold)
         static let tileCount = Font.system(size: 13, weight: .semibold).monospacedDigit()
         static let tileLabel = Font.system(size: 10, weight: .medium)
@@ -55,6 +59,32 @@ enum Theme {
     }
 
     enum Palette {
+        /// The two colours that mean "look at this number": approaching a
+        /// limit, and past it. Used by the context reading on a row and by the
+        /// quota strip.
+        ///
+        /// Not `Color.orange` and `Color.red`. The dropdown is a translucent
+        /// panel, so these sit over whatever the desktop happens to be, and
+        /// system orange at 11pt over a bright wallpaper is a colour you can
+        /// see but not read — reported against a live window as "the 71% isn't
+        /// really visible". Darker than the system colour in light mode and
+        /// lighter in dark, so the number carries in both.
+        static let warning = dynamic(
+            light: NSColor(srgbRed: 0.70, green: 0.36, blue: 0.00, alpha: 1),
+            dark: NSColor(srgbRed: 1.00, green: 0.72, blue: 0.30, alpha: 1))
+        static let critical = dynamic(
+            light: NSColor(srgbRed: 0.72, green: 0.00, blue: 0.00, alpha: 1),
+            dark: NSColor(srgbRed: 1.00, green: 0.48, blue: 0.42, alpha: 1))
+
+        /// Resolved per draw rather than at launch, so the panel follows a
+        /// light/dark switch without the app restarting.
+        private static func dynamic(light: NSColor, dark: NSColor) -> Color {
+            Color(
+                nsColor: NSColor(name: nil) { appearance in
+                    appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+                })
+        }
+
         /// Hover wash on an interactive row.
         static let rowHover = Color.primary.opacity(0.07)
         /// Resting fill of a filter tile.

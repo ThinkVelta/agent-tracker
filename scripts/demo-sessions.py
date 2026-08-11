@@ -78,9 +78,12 @@ def main():
             {
                 "sessionId": session_id,
                 "cwd": cwd,
-                # Claude's own slug for the session. Only surfaces on rows the
-                # project name cannot tell apart, which here is api-gateway.
+                # Claude's own slug for the session, and the marker saying it
+                # derived that rather than being told it. Without the marker
+                # every row reads as deliberately named and wears its slug —
+                # which is what real registry entries do NOT look like.
                 "name": f"{name}-{session_id[-2:]}",
+                "nameSource": "derived",
             }
         )
 
