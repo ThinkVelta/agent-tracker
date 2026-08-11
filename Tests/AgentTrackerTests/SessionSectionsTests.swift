@@ -187,6 +187,24 @@ final class SessionSectionsTests {
         #expect(Set(built.map(\.id)).count == 2)
     }
 
+    /// The order has to be total, and the case that makes it so is the one the
+    /// path-keying introduced: two projects CAN share a title now. Sorting on
+    /// urgency and title alone left those to the dictionary's whim.
+    @Test func sectionsSharingATitleAndAStateKeepTheirOrder() {
+        let work = AgentSession(sessionId: "w", cwd: "/Users/dev/work/acme/api", state: .running)
+        let personal = AgentSession(sessionId: "p", cwd: "/Users/dev/oss/api", state: .running)
+
+        // Repeated because the source is a dictionary: a missing tiebreak shows
+        // up as an intermittent swap, not as a failure every run.
+        for _ in 0..<50 {
+            let built = SessionSections.build(from: [work, personal], grouping: .project)
+            #expect(
+                built.map(\.id) == [
+                    "project:/Users/dev/oss/api", "project:/Users/dev/work/acme/api",
+                ])
+        }
+    }
+
     /// The other half of the same rule: worktrees of one repo are one project,
     /// which is exactly what somebody with three branches checked out wants.
     @Test func worktreesOfOneRepositoryStayTogether() {

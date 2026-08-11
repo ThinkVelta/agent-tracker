@@ -141,7 +141,14 @@ enum SessionSections {
                     }
                     // Alphabetical within a tier, so a section does not move
                     // just because a row inside it did.
-                    return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+                    let byTitle = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+                    if byTitle != .orderedSame { return byTitle == .orderedAscending }
+                    // And the path last, because two projects CAN share a title
+                    // now — that is the whole reason this groups on the path.
+                    // With only the title, two equally urgent `api` repos would
+                    // be ordered by whatever the dictionary yielded first and
+                    // swap between passes.
+                    return lhs.id < rhs.id
                 }
         }
     }
