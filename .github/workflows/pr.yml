@@ -1,13 +1,14 @@
 name: PR Reviewer
 run-name: 'PR Reviewer - #${{ github.event.pull_request.number }}'
 
-# This repo has a single long-lived branch: feature branches PR straight into
-# `main`, so `main` is the feature-PR base and the right trigger for a
-# per-feature reviewer.
+# Feature branches PR into `dev`, which is where the per-feature review belongs.
+# `main` stays in the list for the two things that still target it: the
+# `dev -> main` release PR (skipped below) and a hotfix (reviewed normally).
 on:
   pull_request:
     branches:
       - main
+      - dev
     types: [opened, synchronize, reopened]
 
 # Each push to a PR re-triggers this workflow, which runs the (expensive)
@@ -40,21 +41,37 @@ jobs:
     # applicable" instead. Nothing is lost: a maintainer reviews fork PRs by
     # hand, and pushing the branch into this repo runs the reviewer normally.
     #
-    # Skipped for release PRs too. `/release` opens them on `chore/release-*`
-    # with a one-line `VERSION` diff derived from commits the reviewer has
-    # already been through once each — there is nothing left to review, and a
-    # 15-minute cycle on it delays the one PR whose whole point is to be a
-    # formality. `release-pr.yml` runs the checks that DO make sense there.
+    # Skipped for the two release-shaped PRs, for the same reason in both cases:
+    # every commit in them has already been through this reviewer once.
+    #
+    #   `chore/release-*` -> dev   one line of VERSION
+    #   dev -> main                the release itself
+    #
+    # Both halves of each shape are matched, head AND base. Keying the skip on
+    # the head alone would let a MIS-TARGETED release PR — `chore/release-*`
+    # aimed at `main` instead of `dev` — skip review and still pass
+    # `release-pr.yml`, putting a bump on `main` that never went through `dev`.
+    # That is the exact divergence this whole model exists to prevent, so a
+    # release PR pointed at the wrong base falls through to an ordinary review
+    # rather than to a special failure path: wrong shape, no skip, no gap.
+    #
+    # The `dev -> main` skip is only safe because the guard hook forbids pushing
+    # to `dev`, so everything in it arrived through a reviewed PR. If that guard
+    # is ever relaxed, this skip has to go with it — they are one mechanism.
     #
     # Skipping leaves no `Codex review` status at all, exactly as it already
     # does for dependabot and forks. Harmless while `main` is unprotected
     # (verified: no branch protection, no rulesets). If it is ever protected,
-    # every one of these three skips needs an always-runs job reporting
-    # success — this adds a case to that problem, it does not create it.
+    # every one of these skips needs an always-runs job reporting success —
+    # this adds cases to that problem, it does not create it.
+    #
+    # A HOTFIX is deliberately not in this list: it targets `main` from an
+    # ordinary branch, so it is reviewed like anything else.
     if: >-
       github.event.pull_request.user.login != 'dependabot[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && !startsWith(github.head_ref, 'chore/release-')
+      && !(startsWith(github.head_ref, 'chore/release-') && github.base_ref == 'dev')
+      && !(github.head_ref == 'dev' && github.base_ref == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

@@ -93,20 +93,33 @@ watches that directory and renders state. See README for the full picture.
 
 ## Git workflow
 
-This repo has a single long-lived branch: `main`. Work lands through short-lived feature
-branches (`feat/...`, `fix/...`, `chore/...`, `docs/...`) that branch off `main` and PR back
-into it.
+This repo has **two** long-lived branches, and they mean different things:
+
+- **`dev` is where work integrates.** Feature branches (`feat/...`, `fix/...`, `chore/...`,
+  `docs/...`) branch off `dev` and PR back into it. This is where every ordinary change goes.
+- **`main` is what has been released.** It only ever moves through the one `dev -> main` PR that
+  `/release` opens, so a clone of `main` matches what users actually have.
+
+Both are protected by the guard hook: neither can be pushed to directly, by anyone, ever. That
+is not a nicety — it is the whole basis for the release PR skipping review, because it is what
+makes "everything in `dev` arrived through a reviewed PR" true rather than hoped.
 
 - Conventional Commits, enforced by the commitizen commit-msg hook
 - Push only your own feature branch, always with an explicit refspec
   (`git push -u origin HEAD:refs/heads/<feature-branch>`)
-- Open PRs into `main`; a human merges every PR — never `gh pr merge`
+- **Open PRs into `dev`**, not `main`; a human merges every PR — never `gh pr merge`
 - Never `git commit --no-verify` — a PreToolUse hook blocks all of the above mechanically
 - PRs receive an automated AI review comment; address its points or reply explaining why not
 - **Comment before pushing, always**: the Codex reviewer snapshots the PR at the moment new
   commits arrive, so an explanation posted after the push is invisible to the round that push
   triggers. Post the reply comment (fix rationale or reasoned decline) first, then push —
   otherwise every round burns a CI cycle re-litigating what was already answered
+- **Hotfixes are the one exception, and they have a stated shape.** A fix that must ship without
+  dragging the rest of `dev` along branches from **`main`**, PRs into **`main`**, and is reviewed
+  normally — the reviewer only skips a PR whose head is `dev`, so a hotfix gets the full
+  treatment. After it is tagged, open a `main -> dev` PR immediately and merge it. Skipping that
+  step is how `main` and `dev` diverge permanently, and the divergence is silent until the next
+  release quietly reverts the hotfix.
 - **Write PR bodies and commit messages to a file, then `--body-file` / `-F`**: passing prose
   containing backticks or `$` inline to `gh`/`git` through a shell lets it substitute or execute
   them, silently gutting the text (this has eaten a commit message and a PR body already)

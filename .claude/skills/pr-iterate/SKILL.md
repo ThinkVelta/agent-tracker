@@ -22,7 +22,7 @@ git branch --show-current
 git status -s
 ```
 
-If on `main`, **stop** — tell the user to switch to the feature branch.
+If on `main` or `dev`, **stop** — tell the user to switch to the feature branch.
 
 If the tree is dirty, **stop** — tell the user:
 
@@ -37,7 +37,7 @@ place** (Step 10), with an explicit refspec
 the PR body + conversation **at push time** and only re-runs on a code push, so
 your reply/decline notes and fix summary must already be on the PR before you
 push — push first and the reviewer re-runs without them and re-raises issues you
-already handled. Bare `git push`, pushes to `main`/`master`, force pushes, and
+already handled. Bare `git push`, pushes to `main`/`master`/`dev`, force pushes, and
 `gh pr merge` are forbidden — agents push only explicit feature-branch refspecs,
 and merging the PR is the human's call.
 
@@ -235,7 +235,7 @@ git push origin "HEAD:refs/heads/$(git branch --show-current)"
 This is the push that re-triggers CI and the automated reviewer; because the
 comments and title/body edits already landed, the reviewer sees them and marks
 the addressed items resolved instead of re-raising them. Never bare `git push`,
-never another branch, never `--force`, never a push targeting `main`/`master`.
+never another branch, never `--force`, never a push targeting `main`/`master`/`dev`.
 
 ## Step 11 — Report back
 
@@ -257,8 +257,8 @@ Return a structured summary to the user:
 
 ## Important rules
 
-- **Push only the current feature branch, explicitly, once** — `git push origin "HEAD:refs/heads/<branch>"` as the **last** step (Step 10), after the fixes are committed *and* every PR comment / title / body edit is in place. The automated reviewer re-reads the conversation at push time, so comment-before-push is mandatory; pushing first makes it re-raise items you already addressed. Never bare `git push`, never a push targeting `main`/`master`, never `gh pr merge` — merging is the human's.
-- NEVER commit to `main`. If somehow on that branch, stop immediately.
+- **Push only the current feature branch, explicitly, once** — `git push origin "HEAD:refs/heads/<branch>"` as the **last** step (Step 10), after the fixes are committed *and* every PR comment / title / body edit is in place. The automated reviewer re-reads the conversation at push time, so comment-before-push is mandatory; pushing first makes it re-raise items you already addressed. Never bare `git push`, never a push targeting `main`/`master`/`dev`, never `gh pr merge` — merging is the human's.
+- NEVER commit to `main` or `dev`. If somehow on either branch, stop immediately.
 - NEVER force-push or amend previous commits.
 - NEVER skip the Step 6 assessment. All changes must pass `make lint` and `make test` before commit.
 - When a fix is small and clearly correct, prefer making it over debating — but a reasoned decline of a wrong, low-value, or out-of-scope item (with the reasoning posted to the PR) is an equally valid outcome. Don't implement churn just to clear a comment.

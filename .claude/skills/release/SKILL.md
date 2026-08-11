@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a release. Derives the version bump from the commits since the last tag, lands the VERSION bump as a PR, then tags the merge commit once a human has merged it, and verifies what actually shipped. Use this when the user wants to publish a version, cut a release, or ship what is on main. Triggers for `/release`, `/release patch|minor|major`, `/release 0.3.0`, `/release --dry-run`.
+description: Cut a release. Derives the version bump from the commits since the last tag, lands the VERSION bump into dev as a PR, promotes dev to main as a second PR, then tags the merge commit and verifies what actually shipped. Use this when the user wants to publish a version, cut a release, or ship what is on dev. Triggers for `/release`, `/release patch|minor|major`, `/release 0.3.0`, `/release --dry-run`.
 allowed-tools:
   - Bash
   - Read
@@ -16,9 +16,21 @@ argument-hint: "[patch | minor | major | X.Y.Z] [--dry-run]"
 You cut a release of this repo. A release is a **pushed tag**: nothing else triggers
 `.github/workflows/release.yml`, and no merge to `main` publishes anything on its own.
 
-Releasing takes two invocations, because the `VERSION` bump has to land through a PR that a
-human merges. Do not try to collapse them. Work out which half you are in from the repo's
-state (Step 0) rather than from memory, so an interrupted release resumes correctly.
+Releasing takes **three** invocations, because two PRs have to be merged by a human and you
+cannot merge either:
+
+| Phase | What you do | What the human does |
+| --- | --- | --- |
+| **A** | Derive the bump, open `chore/release-vX.Y.Z -> dev` | Merges it |
+| **B** | Open `dev -> main` | Merges it |
+| **C** | Pre-flight `main`, push the tag, verify what shipped | Nothing |
+
+Do not try to collapse them, and in particular do not try to put the bump straight onto a
+branch aimed at `main`: `main` must stay a fast-forward of `dev`, so that the two branches are
+identical the moment a release lands and any later difference between them means something.
+
+Work out which phase you are in from the repo's state (Step 0) rather than from memory, so an
+interrupted release resumes correctly.
 
 The reason this is a skill and not CI: **choosing the bump is a judgement call**, and a
 published release cannot be taken back. You read what changed and propose a version; the human
@@ -26,69 +38,85 @@ approves it.
 
 **User input:** $ARGUMENTS
 
-## Step 0 — Work out which half you are in
+## Step 0 — Work out which phase you are in
 
 ```bash
-git fetch --tags origin main
-DECLARED=$(git show origin/main:VERSION | tr -d '[:space:]')   # source of truth
+git fetch --tags origin main dev
+ON_MAIN=$(git show origin/main:VERSION | tr -d '[:space:]')    # what has been released
+ON_DEV=$(git show origin/dev:VERSION | tr -d '[:space:]')      # what is being prepared
 LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -1)
-git ls-remote --tags origin "refs/tags/v$DECLARED"             # empty means unreleased
-gh release view "v$DECLARED" --json tagName --jq .tagName 2>/dev/null || echo "not published"
+git ls-remote --tags origin "refs/tags/v$ON_MAIN"              # empty means unreleased
+gh release view "v$ON_MAIN" --json tagName --jq .tagName 2>/dev/null || echo "not published"
 ```
 
-- **`v$DECLARED` already exists** (tag or release): the version on `main` is spent, so this is
-  **Phase A**, prepare the bump. Continue at Step 1, then Step 2.
-- **`v$DECLARED` does not exist**: a bump has already landed on `main`, so this is **Phase B**,
-  tag it. Continue at Step 1, then skip to Step 5, releasing `$DECLARED`.
+Read the phase off those three values, in this order — the first match wins:
 
-**Step 1 applies to both phases.** Phase B validates and then tags, and neither is meaningful
-against a tree that is not the commit being released.
+| State | Phase | Continue at |
+| --- | --- | --- |
+| `v$ON_MAIN` does not exist as a tag or release | **C**, tag it | Step 1, then Step 6, releasing `$ON_MAIN` |
+| `$ON_DEV` differs from `$ON_MAIN` | **B**, promote | Step 1, then Step 5, promoting `$ON_DEV` |
+| otherwise | **A**, prepare the bump | Step 1, then Step 2 |
 
-If Phase B and you did not prepare that bump yourself, say so and show the human the diff of
+The order matters, and C comes first for a reason: between B's merge and C's tag, `main` and
+`dev` declare the *same* new version, so the "differs" test alone would send you back to B and
+open a second, empty promotion PR.
+
+**Step 1 applies to every phase.** C validates and then tags, and neither is meaningful against
+a tree that is not the commit being released.
+
+If Phase C and you did not prepare that bump yourself, say so and show the human the diff of
 `VERSION` and who landed it before going further. A stray bump in an unrelated PR is the one
-way to reach Phase B by accident.
+way to reach Phase C by accident.
 
 ## Step 1 — Refuse to start from an unclear place
 
 All of these, before touching anything:
 
+Each phase works from a different branch, because each describes a different thing: A and B
+describe `dev` (what is being released), C describes `main` (what is being tagged).
+
 ```bash
-git branch --show-current                # main — or the Phase B exception below
+git branch --show-current                # A and B: dev.  C: main
 git status --porcelain                   # must be empty, no exceptions
-git rev-parse HEAD origin/main           # equal; behind is fixable, ahead stops
-gh pr list --state open --json number,title,headRefName
+git rev-parse HEAD "origin/$(git branch --show-current)"   # equal; behind is fixable
+gh pr list --state open --json number,title,headRefName,baseRefName
 ```
 
 - Dirty tree: **stop**, and tell the user:
   > You have uncommitted changes. Run `/commit` to land them (or `git stash` to set them
   > aside), then rerun `/release`. I will not fold unrelated work into a release commit.
-- Not on `main`, **with one exception**: **stop** and tell the user to `git switch main` first,
-  because a release describes `main`. The exception is the normal Phase B position — a clean
-  tree on the `chore/release-vX.Y.Z` branch whose PR just merged. There, switching to `main` and
-  fast-forwarding is mechanical rather than a decision, so just do it (and delete the merged
-  branch). What the gate protects is uncommitted work and releasing from a feature branch, and
-  neither is in play.
-- `HEAD` and `origin/main` differ: behind is expected in Phase B, since the bump merged after
-  your last pull, so `git pull --ff-only` and carry on. **Ahead means stop**: unpushed commits
-  would silently not be in the release.
+- **On the wrong branch, with one exception**: **stop** and tell the user to switch to the
+  branch this phase describes. The exception is the position each phase naturally leaves you
+  in — a clean tree on the `chore/release-vX.Y.Z` branch after A, or on `dev` after B. Moving
+  from there to the branch the next phase needs is mechanical rather than a decision, so just do
+  it (`git switch`, `git pull --ff-only`, and delete the merged release branch). What the gate
+  protects is uncommitted work and releasing from a feature branch, and neither is in play.
+- `HEAD` behind its remote: expected whenever the previous phase's PR merged after your last
+  fetch, so `git pull --ff-only` and carry on. **Ahead means stop**, on either branch: you
+  cannot push to `dev` or `main`, so a local commit ahead of them is work that would silently
+  not be in the release.
 - An open PR whose branch starts with `chore/release-`: in Phase A, **stop**, that bump is
-  already in flight, so point at it and ask the human to merge it. In Phase B it should be the
-  bump that just merged, so if one is still open, say so rather than tagging around it.
+  already in flight, so point at it and ask the human to merge it. Later phases should not see
+  one at all, so if one is still open, say so rather than releasing around it.
+- An open `dev -> main` PR: in Phase B, **stop** — that promotion is already open, so point at
+  it. In C it should have merged, so an open one means the tip of `main` is not what you think.
 - Other open PRs are fine. Mention them, since anything unmerged will not be in this release.
 
-However you get there — already on `main`, or via the Phase B switch and fast-forward — Step 1
-ends with a clean tree on `main` at `origin/main`. That end state is what makes `HEAD` **be**
-the commit you are about to release, which is what lets Step 5 validate it by running the suite
-here rather than in a scratch checkout.
+Step 1 ends with a clean tree at the tip of the branch this phase describes. For Phase C that
+end state is what makes `HEAD` **be** the commit you are about to tag, which is what lets Step 6
+validate it by running the suite here rather than in a scratch checkout.
 
 ## Step 2 — Derive the bump, then let the argument override it
 
 Read what actually changed:
 
 ```bash
-git log "$LATEST_TAG..origin/main" --format='%h %s'
-git diff --stat "$LATEST_TAG..origin/main"
+git log "$LATEST_TAG..origin/dev" --format='%h %s'
+git diff --stat "$LATEST_TAG..origin/dev"
 ```
+
+`origin/dev`, not `origin/main`: the work is on `dev` and has not reached `main` yet, so
+deriving from `main` would read the *previous* release and propose no bump at all.
 
 Classify by Conventional Commit type, then **apply judgement on top**:
 
@@ -135,7 +163,9 @@ Also confirm the README's pictures are current: if this release changed anything
 `scripts/make-docs-images.sh` renders, that regeneration belongs in a normal PR before the
 bump, not in the release commit.
 
-## Step 4 — Land the bump as a PR, then stop
+## Step 4 — Phase A: land the bump into `dev`, then stop
+
+Branch from `dev`, which Step 1 has already left you on and up to date.
 
 ```bash
 git switch -c "chore/release-v$NEW"
@@ -149,7 +179,7 @@ passed inline, which has already eaten a commit message in this repo):
 git add VERSION
 git commit -F <message-file>          # chore(release): v$NEW
 git push -u origin "HEAD:refs/heads/chore/release-v$NEW"
-gh pr create --base main --title "chore(release): v$NEW" --body-file <body-file>
+gh pr create --base dev --title "chore(release): v$NEW" --body-file <body-file>
 ```
 
 The PR body carries the derived changelog: the bump and why, the commits grouped by type, and
@@ -158,23 +188,49 @@ is the derivation you just did, not a generic summary.
 
 Then **stop**. Tell the human:
 
-> `chore(release): v$NEW` is open at <url>. Merge it once CI is green, then run `/release`
-> again and I will tag the merge commit. Merging alone publishes nothing.
+> `chore(release): v$NEW` is open at <url>, into `dev`. Merge it once CI is green, then run
+> `/release` again and I will open the `dev -> main` promotion. Merging alone publishes nothing.
 
 You never merge it. `gh pr merge` is forbidden here and blocked by a hook.
 
-## Step 5 — Pre-flight the exact commit you are about to tag
+## Step 5 — Phase B: open `dev -> main`, then stop
 
-Phase B. The tag is the point of no return, so every check has to describe the **commit** being
-tagged. `SHA` is the tip of `origin/main`.
+The bump is on `dev` and `main` is still the previous release. One PR moves everything across:
+
+```bash
+gh pr create --base main --head dev \
+  --title "chore(release): promote v$ON_DEV to main" --body-file <body-file>
+```
+
+No branch to create and nothing to commit — `dev` is the head. If `gh` reports no commits
+between the branches, `main` is already at `dev` and you are in Phase C, not B; re-read Step 0
+rather than forcing this PR.
+
+The body is the same changelog Step 2 derived, plus the two things only this PR can say: that
+merging it moves `main` without publishing anything, and that the tag follows on the next
+`/release`. The AI reviewer is deliberately skipped on this PR (`pr.yml` skips a head of `dev`)
+because every commit in it has already been reviewed once on the way into `dev` — say so in the
+body, so nobody reads the missing status as a broken check.
+
+Then **stop**. Tell the human:
+
+> `dev -> main` is open at <url>, carrying v$ON_DEV. Merge it once CI is green, then run
+> `/release` a third time and I will tag the merge commit. Merging alone publishes nothing.
+
+## Step 6 — Phase C: pre-flight the exact commit you are about to tag
+
+Phase C. The tag is the point of no return, so every check has to describe the **commit** being
+tagged: the tip of `origin/main`, which is the promotion's merge commit and not `dev`'s tip.
+The two point at the same tree, but the tag has to name the commit that is actually on `main`,
+because `release.yml` refuses one that is not.
 
 ```bash
 SHA=$(git rev-parse origin/main)
 test "$(git rev-parse HEAD)" = "$SHA" && test -z "$(git status --porcelain)"
-git show "$SHA:VERSION"                       # must equal $DECLARED, no leading v
+git show "$SHA:VERSION"                       # must equal $ON_MAIN, no leading v
 git merge-base --is-ancestor "$SHA" origin/main
 gh run list --commit "$SHA" --workflow ci.yml --limit 1     # must be success
-gh release view "v$DECLARED" 2>&1 | head -1                 # must be a 404
+gh release view "v$ON_MAIN" 2>&1 | head -1                  # must be a 404
 git ls-tree "$SHA" integrations/agent-tracker-hook.py       # must show mode 100755
 make lint && make test
 ```
@@ -195,6 +251,15 @@ the mode bit, which fails `make app` inside it (the bundle build asserts the hoo
 executable), and lint, which `release.yml` does not run at all. `ci.yml` is the only lint gate,
 which is why its run on this exact commit has to be green.
 
+**What `release-pr.yml` already checked, and why these are still here.** That workflow ran on
+both release PRs and asserted the same three things about `VERSION`: dotted integers, not
+already tagged, and newer than the latest published release by the app's own comparison. It
+also asserted that the bump PR changed nothing but `VERSION`, and that the promotion changed
+`VERSION` at all — neither of which this step can see, so those are genuinely delegated and are
+not repeated here. The version checks are repeated, deliberately: CI answered them about a PR
+head, and this answers them about the commit the tag will name, which is a different commit
+whenever anything merged in between.
+
 Two more that the release itself will not tell you:
 
 ```bash
@@ -209,11 +274,11 @@ because a dead token degrades the cask update to a printed warning instead of fa
 Report what the run will produce given the secrets that exist: ad-hoc signed, Developer ID
 signed, or signed and notarized. Do not assert which from memory, read it from `gh secret list`.
 
-## Step 6 — Tag it
+## Step 7 — Tag it
 
 ```bash
-git tag -a "v$DECLARED" -F <tag-message-file> "$SHA"
-git push origin "v$DECLARED"
+git tag -a "v$ON_MAIN" -F <tag-message-file> "$SHA"
+git push origin "v$ON_MAIN"
 ```
 
 Use exactly that push form. `git push origin refs/tags/...` and `git push --tags` are both
@@ -221,7 +286,7 @@ blocked by the repo's guard hook, and neither `git tag` nor `git push` is pre-ap
 expect a permission prompt. Never `gh api` a ref into existence to get around it: the point of
 the guard is that this boundary is deliberate.
 
-## Step 7 — Watch the run, then verify what shipped
+## Step 8 — Watch the run, then verify what shipped
 
 ```bash
 gh run watch "$(gh run list --workflow release.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
@@ -231,9 +296,9 @@ Green is not proof the release is correct. Verify the artifact against its own a
 digest, because a mismatch has shipped before:
 
 ```bash
-gh release download "v$DECLARED" --dir "$tmp" --pattern 'AgentTracker-*.zip'
+gh release download "v$ON_MAIN" --dir "$tmp" --pattern 'AgentTracker-*.zip'
 shasum -a 256 "$tmp"/AgentTracker-*.zip                       # compare with the notes body
-gh release view "v$DECLARED" --json body --jq .body | grep -oE '[0-9a-f]{64}'
+gh release view "v$ON_MAIN" --json body --jq .body | grep -oE '[0-9a-f]{64}'
 gh api repos/ThinkVelta/homebrew-tap/contents/Casks/agent-tracker.rb \
   --jq .content | base64 -d | grep -E '^  (version|sha256)'
 ```
@@ -242,7 +307,7 @@ The cask must show the new version **and** the same digest. The tap step cannot 
 release by design, so a green run does not mean the cask moved. If it did not, the run's
 annotations print the two values to set, and someone applies them by hand.
 
-## Step 8 — Report back
+## Step 9 — Report back
 
 State the version, the tagged SHA, whether the build was notarized, the release URL, the
 verified digest, and the cask's state. Then say what a user upgrading will experience, taken
@@ -263,10 +328,11 @@ from the notes the workflow actually produced rather than from assumption.
 
 Re-stated because a release is exactly where "just this once" is most tempting.
 
-- **You never merge and never push to `main`.** Both are blocked mechanically. The `VERSION`
-  bump reaches `main` the same way every other change does.
+- **You never merge, and never push to `main` or `dev`.** All of it is blocked mechanically.
+  The `VERSION` bump reaches `main` the same way every other change does: through `dev`, through
+  a PR, merged by a human.
 - **The tag is the release.** Treat pushing it as the irreversible act, and do the verifying
   before it rather than after.
 - **Never reuse a published version number**, even if the release looked wrong seconds later.
-- **Read state, do not remember it.** Which half you are in, whether a tag exists, whether the
+- **Read state, do not remember it.** Which phase you are in, whether a tag exists, whether the
   build was notarized: all of it is observable, and all of it has been wrong when assumed.

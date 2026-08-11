@@ -101,10 +101,14 @@ Interpret the result:
 
 **4c. If no PR exists, check merge status against the base branch locally:**
 
+Check against `dev`, not against `origin/HEAD`. GitHub's default branch is `main`, which
+here means *released* — a feature that merged into `dev` yesterday is legitimately absent from
+it, and asking `main` would report that branch as unmerged and warn about losing work that is
+not lost. `dev` is where feature branches actually land, so it is the only honest question.
+
 ```bash
-BASE=$(git -C "$MAIN_REPO" symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null | sed 's|^origin/||')
-BASE="${BASE:-main}"
-git -C "$MAIN_REPO" rev-list --count "origin/$BASE..<branch>"
+git -C "$MAIN_REPO" fetch -q origin dev
+git -C "$MAIN_REPO" rev-list --count "origin/dev..<branch>"
 ```
 
 - Count `0` → branch fully merged into base. Record as **merged**.
