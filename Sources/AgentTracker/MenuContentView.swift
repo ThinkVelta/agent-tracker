@@ -348,11 +348,10 @@ struct MenuContentView: View {
     // No Refresh button: reloads are event-driven (every hook write triggers
     // one) with a periodic safety-net reload (cadence in Settings) — a manual
     // button implied a staleness that does not exist.
-    /// Settings far left, quit far right — a routine control and a
-    /// destructive one should not be adjacent (user feedback: quit felt
-    /// misclickable next to the gear). The count sits between symmetric
-    /// spacers, so it lands dead center.
-    /// Quota, where it can be read without looking for it.
+    /// Settings far left, quit far right — a routine control and a destructive
+    /// one should not be adjacent (user feedback: quit felt misclickable next
+    /// to the gear). That is the one rule this bar has always had, and the only
+    /// one the quota did not change.
     ///
     /// One bar, not two. Quota lived on its own row above this one and read as
     /// a second footer for the sake of two numbers; the controls, the count and
