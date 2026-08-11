@@ -29,13 +29,17 @@ struct UsageReading: Equatable, Identifiable, Sendable {
 /// start caring: by then the session has already stopped, and the number that
 /// would have let someone pace their day went unread all day.
 enum UsageSummary {
-    /// One reading per provider: whichever of its windows is closest to its
-    /// limit, since that is the one that will stop work first.
+    /// Every window that has something to say, shortest first.
     ///
-    /// Scoped to providers that actually have a session on screen. An account
-    /// limit outlives the sessions that reported it — `AccountLimits` keeps a
-    /// reading until its reset passes — so without this the footer would still
-    /// be quoting quota an hour after the last session closed.
+    /// Both windows show rather than only the tightest. They answer different
+    /// questions — the 5-hour one is "can I start this now", the weekly one is
+    /// "how much of this week is left" — and showing only whichever happens to
+    /// be closer to its limit answers one of them at random.
+    ///
+    /// Ordered by window length, never by pressure. A strip you read at a
+    /// glance must keep its numbers in the same places; ordering by whichever
+    /// is worse right now would have the two swap as the day went on, so
+    /// finding the one you wanted would mean reading both labels first.
     static func readings(from limits: AccountLimits, now: Date) -> [UsageReading] {
         let candidates = limits.all.compactMap { limit -> UsageReading? in
             guard let used = limit.usedPercent else { return nil }
@@ -51,24 +55,25 @@ enum UsageSummary {
             guard let resetsAt = limit.resetsAt, resetsAt > now else { return nil }
             return UsageReading(window: limit.window, usedPercent: used, resetsAt: resetsAt)
         }
-        return candidates.min(by: mostPressing).map { [$0] } ?? []
+        return candidates.sorted(by: shorterWindowFirst)
     }
 
-    /// A total order, not just a comparison on percentage.
+    /// A total order, because `AccountLimits` stores windows in a dictionary
+    /// and hands them back in whatever order it feels like. Length decides it;
+    /// the id is the last resort and exists only so two windows of equal length
+    /// cannot swap places between passes, republishing the strip each time for
+    /// no reason anyone could see.
     ///
-    /// `AccountLimits` stores windows in a dictionary, so `limits(for:)` hands
-    /// them back in whatever order it feels like. Ranking on percentage alone
-    /// leaves ties to that order — and ties are not exotic: two windows both
-    /// sitting at 0% early in a week is the ordinary morning case. The chip
-    /// would then flip between "5h" and "7d" between passes with no data
-    /// behind it, and because the readings are published, each flip is a
-    /// republish.
-    ///
-    /// Earlier reset breaks a percentage tie, since that window bites first.
-    /// The id is the last resort and exists only to make the result total.
-    private static func mostPressing(_ lhs: UsageReading, _ rhs: UsageReading) -> Bool {
-        if lhs.usedPercent != rhs.usedPercent { return lhs.usedPercent > rhs.usedPercent }
-        if lhs.resetsAt != rhs.resetsAt { return lhs.resetsAt < rhs.resetsAt }
+    /// The id rather than the label, which is a rendering and not an identity:
+    /// two different windows of equal length can print the same string, so
+    /// falling back to it would leave the order depending on which the
+    /// dictionary yielded first — the exact thing this exists to stop. The id
+    /// comes from the window itself, and `AccountLimits` keys on windows, so it
+    /// is unique by construction.
+    private static func shorterWindowFirst(_ lhs: UsageReading, _ rhs: UsageReading) -> Bool {
+        if lhs.window.minutes != rhs.window.minutes {
+            return lhs.window.minutes < rhs.window.minutes
+        }
         return lhs.id < rhs.id
     }
 }

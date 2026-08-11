@@ -34,6 +34,18 @@ struct UsageLimit: Equatable {
             }
         }
 
+        /// Roughly how long the window is, for putting windows in a sensible
+        /// order. The named cases use the nominal length rather than whichever
+        /// off-by-one the provider reported (299 or 300), because this is for
+        /// sorting, not arithmetic.
+        var minutes: Int {
+            switch self {
+            case .fiveHour: return 300
+            case .weekly: return 10080
+            case .other(let minutes): return minutes
+            }
+        }
+
         /// Whether a bare wall-clock time is enough to locate this window's reset.
         ///
         /// It is only enough when the window cannot span more than one day: then
