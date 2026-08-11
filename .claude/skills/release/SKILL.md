@@ -334,5 +334,5 @@ Re-stated because a release is exactly where "just this once" is most tempting.
 - **The tag is the release.** Treat pushing it as the irreversible act, and do the verifying
   before it rather than after.
 - **Never reuse a published version number**, even if the release looked wrong seconds later.
-- **Read state, do not remember it.** Which half you are in, whether a tag exists, whether the
+- **Read state, do not remember it.** Which phase you are in, whether a tag exists, whether the
   build was notarized: all of it is observable, and all of it has been wrong when assumed.
