@@ -32,17 +32,33 @@ struct UsageSummaryTests {
     }
 
     /// The window that will stop work first is the one worth the space.
-    @Test("the window closest to its limit wins")
-    func picksTheTightestWindow() {
+    /// Both windows, because they answer different questions — "can I start
+    /// this now" and "how much of this week is left" — and showing only
+    /// whichever happens to be closer to its limit answers one of them at
+    /// random.
+    @Test("both windows are shown, shortest first")
+    func showsEveryWindowShortestFirst() {
         let readings = UsageSummary.readings(
             from: limitsOf([
-                limit(.fiveHour, used: 20, resetsIn: 3600),
                 limit(.weekly, used: 88, resetsIn: 86_400),
+                limit(.fiveHour, used: 20, resetsIn: 3600),
             ]), now: now)
 
-        #expect(readings.count == 1)
-        #expect(readings[0].usedPercent == 88)
-        #expect(readings[0].windowLabel == "7d")
+        #expect(readings.map(\.windowLabel) == ["5h", "7d"])
+        #expect(readings.map(\.usedPercent) == [20, 88])
+    }
+
+    /// An unfamiliar window still gets a place, and sorts by its length rather
+    /// than being appended wherever it was found.
+    @Test("an unnamed window sorts by how long it is")
+    func unknownWindowsSortByLength() {
+        let readings = UsageSummary.readings(
+            from: limitsOf([
+                limit(.weekly, used: 10, resetsIn: 86_400),
+                limit(.other(minutes: 60), used: 30, resetsIn: 1800),
+                limit(.fiveHour, used: 20, resetsIn: 3600),
+            ]), now: now)
+        #expect(readings.map(\.windowLabel) == ["60m", "5h", "7d"])
     }
 
     /// "No data" and "none used" are the two states this must never merge, so a
@@ -65,18 +81,30 @@ struct UsageSummaryTests {
 
     /// Two windows at the same percentage is the ordinary morning case, not an
     /// exotic one — both sit at 0% early in a week. Ranking on percentage alone
-    /// left the winner to dictionary order, so the chip could flip between "5h"
-    /// and "7d" with no data behind it, republishing on each flip.
-    @Test("a percentage tie is broken by which window bites first, every time")
-    func tiesResolveToTheSoonerReset() {
-        let tied = limitsOf([
-            limit(.weekly, used: 0, resetsIn: 86_400),
-            limit(.fiveHour, used: 0, resetsIn: 3600),
+    /// The order is fixed by length, never by pressure. A strip read at a
+    /// glance must keep its numbers in the same places — ordering by whichever
+    /// is worse right now would have the two swap as the day went on, and
+    /// because the readings are published, each swap is a republish rather than
+    /// a redraw.
+    @Test("the order does not move when the pressure does")
+    func orderIsFixedByLengthNotByPressure() {
+        let weeklyWorse = limitsOf([
+            limit(.weekly, used: 91, resetsIn: 86_400),
+            limit(.fiveHour, used: 3, resetsIn: 3600),
         ])
+        let fiveHourWorse = limitsOf([
+            limit(.weekly, used: 3, resetsIn: 86_400),
+            limit(.fiveHour, used: 91, resetsIn: 3600),
+        ])
+        // Repeated because the source is a dictionary, so a missing tiebreak
+        // shows up as an intermittent swap rather than a failure every run.
         for _ in 0..<50 {
-            let readings = UsageSummary.readings(
-                from: tied, now: now)
-            #expect(readings.map(\.windowLabel) == ["5h"])
+            #expect(
+                UsageSummary.readings(from: weeklyWorse, now: now).map(\.windowLabel)
+                    == ["5h", "7d"])
+            #expect(
+                UsageSummary.readings(from: fiveHourWorse, now: now).map(\.windowLabel)
+                    == ["5h", "7d"])
         }
     }
 

@@ -102,7 +102,7 @@ def main():
         "context_window": {"used_percentage": 92},
         "rate_limits": {
             "five_hour": {"used_percentage": 38, "resets_at": resets_at},
-            "seven_day": {"used_percentage": 12, "resets_at": resets_at + 5 * 86400},
+            "seven_day": {"used_percentage": 49, "resets_at": resets_at + 5 * 86400},
         },
     }
     (root / "claude-statusline.json").write_text(

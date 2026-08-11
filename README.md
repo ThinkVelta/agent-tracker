@@ -144,13 +144,15 @@ icon and tells the states apart by shape:
 </picture>
 </div>
 
-**Quota, before it stops you.** A strip above the footer shows how much of each
-provider's window you have used — `Claude 5h 38%` — so the number that decides
-whether to start something big is readable at a glance rather than discovered
-when a request is refused. Grey until 75%, amber to 90%, red past it; hover for
-the reset time. Shown only when a reading exists, because "nothing known" and
-"nothing used" are not the same thing. Claude's numbers need the statusline
-wrapper (below).
+**Quota, before it stops you.** A strip above the footer shows both windows —
+`5h 38%   7d 49%` — so the number that decides whether to start something big is
+readable at a glance rather than discovered when a request is refused. Both,
+because they answer different questions: the 5-hour one is *can I start this
+now*, the weekly one is *how much of this week is left*. They stay in that
+order whatever the numbers do, so the one you want is always in the same place.
+Grey until 75%, amber to 90%, red past it; hover for the reset time. A window
+shows only when a reading exists, because "nothing known" and "nothing used" are
+not the same thing. Needs the statusline wrapper (below).
 
 **Two sessions in one repo stop looking identical.** Rows are titled by project,
 which is right until two of them share one — then the list shows the same word
