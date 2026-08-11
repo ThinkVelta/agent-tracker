@@ -155,6 +155,33 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// path runs through tool scaffolding. The worktree directory distinguishes
     /// a session from its siblings; it is not what the session should be
     /// called.
+    /// What identifies a project, as opposed to what it is called.
+    ///
+    /// The path down to the project directory, so two repos that happen to
+    /// share a leaf name — `~/work/acme/api` and `~/oss/api`, which is an
+    /// ordinary thing to have — are not the same project. `displayName` is a
+    /// label and several sessions can honestly share one; grouping on it would
+    /// file unrelated work under a single heading and there would be nothing on
+    /// screen to say so.
+    ///
+    /// A worktree resolves to its repo, which is the point: sessions in
+    /// different worktrees of one project *should* group together.
+    var projectKey: String {
+        guard let directory = primaryDirectory, !directory.isEmpty else { return "" }
+        var parts = (directory as NSString).pathComponents.filter { $0 != "/" }
+        guard !parts.isEmpty else { return "" }
+        // Same walk as `projectAndWorktree`, kept as a path rather than a name.
+        if parts.count > 1, let enclosing = parts.dropLast().last,
+            Self.namesNoProject(enclosing)
+        {
+            parts.removeLast()
+            while parts.count > 1, let last = parts.last, Self.namesNoProject(last) {
+                parts.removeLast()
+            }
+        }
+        return "/" + parts.joined(separator: "/")
+    }
+
     static func projectAndWorktree(of path: String?) -> (project: String, worktree: String?)? {
         guard let path, !path.isEmpty else { return nil }
         var parts = (path as NSString).pathComponents.filter { $0 != "/" }

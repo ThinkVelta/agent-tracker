@@ -164,8 +164,45 @@ final class SessionSectionsTests {
         let built = SessionSections.build(
             from: sessions(.running, 2, project: "idle"),
             grouping: .project, overrides: collapsed(.idle))
-        #expect(built.first?.id == "project:idle")
+        #expect(built.first?.id == "project:/Users/dev/idle")
         #expect(built.first?.isCollapsed == false)
+    }
+
+    /// Two repos sharing a leaf name is an ordinary thing to have — an `api`
+    /// at work and an `api` in your own account. Grouping on the NAME filed
+    /// them under one heading with nothing on screen to say the rows came from
+    /// different places, which is worse than not offering the mode.
+    @Test func repositoriesSharingANameAreNotOneProject() {
+        var work = AgentSession(sessionId: "w", cwd: "/Users/dev/work/acme/api", state: .running)
+        var personal = AgentSession(sessionId: "p", cwd: "/Users/dev/oss/api", state: .running)
+        work.registryName = nil
+        personal.registryName = nil
+
+        let built = SessionSections.build(from: [work, personal], grouping: .project)
+
+        #expect(built.count == 2)
+        // Both are still *called* api — the name is a label, the path is the
+        // identity.
+        #expect(built.map(\.title) == ["api", "api"])
+        #expect(Set(built.map(\.id)).count == 2)
+    }
+
+    /// The other half of the same rule: worktrees of one repo are one project,
+    /// which is exactly what somebody with three branches checked out wants.
+    @Test func worktreesOfOneRepositoryStayTogether() {
+        let root = AgentSession(
+            sessionId: "root", cwd: "/Users/dev/acme/planner", state: .running)
+        let branch = AgentSession(
+            sessionId: "branch",
+            cwd: "/Users/dev/acme/planner/.claude/worktrees/pln-388", state: .needsYou)
+
+        let built = SessionSections.build(from: [root, branch], grouping: .project)
+
+        #expect(built.count == 1)
+        #expect(built.first?.title == "planner")
+        #expect(built.first?.total == 2)
+        // And the section wears the state of the row that needs somebody.
+        #expect(built.first?.accent == .needsYou)
     }
 
     /// The budget is one allowance across the whole list either way.

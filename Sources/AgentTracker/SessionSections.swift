@@ -118,17 +118,21 @@ enum SessionSections {
                     members: members, foldsItself: state == .idle)
             }
         case .project:
-            let grouped = Dictionary(grouping: sessions, by: \.displayName)
+            // Keyed by the project's path, not its name: two repos can share a
+            // leaf name, and filing unrelated work under one heading is worse
+            // than not offering the grouping at all.
+            let grouped = Dictionary(grouping: sessions, by: \.projectKey)
             return
                 grouped
-                .map { name, members in
+                .map { key, members in
+                    let name = members.first?.displayName ?? "Session"
                     // The most urgent state inside decides both the dot and
                     // where the section sits, so a repo with something waiting
                     // on you leads the list exactly as that session would have.
                     let accent =
                         members.map(\.state).min { $0.sortRank < $1.sortRank } ?? .idle
                     return Candidate(
-                        id: "project:\(name)", title: name, accent: accent,
+                        id: "project:\(key)", title: name, accent: accent,
                         members: members, foldsItself: false)
                 }
                 .sorted { lhs, rhs in

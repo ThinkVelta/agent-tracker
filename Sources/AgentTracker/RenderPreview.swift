@@ -148,10 +148,18 @@ enum RenderPreview {
             // Safe to write: under --render-preview the preferences live in an
             // isolated suite (see `AppDefaults`), so this cannot reach the
             // settings of whoever is regenerating the images.
-            if let index = arguments.firstIndex(of: "--grouping"),
-                arguments.count > index + 1,
-                let grouping = SessionSections.Grouping(rawValue: arguments[index + 1])
-            {
+            //
+            // A bad value exits rather than falling back, like `--view` and
+            // `--appearance`. Silently rendering the default would put the
+            // wrong picture in the README and report success doing it, which is
+            // the one failure this whole script is written to avoid.
+            if let index = arguments.firstIndex(of: "--grouping") {
+                let value = arguments.count > index + 1 ? arguments[index + 1] : ""
+                guard let grouping = SessionSections.Grouping(rawValue: value) else {
+                    FileHandle.standardError.write(
+                        Data("[preview] --grouping expects state or project\n".utf8))
+                    exit(2)
+                }
                 Preferences.shared.grouping = grouping
             }
             // The store reads its state files synchronously in `init`, so a
