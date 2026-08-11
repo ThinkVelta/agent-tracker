@@ -479,8 +479,8 @@ private struct UsageChip: View {
     private var tint: Color {
         switch reading.usedPercent {
         case ..<75: return Color.secondary
-        case ..<90: return .orange
-        default: return .red
+        case ..<90: return Theme.Palette.warning
+        default: return Theme.Palette.critical
         }
     }
 
@@ -862,9 +862,15 @@ struct SessionRow: View {
                 // being worth interrupting you would be the first thing cut.
                 if let pressure = ContextPressure(usedPercent: session.contextUsedPercent) {
                     Text(pressure.label)
-                        .font(Theme.Typography.timestamp)
-                        .foregroundStyle(pressure.isUrgent ? Color.red : Color.orange)
-                        .monospacedDigit()
+                        // Semibold, unlike the timestamp it sits beside. Same
+                        // size and weight as a neutral number made the colour
+                        // do all the work, and colour alone at 11pt over a
+                        // translucent panel is not enough work to do.
+                        .font(Theme.Typography.contextReading)
+                        .foregroundStyle(
+                            pressure.isUrgent
+                                ? Theme.Palette.critical : Theme.Palette.warning
+                        )
                         .help(pressure.help)
                 }
 
