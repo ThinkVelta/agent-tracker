@@ -30,16 +30,18 @@ struct SessionOrderTests {
     /// `stateChangedAt` with SECOND precision, so two sessions changing state
     /// in the same second are byte-identical here. A fan-out does that.
     ///
-    /// Shuffled inputs rather than one order, because `sorted(by:)` is not
-    /// stable — a partial comparator does not fail every run, it fails the runs
-    /// where the introsort happens to move things.
+    /// **Every** input order, not a sample of them. `sorted(by:)` is not
+    /// stable, so a partial comparator does not fail every run — it fails the
+    /// runs where the introsort happens to move things, and a shuffle only
+    /// finds that when the dice agree. Four rows is 24 permutations, which is
+    /// exhaustive, instant, and reproduces identically on every machine.
     @Test("sessions that changed in the same second keep a fixed order")
     func identicalTimestampsDoNotSwap() {
-        let rows = (0..<8).map { session("s\($0)", .needsYou, changedAt: moment) }
+        let rows = (0..<4).map { session("s\($0)", .needsYou, changedAt: moment) }
         let expected = rows.map(\.sessionId).sorted()
 
-        for _ in 0..<50 {
-            #expect(rows.shuffled().sorted(by: SessionOrder.precedes).map(\.sessionId) == expected)
+        for permutation in permutations(of: rows) {
+            #expect(permutation.sorted(by: SessionOrder.precedes).map(\.sessionId) == expected)
         }
     }
 
@@ -47,11 +49,22 @@ struct SessionOrderTests {
     /// them are both `.distantPast`.
     @Test("rows with no timestamp are ordered, not left to chance")
     func missingTimestampsAreOrdered() {
-        let rows = (0..<6).map { session("n\($0)", .running) }
+        let rows = (0..<4).map { session("n\($0)", .running) }
         let expected = rows.map(\.sessionId).sorted()
 
-        for _ in 0..<50 {
-            #expect(rows.shuffled().sorted(by: SessionOrder.precedes).map(\.sessionId) == expected)
+        for permutation in permutations(of: rows) {
+            #expect(permutation.sorted(by: SessionOrder.precedes).map(\.sessionId) == expected)
+        }
+    }
+
+    /// Every ordering of a small array, so a failure names the exact input
+    /// rather than a seed nobody has.
+    private func permutations<T>(of items: [T]) -> [[T]] {
+        guard items.count > 1 else { return [items] }
+        return items.indices.flatMap { index -> [[T]] in
+            var rest = items
+            let picked = rest.remove(at: index)
+            return permutations(of: rest).map { [picked] + $0 }
         }
     }
 

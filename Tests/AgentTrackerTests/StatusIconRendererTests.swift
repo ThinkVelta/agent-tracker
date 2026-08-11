@@ -211,10 +211,10 @@ final class StatusIconRendererTests {
             StatusIconRenderer.HitRegion(state: .running, range: (10 + 2 * gap)..<(20 + 2 * gap)),
         ]
         let between = 10 + gap
-        for _ in 0..<50 {
-            #expect(
-                StatusIconRenderer.state(atImageX: between, regions: regions.shuffled())
-                    == .needsYou)
-        }
+        // Both orders explicitly: with two regions that is exhaustive, so there
+        // is nothing a shuffle would add except the chance of missing one.
+        #expect(StatusIconRenderer.state(atImageX: between, regions: regions) == .needsYou)
+        #expect(
+            StatusIconRenderer.state(atImageX: between, regions: regions.reversed()) == .needsYou)
     }
 }
