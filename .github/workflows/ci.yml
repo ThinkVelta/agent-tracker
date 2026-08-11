@@ -9,12 +9,14 @@ run-name: >-
     github.ref_name
   }}
 
-# Feature branches PR straight into `main` here: this repo has no `dev`, so
-# `main` is an ordinary integration branch rather than a prod-deploy branch.
+# `dev` is where work integrates and `main` is what has been released, so both
+# need testing on push: `dev` because that is where features land, `main`
+# because a release merge is the one thing that moves it.
 on:
   push:
     branches:
       - main
+      - dev
   pull_request:
 
 permissions:

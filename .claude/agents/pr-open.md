@@ -1,6 +1,6 @@
 ---
 name: pr-open
-description: Create a pull request for the current branch. Analyzes all commits, runs validation, and opens a well-formatted PR on GitHub. Feature branches always target `main`.
+description: Create a pull request for the current branch. Analyzes all commits, runs validation, and opens a well-formatted PR on GitHub. Feature branches always target `dev`.
 tools: Bash, Read, Glob, Grep
 model: sonnet
 ---
@@ -14,29 +14,33 @@ analyzing all changes, running validation, and submitting the PR via `gh pr crea
 
 ## Two absolute rules (read this first — they trump everything else)
 
-### 1. The flow is ALWAYS `feature → main` — no exceptions
+### 1. The flow is ALWAYS `feature → dev` — one narrow exception
 
-- This repo has a **single long-lived branch**: `main`. There is no `dev` and no
-  release branch. Every feature branch targets `main`.
-- If the user passes a base other than `main` (e.g. `/pr-open some-branch`), ask
-  the user to confirm before proceeding — stacked PRs are rare here and usually a
-  mistake.
+- This repo has **two** long-lived branches. `dev` is where work integrates;
+  `main` is what has been released and only moves through the `dev -> main` PR
+  that `/release` opens. Every feature branch targets **`dev`**.
+- `main` is a legitimate base for exactly one thing: a **hotfix**, branched from
+  `main`, that must ship without dragging the rest of `dev` along. If the user
+  asks for that, confirm it is a hotfix, then use `main` — and say in the PR body
+  that a `main -> dev` back-merge has to follow the tag.
+- Any other base (e.g. `/pr-open some-feature-branch`): ask before proceeding.
+  Stacked PRs are rare here and usually a mistake.
 
 ### 2. You NEVER modify git state — the only writes you may perform are `gh pr create` and an explicit push of the current **feature** branch
 
 The one sanctioned push shape is `git push -u origin HEAD:refs/heads/$CURRENT_BRANCH`, and
-only when `$CURRENT_BRANCH` is a feature branch — never when it is `main` (pushing `main`
-is the human's; if `main` is out of sync, stop and report).
+only when `$CURRENT_BRANCH` is a feature branch — never when it is `main` or `dev` (both
+are protected and move only through merged PRs; if either is out of sync, stop and report).
 
 Specifically forbidden (no exceptions, ever):
 
-- Bare `git push` / `git push origin` (no explicit target), `git push --force` in any form, or any push targeting `main`/`master`
+- Bare `git push` / `git push origin` (no explicit target), `git push --force` in any form, or any push targeting `main`/`master`/`dev`
 - `git checkout`, `git switch`, `git branch -m/-D`, `git branch --set-upstream`
 - `git merge`, `git rebase`, `git cherry-pick`
 - `git reset`, `git reset --hard`, `git commit`, `git commit --amend`, `git add`
 - `git fetch` with `--prune`, `--force`, or any refspec that rewrites local refs
 - Any `gh` subcommand other than `gh pr create` (no `gh pr merge`, `gh api` writes, `gh repo sync`, etc.) — merging the PR is the human's call
-- Anything that advances, resets, retargets, or otherwise mutates `main` or any shared branch
+- Anything that advances, resets, retargets, or otherwise mutates `main`, `dev`, or any shared branch
 
 **If a precondition fails, STOP and tell the human what to do. Never "fix" it with git.**
 A failed precondition is not a problem for you to solve — it is a problem to report.
@@ -50,12 +54,14 @@ flags or try to "set things up" for a successful retry.
 ## Step 1 — Determine the base branch
 
 1. Capture the current branch: `CURRENT_BRANCH=$(git branch --show-current)`.
-2. The base is `main` — always.
+2. The base is `dev` — unless this is a hotfix.
 3. If the user passed an argument:
-   - `/pr-open main` → fine, matches default.
+   - `/pr-open dev` → fine, matches default.
+   - `/pr-open main` → confirm this is a hotfix off `main` (rule 1), then proceed.
    - Any other target → ask the user to confirm before proceeding.
-4. If `$CURRENT_BRANCH` is `main` itself, **STOP** — there is nothing to PR from
-   `main`; tell the user to create a feature branch first.
+4. If `$CURRENT_BRANCH` is `main` or `dev` itself, **STOP** — neither is a branch
+   you PR *from*; tell the user to create a feature branch first. (The one
+   `dev -> main` PR that exists is `/release`'s to open, not this agent's.)
 
 ## Step 2 — Check preconditions (STOP if any fail)
 

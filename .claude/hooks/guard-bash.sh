@@ -396,7 +396,7 @@ while queue:
             # `git push -u origin <feature>`). Everything whose destination the
             # guard can't statically prove safe is blocked: bare `git push`,
             # `git push origin` (upstream config decides the target), pushes to
-            # main/master, force pushes, deletions, and bulk modes.
+            # main/master/dev, force pushes, deletions, and bulk modes.
             FORBIDDEN_FLAGS = {
                 "--force", "-f", "--force-with-lease", "--force-if-includes",
                 "--all", "--branches", "--mirror", "--tags", "--prune",
@@ -475,7 +475,7 @@ while queue:
                         f"BLOCKED: git push target '{spec}' isn't an explicit "
                         "branch name. Use HEAD:refs/heads/<feature-branch>."
                     )
-                if short in ("main", "master"):
+                if short in ("main", "master", "dev"):
                     block(
                         f"BLOCKED: pushing to '{short}' is forbidden — protected "
                         "branches only move via reviewed PRs merged by the human."

@@ -56,7 +56,7 @@ should follow; personal overrides go in `.local.json`.
 
 ## Editing this directory
 
-- Always work in feature branches; never commit `.claude/` changes directly to `main`.
+- Always work in feature branches; never commit `.claude/` changes directly to `dev` or `main`.
 - Skill/hook edits take effect on the next Claude session — restart the conversation after
   changes to be sure.
 - Test new rules in a throwaway conversation before relying on them.

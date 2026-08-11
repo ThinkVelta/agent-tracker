@@ -2,9 +2,10 @@ name: Release
 
 run-name: Release ${{ github.ref_name }}
 
-# Cut a release by bumping VERSION, merging to main, then tagging vX.Y.Z there.
-# The tag is the trigger; VERSION is the source of truth and the two must agree
-# (checked below) so a mistyped tag fails before anything is published.
+# Cut a release by bumping VERSION on `dev`, promoting `dev` to `main`, then
+# tagging vX.Y.Z on the merge commit. The tag is the trigger; VERSION is the
+# source of truth and the two must agree (checked below) so a mistyped tag fails
+# before anything is published. `/release` walks all three phases.
 on:
   push:
     tags:

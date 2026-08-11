@@ -2,10 +2,13 @@ name: Release PR
 
 run-name: 'Release PR - #${{ github.event.pull_request.number }}'
 
-# Only the PR that bumps VERSION. `/release` opens it on a `chore/release-*`
-# branch and nothing else uses that prefix, so the branch name is the trigger.
+# The two release-shaped PRs, which are the two `pr.yml` skips the AI reviewer
+# on. Whatever is not reviewed there has to be checked here instead:
 #
-# These checks all exist in the `/release` skill already, as Step 5. They are
+#   chore/release-* -> dev   the VERSION bump, one line and nothing else
+#   dev -> main              the release itself, everything since the last one
+#
+# These checks all exist in the `/release` skill already, as Step 6. They are
 # repeated here because a skill step is a thing a tired human can skip and CI is
 # not, and because the cost of getting them wrong is asymmetric: a tag is the
 # irreversible act, and every one of these is cheap to run and impossible to
@@ -14,6 +17,7 @@ on:
   pull_request:
     branches:
       - main
+      - dev
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -25,7 +29,9 @@ concurrency:
 
 jobs:
   version:
-    if: startsWith(github.head_ref, 'chore/release-')
+    if: >-
+      startsWith(github.head_ref, 'chore/release-')
+      || (github.head_ref == 'dev' && github.base_ref == 'main')
     name: VERSION is releasable
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -36,7 +42,10 @@ jobs:
           # the base commit to answer "is this really only a version bump".
           fetch-depth: 0
 
+      # The bump PR is the one the reviewer skips for being trivial, so it has
+      # to actually BE trivial. One line, and the release notes stay honest.
       - name: Only VERSION changed
+        if: startsWith(github.head_ref, 'chore/release-')
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
@@ -48,9 +57,31 @@ jobs:
             echo "::error::A chore/release-* PR must change VERSION and nothing" \
               "else. The AI reviewer skips this branch prefix precisely because" \
               "there is nothing to review — so anything else here would reach" \
-              "main unreviewed."
+              "dev unreviewed."
             exit 1
           fi
+
+      # The release PR is the opposite shape: it carries everything since the
+      # last release, so the only thing to assert about its contents is that a
+      # bump is among them. Without one, `main` would move while still
+      # declaring the version that is already tagged, and `/release` Phase B
+      # would then refuse to tag it — after the merge, which is the expensive
+      # moment to find out.
+      - name: VERSION was bumped
+        if: github.head_ref == 'dev'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet "$BASE_SHA...HEAD" -- VERSION; then
+            echo "::error::This dev -> main PR does not change VERSION, so" \
+              "merging it would move main without declaring a new version." \
+              "Land the chore/release-* bump into dev first."
+            exit 1
+          fi
+          echo "VERSION moves from" \
+            "$(git show "$BASE_SHA:VERSION" | tr -d '[:space:]') to" \
+            "$(tr -d '[:space:]' < VERSION)."
 
       - name: Check VERSION
         env:

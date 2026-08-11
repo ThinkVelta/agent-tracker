@@ -46,9 +46,10 @@ If it fails, fix the name (or ask) before creating anything.
 
 If the user specified `--base <branch>` in their arguments, use that.
 
-Otherwise, default to `main` — this repo has a single long-lived branch. If the current branch
+Otherwise, default to `dev` — work integrates there, so that is what a new feature branches
+from. Branch from `main` only for a hotfix that must ship ahead of `dev`. If the current branch
 looks like a feature branch and the user is creating a sub-feature, confirm whether they want to
-branch from `main` or from the current branch instead. Use multiple-choice for easy user
+branch from `dev` or from the current branch instead. Use multiple-choice for easy user
 selection.
 
 ## Step 3 — Check if this worktree already exists

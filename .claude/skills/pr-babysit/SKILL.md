@@ -17,7 +17,7 @@ argument-hint: "[pr-number]"
 
 You babysit the open pull request for the current branch: keep watching CI and review activity, and do not stop until the PR is **green and fully addressed** — or you are blocked on a decision only the human can make. You are a watchdog wrapped around the existing `/pr-iterate` flow; you never merge.
 
-This repo runs a **single long-lived branch** flow — every PR targets `main` (there is no `dev`). Still resolve the PR's actual base from `baseRefName` rather than assuming `main`.
+Ordinary PRs here target `dev`; `main` is what has been released. Resolve the PR's actual base from `baseRefName` rather than assuming either — a hotfix and the `dev -> main` release PR both legitimately target `main`.
 
 ## Step 0 — Gate: a PR must already exist
 
@@ -31,12 +31,12 @@ PR=$(gh pr view ${PR_INPUT:+"$PR_INPUT"} --json number --jq .number)
 gh pr view "$PR" --json number,url,state,baseRefName
 ```
 
-- If the current branch is `main`, **stop immediately** — switch to the feature branch first.
+- If the current branch is `main` or `dev`, **stop immediately** — switch to the feature branch first.
 - If there is **no open PR** for this branch (and no PR number was passed), **stop** and tell the user: run `/pr-open` first — `/pr-babysit` only watches PRs that already exist.
 - If the PR is `MERGED` or `CLOSED`, **stop** and report its state — nothing to babysit.
 - Require a clean working tree (`git status -s`). If dirty, stop and tell the user to `/commit` or stash first — babysitting must not entangle unrelated WIP.
 
-`$PR` is now pinned (from the argument or the branch). Record its base branch as `$TARGET_BASE` (from `baseRefName` — normally `main`) and the current time — feedback older than the babysit start that was already addressed in earlier iterations does not count as "new".
+`$PR` is now pinned (from the argument or the branch). Record its base branch as `$TARGET_BASE` (from `baseRefName` — normally `dev`) and the current time — feedback older than the babysit start that was already addressed in earlier iterations does not count as "new".
 
 ## The watch loop
 
@@ -107,7 +107,7 @@ Read the actual failure, fix the code, and land it the standard way: delegate th
 git push origin "HEAD:refs/heads/$(git branch --show-current)"
 ```
 
-Never bare `git push`, never another branch, never `--force`, never a push targeting `main` — repo rule: agents push only explicit feature-branch refspecs. The push restarts CI → return to step 1.
+Never bare `git push`, never another branch, never `--force`, never a push targeting `main` or `dev` — repo rule: agents push only explicit feature-branch refspecs. The push restarts CI → return to step 1.
 
 If the same check fails twice on the same root cause after a fix attempt, stop and report — don't ping-pong commits against a failure you don't understand.
 
@@ -115,7 +115,7 @@ If the same check fails twice on the same root cause after a fix attempt, stop a
 
 Stop the loop and report **merge-ready** when ALL of:
 
-1. Every CI check is green (the non-blocking `Codex review` status counts too: it must be green, i.e. `unresolved=0`, or every remaining finding must be declined with a reasoned comment).
+1. Every CI check is green (the non-blocking `Codex review` status counts too: it must be green, i.e. `unresolved=0`, or every remaining finding must be declined with a reasoned comment). On a release-shaped PR — `chore/release-*`, or `dev -> main` — that status is *absent* rather than green, because `pr.yml` skips the reviewer there by design; absent is the pass condition for those two, and only those two.
 2. Every review item has been implemented or declined with a reasoned comment — nothing newer than the last iteration is left hanging.
 3. The working tree is clean and local equals `origin/<branch>`.
 
@@ -147,7 +147,7 @@ introduced it and the review finding (or CI failure) that motivated it.
 
 ## Important rules
 
-- **Never `gh pr merge`, never bare `git push`, never force-push, never push to `main`** — repo rules, re-stated here because a long watch loop is exactly where "just this once" creeps in.
+- **Never `gh pr merge`, never bare `git push`, never force-push, never push to `main` or `dev`** — repo rules, re-stated here because a long watch loop is exactly where "just this once" creeps in.
 - Reviews are advisory, not authoritative — same bar as `/pr-iterate`: don't implement churn just to clear a comment; decline with reasoning instead.
 - One concern per pass: don't batch a CI fix and a review iteration into one commit blob; let each loop pass land its own commits.
 - Bounded patience beats infinite loops: a stalled queue, a flaky runner, or a repeating failure is a report to the human, not a retry marathon.
