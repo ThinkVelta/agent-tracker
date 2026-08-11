@@ -45,6 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if Notifications.isAvailable {
             UNUserNotificationCenter.current().delegate = self
         }
+        // Before the store starts reading what the hook writes: the two ship
+        // together and are installed separately, so an upgrade leaves the
+        // script behind unless something goes and gets it.
+        HookSetup.refreshInstalledHook()
         let store = SessionStore()
         self.store = store
         setUpStatusItem(for: store)
