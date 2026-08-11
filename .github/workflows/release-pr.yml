@@ -42,6 +42,34 @@ jobs:
           # the base commit to answer "is this really only a version bump".
           fetch-depth: 0
 
+      # A `chore/release-*` branch aimed anywhere but `dev` is a mistake, and a
+      # quiet one: the steps below would happily green-light it, and a green
+      # "VERSION is releasable" reads as "this PR is shaped right". `pr.yml`
+      # already declines to skip review for it, so nothing reaches `main`
+      # unreviewed either way — this exists to name the mistake rather than
+      # leave someone reading a passing check.
+      #
+      # Both refs go through the environment. Interpolating `${{ github.head_ref }}`
+      # into the script body would run a branch name as shell, and a branch name
+      # is attacker-supplied on a fork PR.
+      - name: Release PRs must be shaped correctly
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          case "$HEAD_REF" in
+            chore/release-*)
+              if [ "$BASE_REF" != "dev" ]; then
+                echo "::error::A chore/release-* PR must target dev, not" \
+                  "'$BASE_REF'. The bump reaches main through the dev -> main" \
+                  "promotion, so that main is always a fast-forward of dev."
+                exit 1
+              fi
+              ;;
+          esac
+          echo "OK: $HEAD_REF -> $BASE_REF is a valid release PR shape."
+
       # The bump PR is the one the reviewer skips for being trivial, so it has
       # to actually BE trivial. One line, and the release notes stay honest.
       - name: Only VERSION changed

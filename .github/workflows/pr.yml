@@ -47,9 +47,17 @@ jobs:
     #   `chore/release-*` -> dev   one line of VERSION
     #   dev -> main                the release itself
     #
-    # The second is only safe because the guard hook forbids pushing to `dev`,
-    # so everything in it arrived through a reviewed PR. If that guard is ever
-    # relaxed, this skip has to go with it — they are one mechanism.
+    # Both halves of each shape are matched, head AND base. Keying the skip on
+    # the head alone would let a MIS-TARGETED release PR — `chore/release-*`
+    # aimed at `main` instead of `dev` — skip review and still pass
+    # `release-pr.yml`, putting a bump on `main` that never went through `dev`.
+    # That is the exact divergence this whole model exists to prevent, so a
+    # release PR pointed at the wrong base falls through to an ordinary review
+    # rather than to a special failure path: wrong shape, no skip, no gap.
+    #
+    # The `dev -> main` skip is only safe because the guard hook forbids pushing
+    # to `dev`, so everything in it arrived through a reviewed PR. If that guard
+    # is ever relaxed, this skip has to go with it — they are one mechanism.
     #
     # Skipping leaves no `Codex review` status at all, exactly as it already
     # does for dependabot and forks. Harmless while `main` is unprotected
@@ -62,8 +70,8 @@ jobs:
     if: >-
       github.event.pull_request.user.login != 'dependabot[bot]'
       && github.event.pull_request.head.repo.full_name == github.repository
-      && !startsWith(github.head_ref, 'chore/release-')
-      && github.head_ref != 'dev'
+      && !(startsWith(github.head_ref, 'chore/release-') && github.base_ref == 'dev')
+      && !(github.head_ref == 'dev' && github.base_ref == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
