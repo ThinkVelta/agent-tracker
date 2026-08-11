@@ -151,6 +151,13 @@ final class ClaudeSessionRegistryTests {
             Data(#"{"sessionId":"s3","name":"planner-b7","nameSource":"something-new"}"#.utf8))
         #expect(unknown?.nameIsChosen == false)
 
+        // JSON has two spellings for "no source", and the rename path writes
+        // the one that is normally omitted. If it is ever spelled out instead,
+        // it must not demote a renamed session back to a slug.
+        let explicitNull = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s5","name":"the migration","nameSource":null}"#.utf8))
+        #expect(explicitNull?.nameIsChosen == true)
+
         // No name at all is not a chosen name.
         let unnamed = ClaudeSessionRegistry.parse(Data(#"{"sessionId":"s4"}"#.utf8))
         #expect(unnamed?.nameIsChosen == false)

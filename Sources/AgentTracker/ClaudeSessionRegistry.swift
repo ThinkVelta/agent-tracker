@@ -159,11 +159,18 @@ final class ClaudeSessionRegistry {
             let sessionId = object["sessionId"] as? String, !sessionId.isEmpty
         else { return nil }
         let name = (object["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        // Absent means chosen. An unrecognized value is treated as derived:
-        // this decides whether to put a name on every row, and inventing a
-        // reason to do that from a string nobody has seen is the wrong way to
-        // be wrong.
-        let nameIsChosen = name != nil && object["nameSource"] == nil
+        // Absent means chosen, and so does an explicit null — both say "no
+        // source", and JSON has two spellings for that. The rename path writes
+        // `nameSource: void 0`, which `JSON.stringify` omits today; a
+        // serializer that spelled it `null` instead would otherwise silently
+        // demote every renamed session back to a derived slug, which is the
+        // exact failure this field exists to prevent.
+        //
+        // An unrecognized value stays derived: this decides whether to put a
+        // name on every row, and inventing a reason to do that from a string
+        // nobody has seen is the wrong way to be wrong.
+        let source = object["nameSource"]
+        let nameIsChosen = name != nil && (source == nil || source is NSNull)
         let cwd = (object["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return Entry(
             sessionId: sessionId,
