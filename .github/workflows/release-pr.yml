@@ -92,7 +92,7 @@ jobs:
       # The release PR is the opposite shape: it carries everything since the
       # last release, so the only thing to assert about its contents is that a
       # bump is among them. Without one, `main` would move while still
-      # declaring the version that is already tagged, and `/release` Phase B
+      # declaring the version that is already tagged, and `/release` Phase C
       # would then refuse to tag it — after the merge, which is the expensive
       # moment to find out.
       - name: VERSION was bumped
