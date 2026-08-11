@@ -12,12 +12,21 @@ struct HookRefreshTests {
 
     @Test("a stale installed script is refreshed")
     func staleIsRefreshed() {
-        #expect(HookSetup.hookNeedsRefresh(installed: stale, bundled: current))
+        #expect(HookSetup.hookNeedsRefresh(isInstalled: true, installed: stale, bundled: current))
     }
 
     @Test("an up-to-date script is left alone")
     func currentIsLeftAlone() {
-        #expect(!HookSetup.hookNeedsRefresh(installed: current, bundled: current))
+        #expect(
+            !HookSetup.hookNeedsRefresh(isInstalled: true, installed: current, bundled: current))
+    }
+
+    /// Present but unreadable — truncated by a full disk, half-written,
+    /// mode-mangled. That is the case where replacing it matters most, and the
+    /// first version treated it as "not installed" and walked away.
+    @Test("a script that is there but cannot be read is replaced")
+    func unreadableIsRefreshed() {
+        #expect(HookSetup.hookNeedsRefresh(isInstalled: true, installed: nil, bundled: current))
     }
 
     /// The one that matters most. Writing the script is the integration
@@ -27,15 +36,15 @@ struct HookRefreshTests {
     /// badly".
     @Test("a machine with no hook installed does not get one")
     func absentIsNotInstalled() {
-        #expect(!HookSetup.hookNeedsRefresh(installed: nil, bundled: current))
+        #expect(!HookSetup.hookNeedsRefresh(isInstalled: false, installed: nil, bundled: current))
     }
 
     /// A `swift run` build with no repo beside it has nothing to refresh from,
     /// and must not treat that as a reason to touch anything.
     @Test("no bundled copy means nothing to do")
     func absentBundleDoesNothing() {
-        #expect(!HookSetup.hookNeedsRefresh(installed: stale, bundled: nil))
-        #expect(!HookSetup.hookNeedsRefresh(installed: nil, bundled: nil))
+        #expect(!HookSetup.hookNeedsRefresh(isInstalled: true, installed: stale, bundled: nil))
+        #expect(!HookSetup.hookNeedsRefresh(isInstalled: false, installed: nil, bundled: nil))
     }
 
     /// End to end against a scratch directory: the bytes land, and the

@@ -44,14 +44,22 @@ enum HookSetup {
     ///
     /// - No bundled copy: nothing to refresh *from*. A `swift run` build with
     ///   no repo beside it is the honest example.
-    /// - No installed copy: **never install one here.** Putting the script in
+    /// - Not installed: **never install one here.** Putting the script in
     ///   place is the integration installer's job, because it also edits the
     ///   user's `settings.json`, and a config edit is a thing somebody agrees
     ///   to rather than something an app does on launch.
     /// - Identical: nothing to do, which is every launch after the first.
-    /// - Different: refresh.
-    static func hookNeedsRefresh(installed: Data?, bundled: Data?) -> Bool {
-        guard let bundled, let installed else { return false }
+    /// - Different, **or present and unreadable**: refresh.
+    ///
+    /// Existence and readability are separate questions, and conflating them
+    /// was the first version's bug: a script that is there but cannot be read —
+    /// truncated by a full disk, half-written, mode-mangled — would have been
+    /// treated as "not installed" and left exactly as it was. That is the case
+    /// where replacing it matters most, and the one where the agent is running
+    /// something broken right now.
+    static func hookNeedsRefresh(isInstalled: Bool, installed: Data?, bundled: Data?) -> Bool {
+        guard let bundled, isInstalled else { return false }
+        // `installed` nil means unreadable, which is never equal to the bundle.
         return installed != bundled
     }
 
@@ -80,10 +88,12 @@ enum HookSetup {
         source: URL? = installerDirectory()?.appendingPathComponent("agent-tracker-hook.py")
     ) -> Bool {
         let installedPath = installedHookPath(base: base)
-        let bundledPath = source
         let installed = try? Data(contentsOf: installedPath)
-        let bundled = bundledPath.flatMap { try? Data(contentsOf: $0) }
-        guard hookNeedsRefresh(installed: installed, bundled: bundled), let bundled else {
+        let bundled = source.flatMap { try? Data(contentsOf: $0) }
+        let isInstalled = FileManager.default.fileExists(atPath: installedPath.path)
+        guard hookNeedsRefresh(isInstalled: isInstalled, installed: installed, bundled: bundled),
+            let bundled
+        else {
             return false
         }
         do {

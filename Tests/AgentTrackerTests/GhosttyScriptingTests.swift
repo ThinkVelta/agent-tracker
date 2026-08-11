@@ -72,12 +72,18 @@ final class GhosttyScriptingTests {
     /// Reading twice must agree. A specifier form that Ghostty half-accepts would
     /// show up here as a list that changes shape between identical calls.
     ///
-    /// Compared as a *subset relation*, not equality: this reads a live Ghostty,
-    /// and a window opened or closed between the two calls is the user going
-    /// about their day, not the specifier misbehaving. Observed failing exactly
-    /// that way. What a half-accepted specifier would produce — surfaces
-    /// vanishing from a second read, or ids that are not stable identities — is
-    /// still caught, because one read has to remain a subset of the other.
+    /// Compared as a *subset relation*, not equality: this reads a live
+    /// Ghostty, and a window opened or closed between the two calls is the user
+    /// going about their day, not the specifier misbehaving. Observed failing
+    /// exactly that way.
+    ///
+    /// Be precise about what that does and does not catch. A subset relation
+    /// permits one read to be smaller, so it cannot tell a vanished surface
+    /// from a closed window — nothing can, with two reads of live state. What
+    /// it does catch is the shape a half-accepted specifier actually produces:
+    /// a second list that overlaps the first not at all, or one that empties
+    /// out. Somebody closing every window between two consecutive calls is not
+    /// a thing; a specifier returning nothing is.
     @Test func readingTwiceGivesTheSameSurfaces() throws {
         guard let pid = ghosttyPid,
             case .success = GhosttyScripting.automationPermission(pid: pid)
@@ -85,6 +91,7 @@ final class GhosttyScriptingTests {
         let first = Set(try GhosttyScripting.surfaces(pid: pid).get().map(\.id))
         let second = Set(try GhosttyScripting.surfaces(pid: pid).get().map(\.id))
         #expect(first.isSubset(of: second) || second.isSubset(of: first))
+        #expect(first.isEmpty == second.isEmpty)
     }
 
     /// Every failure has to be sayable to a user, since the row shows the reason.
