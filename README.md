@@ -188,6 +188,14 @@ banner rather than one a second; going to the terminal yourself withdraws it
 again. Focus and Do Not Disturb hold these back like any other app's, which is
 the point of not marking them time-sensitive.
 
+**Group by project when that is the question.** Sections divide by state by
+default, because the app's question is *which one needs me*. Settings › General
+switches them to project, which is what you want once several sessions live in
+one repo and the state grouping scatters them across three headings. A project
+takes the most urgent state inside it — for its dot and for its place in the
+list — so a repo holding something that needs you still leads, and cannot read
+as calm.
+
 **Pin the one you are watching.** A pinned session sits in its own group at the
 top of the list whatever it is doing, so it stops moving between sections while
 you are looking at it — right-click a row and choose *Pin to top*. It leaves its

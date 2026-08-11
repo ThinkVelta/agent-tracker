@@ -146,6 +146,22 @@ private struct GeneralSettingsTab: View {
                     .frame(width: 180)
                 }
                 SettingsRow(
+                    title: "Group sessions by",
+                    detail: "State answers \"which one needs me\". Project answers \"what is "
+                        + "going on in this repo\", which is what you want once several "
+                        + "sessions live in one codebase.",
+                    divided: true
+                ) {
+                    Picker("", selection: $preferences.grouping) {
+                        ForEach(SessionSections.Grouping.allCases, id: \.self) {
+                            Text($0.label)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 180)
+                }
+                SettingsRow(
                     title: "Fold idle sessions away",
                     detail: "Idle sessions collapse into their header so active work stays "
                         + "visible. Filtering or searching always expands them.",

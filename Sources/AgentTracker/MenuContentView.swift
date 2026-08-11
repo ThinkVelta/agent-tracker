@@ -17,7 +17,7 @@ struct MenuContentView: View {
     @State private var searchText = ""
     /// Explicit collapse choices, which override the automatic idle folding
     /// below. Absent means "whatever the list thinks is sensible".
-    @State private var sectionOverrides: [SessionState: Bool] = [:]
+    @State private var sectionOverrides: [String: Bool] = [:]
 
     private var query: String { searchText.trimmingCharacters(in: .whitespaces) }
 
@@ -66,6 +66,7 @@ struct MenuContentView: View {
         let narrowing = store.selectedFilter != nil || !query.isEmpty
         return SessionSections.build(
             from: filteredSessions.filter { !$0.isPinned },
+            grouping: preferences.grouping,
             overrides: SessionSections.overridesForNarrowing(
                 sectionOverrides, narrowing: narrowing),
             autoCollapseIdle: !narrowing && folding != .never,
@@ -248,14 +249,14 @@ struct MenuContentView: View {
     private func sectionHeader(_ section: SessionSections.Section) -> some View {
         Button {
             withAnimation(Theme.Motion.quick) {
-                sectionOverrides[section.state] = !section.isCollapsed
+                sectionOverrides[section.id] = !section.isCollapsed
             }
         } label: {
             HStack(spacing: 6) {
                 Circle()
-                    .fill(section.state.color)
+                    .fill(section.accent.color)
                     .frame(width: 6, height: 6)
-                Text(section.state.label.uppercased())
+                Text(section.title.uppercased())
                     .font(Theme.Typography.sectionHeader)
                     .kerning(0.8)
                     .foregroundStyle(.tertiary)
@@ -277,8 +278,8 @@ struct MenuContentView: View {
         .buttonStyle(.plain)
         .help(
             section.isCollapsed
-                ? "Show \(section.state.label) sessions"
-                : "Hide \(section.state.label) sessions")
+                ? "Show \(section.title) sessions"
+                : "Hide \(section.title) sessions")
     }
 
     private func row(for session: AgentSession) -> some View {

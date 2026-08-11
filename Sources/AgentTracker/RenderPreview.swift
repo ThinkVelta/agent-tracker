@@ -145,6 +145,15 @@ enum RenderPreview {
             {
                 store.selectedFilter = state
             }
+            // Safe to write: under --render-preview the preferences live in an
+            // isolated suite (see `AppDefaults`), so this cannot reach the
+            // settings of whoever is regenerating the images.
+            if let index = arguments.firstIndex(of: "--grouping"),
+                arguments.count > index + 1,
+                let grouping = SessionSections.Grouping(rawValue: arguments[index + 1])
+            {
+                Preferences.shared.grouping = grouping
+            }
             // The store reads its state files synchronously in `init`, so a
             // populated directory is already loaded here. One short wait
             // remains for the empty case, where a fixture may still be landing.
