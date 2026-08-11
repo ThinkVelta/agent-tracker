@@ -135,10 +135,24 @@ jobs:
             exit 1
           fi
 
-          latest="${latest_raw#v}"
+          # Both cases, because `UpdateCheck.numericVersion` strips both — a
+          # tag of `V1.2.3` is a version to the app and would have been a
+          # nonsense segment list here.
+          latest="${latest_raw#[vV]}"
           if [ -z "$latest" ]; then
             echo "::error::The latest release carries no tag name, which should" \
               "not be possible. Refusing rather than assuming."
+            exit 1
+          fi
+          # The app answers a malformed latest tag by offering the update
+          # anyway (`isNewer` treats an unreadable *current* version as always
+          # upgradable). CI must not copy that: a release tagged with something
+          # it cannot parse is a thing for a human to look at, not to wave
+          # through on the way to another tag.
+          if ! printf '%s' "$latest" | grep -Eq '^[0-9]+(\.[0-9]+)*$'; then
+            echo "::error::The latest release is tagged '$latest_raw', which is" \
+              "not a numeric dotted version. Refusing rather than guessing how" \
+              "it orders."
             exit 1
           fi
           echo "Latest published release: $latest"
