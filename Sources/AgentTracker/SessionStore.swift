@@ -270,12 +270,7 @@ final class SessionStore: ObservableObject {
             return marked
         }
 
-        let sorted = merged.sorted { lhs, rhs in
-            if lhs.state != rhs.state {
-                return lhs.state.sortRank < rhs.state.sortRank
-            }
-            return (lhs.stateChangedAt ?? .distantPast) > (rhs.stateChangedAt ?? .distantPast)
-        }
+        let sorted = merged.sorted(by: SessionOrder.precedes)
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }

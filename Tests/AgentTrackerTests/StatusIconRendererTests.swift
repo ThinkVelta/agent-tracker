@@ -198,4 +198,23 @@ final class StatusIconRendererTests {
         #expect(tallies.total == 4)
         #expect(tallies.count(for: .running) == 2)
     }
+
+    /// A click landing exactly between two dots is a real position — the gap is
+    /// a few points — and answering it differently on two identical clicks
+    /// reads as the menu bar being unreliable. Ties go leftmost.
+    @Test func aClickExactlyBetweenTwoDotsAlwaysPicksTheSameOne() {
+        // Equidistant and inside the snap tolerance, which is what makes this
+        // a tie rather than a miss.
+        let gap = StatusIconRenderer.snapTolerance
+        let regions = [
+            StatusIconRenderer.HitRegion(state: .needsYou, range: 0..<10),
+            StatusIconRenderer.HitRegion(state: .running, range: (10 + 2 * gap)..<(20 + 2 * gap)),
+        ]
+        let between = 10 + gap
+        for _ in 0..<50 {
+            #expect(
+                StatusIconRenderer.state(atImageX: between, regions: regions.shuffled())
+                    == .needsYou)
+        }
+    }
 }
