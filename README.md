@@ -175,11 +175,10 @@ exactly like the timestamp beside it and recedes into the line; past 70% it
 takes weight and turns amber, and red past 90%. So a glance costs nothing and
 still tells you which session is running out of room — and a row with no reading
 at all stays blank rather than showing a zero, so "plenty left" and "nothing
-known" never look the same. A reading arrives once that session's statusline has
-rendered, which needs the wrapper (below). It sits in its own slot rather than
-in the row's metadata line, because that line truncates and this is precisely
-the number you would not want cut. Needs the statusline wrapper (below), which is where the percentage
-comes from.
+known" never look the same. It sits in its own slot rather than in the row's
+metadata line, because that line truncates and this is precisely the number you
+would not want cut. The reading arrives once that session's statusline has
+rendered, which needs the statusline wrapper (below).
 
 **A banner, if you want one.** Off by default: the menu bar is the passive
 channel this app was built to be, and a notification is the most intrusive thing
