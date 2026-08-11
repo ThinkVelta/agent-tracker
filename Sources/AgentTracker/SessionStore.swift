@@ -47,7 +47,8 @@ final class SessionStore: ObservableObject {
     /// The shared instance, for the same reason the schedules use theirs: the
     /// dropdown observes it directly, and a second one here would mute rows the
     /// menu never sees.
-    private let muted = MutedSessions.shared
+    private let muted = SessionKeySet.muted
+    private let pinned = SessionKeySet.pinned
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
     /// the menu bar and by the in-popover chips, so the two stay in sync.
     @Published var selectedFilter: SessionState?
@@ -261,11 +262,12 @@ final class SessionStore: ObservableObject {
         // to know about muting, and so the reason a session gave survives — the
         // row still says "Approve Bash?", it just does not turn red for it.
         merged = merged.map { session in
-            guard muted.isMuted(session.id) else { return session }
-            var quiet = session
-            quiet.isMuted = true
-            if quiet.state == .needsYou { quiet.state = .idle }
-            return quiet
+            var marked = session
+            marked.isPinned = pinned.contains(session.id)
+            guard muted.contains(session.id) else { return marked }
+            marked.isMuted = true
+            if marked.state == .needsYou { marked.state = .idle }
+            return marked
         }
 
         let sorted = merged.sorted { lhs, rhs in
@@ -277,7 +279,9 @@ final class SessionStore: ObservableObject {
         // Reloading every second, so publish only real changes: an unchanged
         // assignment would still redraw the icon and re-render the popover.
         if sessions != sorted { sessions = sorted }
-        muted.reconcile(liveKeys: Set(sorted.map(\.id)), now: now)
+        let liveKeys = Set(sorted.map(\.id))
+        muted.reconcile(liveKeys: liveKeys, now: now)
+        pinned.reconcile(liveKeys: liveKeys, now: now)
         usageWatcher.prune(liveSessionIds: Set(sorted.map(\.sessionId)))
         if !focusRotation.isEmpty {
             let live = Set(sorted.map(\.id))

@@ -103,6 +103,9 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// only — a muted session still reports everything it always did, and the
     /// row still says what it wants; it simply does not turn red for it.
     var isMuted = false
+    /// Whether the user has held this session at the top of the list. Display
+    /// state only: it changes where the row is drawn, never what it says.
+    var isPinned = false
     /// How full this session's context window is, 0-100. Joined in from
     /// `StatuslineDirectory`, and never read from the state file: no hook
     /// payload carries one.

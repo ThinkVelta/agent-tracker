@@ -180,6 +180,13 @@ banner rather than one a second; going to the terminal yourself withdraws it
 again. Focus and Do Not Disturb hold these back like any other app's, which is
 the point of not marking them time-sensitive.
 
+**Pin the one you are watching.** A pinned session sits in its own group at the
+top of the list whatever it is doing, so it stops moving between sections while
+you are looking at it — right-click a row and choose *Pin to top*. It leaves its
+state section rather than appearing twice, and the dot counts are unchanged: a
+pinned needs-you session is still one of the red ones. The group has no collapse
+chevron, because hiding what you asked to keep visible is not a thing to offer.
+
 **Row actions, on right-click.** *Mute* is for the long-running background
 agent that finishes a turn every few minutes: it is doing exactly what it
 should, and every completion turns the menu bar red for something you never
