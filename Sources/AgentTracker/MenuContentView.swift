@@ -97,10 +97,6 @@ struct MenuContentView: View {
                 sessionList
             }
             Divider()
-            if !store.usage.isEmpty {
-                usageStrip
-                Divider()
-            }
             footer
         }
         .frame(width: Theme.Metrics.popoverWidth)
@@ -357,23 +353,22 @@ struct MenuContentView: View {
     /// spacers, so it lands dead center.
     /// Quota, where it can be read without looking for it.
     ///
-    /// Above the footer rather than inside it: the footer's three items are
-    /// controls and a count, and quota is neither. Shown only when a reading
-    /// exists — an empty strip would imply "nothing used" where the truth is
-    /// "nothing known", and those are the two states this must never merge.
-    private var usageStrip: some View {
-        HStack(spacing: 10) {
-            ForEach(store.usage) { reading in
-                UsageChip(reading: reading)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, Theme.Metrics.gutter)
-        .padding(.vertical, 5)
-    }
-
+    /// One bar, not two. Quota lived on its own row above this one and read as
+    /// a second footer for the sake of two numbers; the controls, the count and
+    /// the quota are all "about the list rather than in it", so they belong on
+    /// the same line.
+    ///
+    /// The count gives up its centred position for it. Centring only looked
+    /// deliberate while the row held one thing — with the quota on the left it
+    /// would read as approximately-centred, which is worse than plainly
+    /// right-aligned. Two groups now: settings and quota at the leading edge,
+    /// count and quit at the trailing one.
+    ///
+    /// A window with no reading simply is not there, so a footer stays a footer
+    /// on a machine that has never run the statusline wrapper. An empty strip
+    /// would have implied "nothing used" where the truth is "nothing known".
     private var footer: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 8) {
             FooterIconButton(systemName: "gearshape", help: "Settings (⌘,)") {
                 // Close the panel first or the settings window opens behind
                 // it; activate because an accessory app's windows otherwise
@@ -382,11 +377,15 @@ struct MenuContentView: View {
                 NSApp.activate(ignoringOtherApps: true)
                 openSettings()
             }
-            Spacer()
+            ForEach(store.usage) { reading in
+                UsageChip(reading: reading)
+            }
+            Spacer(minLength: 4)
             Text(sessionSummary)
                 .font(Theme.Typography.footer)
                 .foregroundStyle(.tertiary)
-            Spacer()
+                .lineLimit(1)
+                .layoutPriority(1)
             FooterIconButton(systemName: "power", help: "Quit AgentTracker") {
                 requestQuit()
             }
@@ -608,7 +607,6 @@ struct SessionRow: View {
     let onSelect: () -> Void
 
     @State private var hovering = false
-    @State private var showsPath = false
 
     /// The trailing control is a SIBLING of the row button, never inside its
     /// label. #28 (`99608db`) removed exactly such a nested control with the
@@ -633,20 +631,7 @@ struct SessionRow: View {
             // the control, which put the pointer back over the button, which
             // re-hovered the row. Hover drove hit-testing and hit-testing drove
             // hover, and the pair oscillated at screen refresh rate.
-            .onHover { hovering in
-                self.hovering = hovering
-                guard hovering else {
-                    showsPath = false
-                    return
-                }
-                // Our own delay rather than .help(): AppKit's tooltip timer is
-                // system-owned and takes over a second, which is far too slow
-                // for a list you are scanning.
-                Task {
-                    try? await Task.sleep(for: .milliseconds(280))
-                    if self.hovering { showsPath = true }
-                }
-            }
+            .onHover { self.hovering = $0 }
             if editing { editorPanel }
         }
         .contextMenu {
@@ -893,33 +878,6 @@ struct SessionRow: View {
             )
         }
         .buttonStyle(.plain)
-        .overlay(alignment: .bottomLeading) {
-            // Not while the arming panel is open: the card floats below the
-            // row and would land on top of the panel's own text. Hovering to
-            // read a path and reading the panel are different activities, and
-            // the panel is the one the user deliberately opened.
-            if showsPath, !editing, let cwd = session.primaryDirectory {
-                Text(cwd)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .truncationMode(.head)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 5)
-                            .fill(.background)
-                            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
-                    )
-                    .frame(maxWidth: Theme.Metrics.popoverWidth - 32, alignment: .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .offset(x: 8, y: 18)
-                    .transition(.opacity)
-                    .allowsHitTesting(false)
-                    .zIndex(1)
-            }
-        }
-        .animation(Theme.Motion.quick, value: showsPath)
         .accessibilityLabel(
             [
                 title ?? session.displayName, metadata,
