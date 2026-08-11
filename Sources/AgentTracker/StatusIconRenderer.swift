@@ -137,8 +137,16 @@ enum StatusIconRenderer {
     /// within `snapTolerance` instead of going dead (user-reported: clicks
     /// had to land pixel-perfect on a dot to register as one).
     static func state(atImageX imageX: CGFloat, regions: [HitRegion]) -> SessionState? {
-        let nearest = regions.min {
-            distance(from: $0.range, to: imageX) < distance(from: $1.range, to: imageX)
+        // Ties go to the dot drawn first, i.e. leftmost, rather than to
+        // whichever `min` happened to hold. A click landing exactly between two
+        // dots is a real position — the gap is only a few points — and
+        // answering it differently on two identical clicks is the kind of thing
+        // a user reads as the menu bar being unreliable.
+        let nearest = regions.min { lhs, rhs in
+            let lhsDistance = distance(from: lhs.range, to: imageX)
+            let rhsDistance = distance(from: rhs.range, to: imageX)
+            if lhsDistance != rhsDistance { return lhsDistance < rhsDistance }
+            return lhs.range.lowerBound < rhs.range.lowerBound
         }
         guard let nearest, distance(from: nearest.range, to: imageX) <= snapTolerance else {
             return nil

@@ -143,10 +143,20 @@ struct AccountLimits: Equatable {
 
     /// The window standing between you and progress, soonest reset first —
     /// that is the one you are waiting on.
+    ///
+    /// The shorter window breaks a tie. Two blocked windows reporting the same
+    /// reset instant is unlikely rather than impossible, and `byWindow` is a
+    /// dictionary, so without this the row's wording would be picked by
+    /// whichever the iteration yielded first and could change between passes.
     func blockingLimit(now: Date = Date()) -> UsageLimit? {
         byWindow.values
             .filter { $0.isBlocking(now: now) }
-            .min { ($0.resetsAt ?? .distantFuture) < ($1.resetsAt ?? .distantFuture) }
+            .min { lhs, rhs in
+                let lhsReset = lhs.resetsAt ?? .distantFuture
+                let rhsReset = rhs.resetsAt ?? .distantFuture
+                if lhsReset != rhsReset { return lhsReset < rhsReset }
+                return lhs.window.minutes < rhs.window.minutes
+            }
     }
 
     var all: [UsageLimit] { Array(byWindow.values) }

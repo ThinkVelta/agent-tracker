@@ -197,4 +197,24 @@ final class UsageLimitTests {
         #expect(UsageLimit.Window(minutes: 60) == .other(minutes: 60))
         #expect(UsageLimit.Window(minutes: 60).label == "60-minute limit")
     }
+
+    /// Two blocked windows reporting the same reset instant is unlikely rather
+    /// than impossible, and the source is a dictionary — so without a tiebreak
+    /// the row's wording would be picked by whichever the iteration yielded
+    /// first, and could change between passes with nothing behind it.
+    /// Both insertion orders, because the input is a dictionary and its
+    /// iteration cannot be permuted from out here — recording the windows the
+    /// other way round is the only lever a test has on it. Deterministic, and
+    /// a failure names which order broke rather than a seed.
+    @Test func twoWindowsResettingTogetherPickTheSameOne() {
+        for weeklyFirst in [true, false] {
+            var limits = AccountLimits()
+            let windows: [UsageLimit.Window] =
+                weeklyFirst ? [.weekly, .fiveHour] : [.fiveHour, .weekly]
+            for window in windows { limits.record(limit(window, resetsAt: reset)) }
+            #expect(
+                limits.blockingLimit(now: reset.addingTimeInterval(-60))?.window == .fiveHour,
+                "weeklyFirst: \(weeklyFirst)")
+        }
+    }
 }
