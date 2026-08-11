@@ -27,8 +27,18 @@ final class ClaudeSessionRegistry {
         /// session driving a worktree the two genuinely differ, and each is
         /// right for a different job (see `AgentSession.windowDirectories`).
         let cwd: String?
-        /// Claude's derived session slug, e.g. "planner-e8".
+        /// Claude's name for the session, e.g. "planner-e8".
         let name: String?
+        /// Whether the user picked that name rather than Claude inventing it.
+        ///
+        /// Read from `nameSource`, which Claude writes as `"derived"` for the
+        /// slug it makes up at startup and **omits** when the name was chosen —
+        /// `--name` at launch, or `/rename` later, which explicitly clears it.
+        /// Verified against the 2.1.227 binary rather than guessed, because the
+        /// distinction is a whole feature: a name someone typed is worth
+        /// showing, a generated slug is only worth showing when two rows would
+        /// otherwise be identical.
+        let nameIsChosen: Bool
         let status: Status
         let statusUpdatedAt: Date?
         /// Claude's own words for what a `waiting` session is blocked on:
@@ -149,12 +159,25 @@ final class ClaudeSessionRegistry {
             let sessionId = object["sessionId"] as? String, !sessionId.isEmpty
         else { return nil }
         let name = (object["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        // Absent means chosen, and so does an explicit null — both say "no
+        // source", and JSON has two spellings for that. The rename path writes
+        // `nameSource: void 0`, which `JSON.stringify` omits today; a
+        // serializer that spelled it `null` instead would otherwise silently
+        // demote every renamed session back to a derived slug, which is the
+        // exact failure this field exists to prevent.
+        //
+        // An unrecognized value stays derived: this decides whether to put a
+        // name on every row, and inventing a reason to do that from a string
+        // nobody has seen is the wrong way to be wrong.
+        let source = object["nameSource"]
+        let nameIsChosen = name != nil && (source == nil || source is NSNull)
         let cwd = (object["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return Entry(
             sessionId: sessionId,
             pid: object["pid"] as? Int,
             cwd: cwd,
             name: name,
+            nameIsChosen: nameIsChosen,
             status: Status(raw: object["status"] as? String),
             statusUpdatedAt: Self.date(from: object["statusUpdatedAt"]),
             waitingFor: (object["waitingFor"] as? String).flatMap { $0.isEmpty ? nil : $0 }

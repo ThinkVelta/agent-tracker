@@ -14,9 +14,15 @@ import Foundation
 /// terminal. So an ambiguous row does not need a new idea, it needs to stop
 /// ignoring the name the agent already gave it.
 ///
-/// **Only when ambiguous.** A registry name on every row would put a meaningless
-/// `-a5` on the majority of lists that have no duplicate at all — which is the
-/// objection that kept this out originally, and it was right about that much.
+/// **Only when ambiguous** — for the name Claude *derives*. A generated `-a5` on
+/// every row would be noise on the majority of lists, which have no duplicate at
+/// all.
+///
+/// A name the user *chose* is different and always shows. Claude marks the
+/// difference itself: `nameSource: "derived"` for its own slug, and nothing at
+/// all once someone runs `/rename` (or launched with `--name`). Suppressing a
+/// name somebody typed, because the app judged the row unambiguous, would be
+/// the app overruling them about their own session.
 enum SessionNaming {
     /// Row titles keyed by session id.
     ///
@@ -40,12 +46,19 @@ enum SessionNaming {
         for (_, group) in byLabel {
             let ambiguous = group.count > 1
             for session in group {
+                // A name the user typed always wins: `/rename` is someone
+                // saying what this session is, and answering that with the
+                // directory name would be ignoring them. A derived slug has to
+                // earn its place by disambiguating.
+                //
                 // Falls back to the project name when the registry has nothing
                 // for this session — an older Claude, or one whose registry
                 // entry has not been written yet. Two such rows stay
                 // indistinguishable, which is no worse than before.
+                let registryName = session.registryName
+                let earned = session.registryNameIsChosen || ambiguous
                 titles[session.sessionId] =
-                    ambiguous ? (session.registryName ?? session.displayName) : session.displayName
+                    (earned ? registryName : nil) ?? session.displayName
             }
         }
         return titles

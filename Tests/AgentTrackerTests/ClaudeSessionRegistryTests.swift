@@ -130,4 +130,36 @@ final class ClaudeSessionRegistryTests {
         #expect(registry.entries.isEmpty)
         #expect(registry.entry(forSessionId: "anything") == nil)
     }
+
+    /// Claude writes `nameSource: "derived"` for the slug it invents, and omits
+    /// the field once the name was chosen — `--name` at launch, or `/rename`,
+    /// which clears it explicitly. Read off the 2.1.227 binary, because the
+    /// whole "show it always or only when ambiguous" rule hangs on it.
+    @Test func aChosenNameIsToldApartFromADerivedOne() {
+        let derived = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s1","name":"planner-a5","nameSource":"derived"}"#.utf8))
+        #expect(derived?.nameIsChosen == false)
+
+        let chosen = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s2","name":"the migration"}"#.utf8))
+        #expect(chosen?.nameIsChosen == true)
+
+        // A value nobody has seen counts as derived. This decides whether to
+        // put a name on every row, and guessing "chosen" is the wrong way to be
+        // wrong about that.
+        let unknown = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s3","name":"planner-b7","nameSource":"something-new"}"#.utf8))
+        #expect(unknown?.nameIsChosen == false)
+
+        // JSON has two spellings for "no source", and the rename path writes
+        // the one that is normally omitted. If it is ever spelled out instead,
+        // it must not demote a renamed session back to a slug.
+        let explicitNull = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s5","name":"the migration","nameSource":null}"#.utf8))
+        #expect(explicitNull?.nameIsChosen == true)
+
+        // No name at all is not a chosen name.
+        let unnamed = ClaudeSessionRegistry.parse(Data(#"{"sessionId":"s4"}"#.utf8))
+        #expect(unnamed?.nameIsChosen == false)
+    }
 }
