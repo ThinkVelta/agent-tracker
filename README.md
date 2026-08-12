@@ -112,11 +112,12 @@ macOS 15 removed that shortcut.
 Settings › About checks for newer releases, when you press the button. There is
 no auto-updater, and nothing phones home on its own.
 
-Agent Tracker asks for up to three macOS permissions, one per feature, and only
-the first matters for the app to be useful — see
-**[permissions](docs/permissions.md)**, which also covers the one thing that is
-not obvious: a lost Accessibility grant is fixed by *removing and re-adding* the
-entry, never by toggling it.
+Agent Tracker asks for up to three macOS permissions — Accessibility for
+click-to-focus, Automation for writing into a Ghostty window, Notifications for
+banners and receipts — and none of them is needed just to watch sessions. See
+**[permissions](docs/permissions.md)**, which covers which ones you will actually
+be asked for and the one thing that is not obvious: a lost Accessibility grant is
+fixed by *removing and re-adding* the entry, never by toggling it.
 
 ## What you get
 

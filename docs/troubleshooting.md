@@ -127,10 +127,17 @@ the app (right-click → *Rename…*), though see the note in
 
 ## Click-to-focus does nothing at all
 
-This is a permission problem rather than a matching one. See
-[permissions](permissions.md) — specifically Accessibility, and the note about
-**removing and re-adding** the entry rather than toggling it, which does not
-work.
+Three different outcomes look like "nothing happened", and they have different
+fixes. Tell them apart by what *did* move:
+
+- **Nothing at all, and macOS asks about Accessibility** — the grant is missing.
+  See [permissions](permissions.md), and note that a lost grant is fixed by
+  **removing and re-adding** the entry, never by toggling it.
+- **The terminal comes forward but the wrong window is on top** — the grant is
+  fine and the title did not match. That is the ambiguity case above: give the
+  session a name.
+- **Nothing at all, and no prompt** — no known terminal app is running. The app
+  only raises terminals it recognises.
 
 ## A rename is refused
 
