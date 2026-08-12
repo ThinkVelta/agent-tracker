@@ -233,16 +233,29 @@ enum Doctor {
         return (hookToken as NSString).expandingTildeInPath
     }
 
-    /// Splits a command the way a shell would, for the two quoting styles
-    /// `shlex.quote` produces. Not a general shell parser: it exists to undo
-    /// exactly what the installer wrote.
+    /// Splits a command roughly the way a shell would.
+    ///
+    /// Not a general shell parser. It handles what the installer writes
+    /// (`shlex.quote`, which only ever single-quotes) plus what a hand-edited
+    /// config plausibly contains: double quotes, and backslash-escaped spaces.
+    /// Backslashes matter because a path containing a space is exactly the case
+    /// where mis-splitting produces a path that does not exist, and so a
+    /// confident failure about an install that works.
+    ///
+    /// Single quotes are literal, as in POSIX: a backslash inside them is part
+    /// of the path, not an escape.
     static func tokenize(_ command: String) -> [String] {
         var tokens: [String] = []
         var current = ""
         var quote: Character?
-        var iterator = command.makeIterator()
-        while let character = iterator.next() {
-            if let open = quote {
+        var escaped = false
+        for character in command {
+            if escaped {
+                current.append(character)
+                escaped = false
+            } else if character == "\\", quote != "'" {
+                escaped = true
+            } else if let open = quote {
                 if character == open {
                     quote = nil
                 } else {

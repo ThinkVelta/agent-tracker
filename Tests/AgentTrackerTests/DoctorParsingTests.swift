@@ -113,6 +113,28 @@ struct DoctorParsingTests {
                 == "/Users/dev/My Files/agent-tracker-hook.py")
     }
 
+    /// A backslash-escaped space is ordinary shell and a plausible hand edit.
+    /// Splitting on it produced a path that does not exist, which the doctor
+    /// would then report as a broken install — the same false-positive shape as
+    /// the interpreter prefix above.
+    @Test("a backslash-escaped space stays inside the path")
+    func backslashEscapesSurvive() {
+        #expect(
+            Doctor.scriptPath(
+                fromCommand: #"/Users/dev/My\ Files/agent-tracker-hook.py claude"#)
+                == "/Users/dev/My Files/agent-tracker-hook.py")
+        #expect(
+            Doctor.tokenize(#"a\ b c"#) == ["a b", "c"])
+    }
+
+    /// POSIX single quotes are literal, so a backslash inside them belongs to
+    /// the path. Treating it as an escape would silently delete a character
+    /// from a Windows-style or oddly-named directory.
+    @Test("a backslash inside single quotes is part of the path")
+    func backslashInsideSingleQuotesIsLiteral() {
+        #expect(Doctor.tokenize(#"'a\z' c"#) == [#"a\z"#, "c"])
+    }
+
     /// Nothing that looks like the hook means the answer is "cannot tell",
     /// rather than a path to accuse of not existing.
     @Test("a command with no recognisable hook token resolves to nothing")
