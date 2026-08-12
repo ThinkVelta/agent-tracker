@@ -250,7 +250,18 @@ enum Doctor {
             // committed inside the fix for it.
             .replacingOccurrences(
                 of: #"\$HOME(?=/|$)"#, with: home, options: .regularExpression)
-        guard !expanded.contains("$") else { return nil }
+        // The guarantee, rather than another special case. A shell resolves
+        // these; we do not. Anything still holding one is a path we would be
+        // guessing at, so it becomes "cannot tell" instead of something to
+        // accuse of not existing.
+        //
+        // They are all legal in a filename, so this can refuse a path that
+        // would have resolved. That is the right direction to be wrong in: a
+        // diagnostic that says "cannot tell" costs a reader one line, and one
+        // that says "your install is broken" when it is not costs them an
+        // afternoon.
+        let shellMetacharacters: Set<Character> = ["$", "`", "*", "?"]
+        guard !expanded.contains(where: shellMetacharacters.contains) else { return nil }
         return expanded
     }
 

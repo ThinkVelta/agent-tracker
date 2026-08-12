@@ -169,6 +169,24 @@ struct DoctorParsingTests {
                 == "\(home)/agent-tracker-hook.py")
     }
 
+    /// The guarantee that covers the shapes nobody thought of. Four separate
+    /// false failures on this feature were all "we resolved a path more
+    /// literally than a shell would", so anything a shell would have
+    /// interpreted now routes to "cannot tell" rather than to an accusation.
+    @Test("anything a shell would interpret resolves to nothing, not to a guess")
+    func shellMetacharactersAreNotResolved() {
+        for command in [
+            "$TOOLS/agent-tracker-hook.py claude",
+            "`which agent-tracker-hook.py` claude",
+            "/opt/*/agent-tracker-hook.py claude",
+            "/opt/v?/agent-tracker-hook.py claude",
+        ] {
+            #expect(
+                Doctor.scriptPath(fromCommand: command) == nil,
+                "\(command) should be unresolvable rather than a guessed path")
+        }
+    }
+
     /// Nothing that looks like the hook means the answer is "cannot tell",
     /// rather than a path to accuse of not existing.
     @Test("a command with no recognisable hook token resolves to nothing")
