@@ -268,13 +268,33 @@ struct DiagnosisTests {
 
     /// Printing "No problems found." above warnings the reader is being asked
     /// to act on is the report contradicting itself.
+    /// "No problems found." above a check that could not run is the report
+    /// concluding where its own findings decline to. The same contradiction as
+    /// claiming it above warnings, one level quieter — and the common case,
+    /// since the notification check is unknown outside the app bundle.
+    @Test("an unknown check is never summarised as no problems")
+    func unknownIsNotAClearReport() {
+        var input = healthy
+        input.notifications = .unavailable
+        let findings = Diagnosis.findings(input)
+        #expect(findings.contains { $0.level == .unknown })
+        #expect(!findings.contains { $0.level == .fail || $0.level == .warn })
+
+        let summary = Diagnosis.summary(findings)
+        #expect(summary != "No problems found.")
+        #expect(summary.contains("couldn't run"))
+        // Still not a failure: not knowing is not a defect in the install.
+        #expect(Diagnosis.exitCode(findings) == 0)
+    }
+
     @Test("the summary distinguishes nothing-wrong from nothing-failed")
     func summaryDoesNotOverclaim() {
         #expect(Diagnosis.summary(Diagnosis.findings(healthy)) == "No problems found.")
 
         var warned = healthy
         warned.staleSessionCount = 1
-        #expect(Diagnosis.summary(Diagnosis.findings(warned)).hasPrefix("No failures."))
+        #expect(Diagnosis.summary(Diagnosis.findings(warned)).hasPrefix("No failures"))
+        #expect(Diagnosis.summary(Diagnosis.findings(warned)).contains("1 warning(s)"))
 
         var failed = healthy
         failed.hookScripts = [script(executable: false)]

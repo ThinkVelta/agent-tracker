@@ -199,16 +199,27 @@ enum Diagnosis {
         findings.contains { $0.level == .fail } ? 1 : 0
     }
 
-    /// The closing line. Distinguishes "nothing to do" from "nothing *failed*",
-    /// because printing "No problems found." above warnings the user is being
-    /// asked to act on is the report contradicting itself.
+    /// The closing line, which must not claim more than the findings support.
+    ///
+    /// Counts `unknown` as well as `fail` and `warn`. Saying "No problems
+    /// found." above a check that could not run is the report concluding where
+    /// its own findings decline to — the same contradiction as saying it above
+    /// warnings, one level quieter. `unknown` is the common case rather than an
+    /// exotic one: run outside the app bundle, the notification check always
+    /// lands there.
     static func summary(_ findings: [Finding]) -> String {
         let failures = findings.filter { $0.level == .fail }.count
         let warnings = findings.filter { $0.level == .warn }.count
-        if failures > 0 {
-            return "\(failures) problem(s) found, \(warnings) warning(s)."
-        }
-        return warnings == 0 ? "No problems found." : "No failures. \(warnings) warning(s)."
+        let unknowns = findings.filter { $0.level == .unknown }.count
+
+        var parts: [String] = []
+        if warnings > 0 { parts.append("\(warnings) warning(s)") }
+        if unknowns > 0 { parts.append("\(unknowns) check(s) couldn't run") }
+        let tail = parts.isEmpty ? "" : ", " + parts.joined(separator: ", ")
+
+        if failures > 0 { return "\(failures) problem(s) found\(tail)." }
+        if parts.isEmpty { return "No problems found." }
+        return "No failures\(tail)."
     }
 
     // MARK: - Rules
