@@ -329,6 +329,48 @@ struct DoctorParsingTests {
         #expect(broken[0].hasSuffix("settings.local.json"))
     }
 
+    // MARK: - The docs describing this by hand
+
+    /// `docs/troubleshooting.md` tells users how to check their hooks with a
+    /// shell one-liner — a hand reimplementation of `registeredHooks` plus
+    /// `userSettings`. It has drifted from them twice: first reading one
+    /// settings file where the code reads two, then shallow-merging where the
+    /// code unions.
+    ///
+    /// Both times the prose beside it was right and the command was wrong,
+    /// because a command is code and nobody was running it. This pins the two
+    /// properties that drifted. It cannot prove the command is correct — only
+    /// running it can, which is why the page also says to prefer `--doctor` —
+    /// but it fails if either regression is made again.
+    @Test("the troubleshooting one-liner reads both settings files, and unions them")
+    func docsCommandMatchesTheCode() throws {
+        let root = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let page = try String(
+            contentsOf: root.appendingPathComponent("docs/troubleshooting.md"), encoding: .utf8)
+
+        guard let start = page.range(of: "python3 -c"),
+            let end = page.range(of: "```", range: start.upperBound..<page.endIndex)
+        else {
+            Issue.record("no python one-liner found in docs/troubleshooting.md")
+            return
+        }
+        let command = String(page[start.lowerBound..<end.lowerBound])
+
+        #expect(command.contains("settings.json"), "the command must read settings.json")
+        #expect(
+            command.contains("settings.local.json"),
+            "the command must read settings.local.json, as the code does")
+        // `update` is the shallow merge that discarded the first file's hooks
+        // entirely. The union uses `setdefault(...).extend(...)`.
+        #expect(
+            !command.contains(".update("),
+            "the command must union hook events, not replace whole keys")
+        #expect(command.contains("extend("), "the command must union hook events")
+    }
+
     // MARK: - Project overrides
 
     @Test("a project statusLine is found by walking up, and hooks are not")
