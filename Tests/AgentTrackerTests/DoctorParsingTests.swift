@@ -395,6 +395,30 @@ struct DoctorParsingTests {
         #expect(Doctor.projectStatusLineOverride(from: nested.path) != nil)
     }
 
+    /// An empty `statusLine` sets nothing, and the user-scope check already
+    /// treated it that way. Two rules for one question in one file meant a
+    /// project could be warned about an override it does not have.
+    @Test("an empty project statusLine is not an override")
+    func emptyProjectStatusLineIsNotAnOverride() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("doctor-project-empty-\(UUID().uuidString)")
+        let claude = root.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let settings = claude.appendingPathComponent("settings.json")
+        for empty in [#"{"statusLine": ""}"#, #"{"statusLine": {"command": "   "}}"#] {
+            try empty.write(to: settings, atomically: true, encoding: .utf8)
+            #expect(
+                Doctor.projectStatusLineOverride(from: root.path) == nil,
+                "an empty statusLine sets nothing and must not be reported as an override")
+        }
+
+        // Still detected when it genuinely sets one.
+        try #"{"statusLine": "mine.sh"}"#.write(to: settings, atomically: true, encoding: .utf8)
+        #expect(Doctor.projectStatusLineOverride(from: root.path) != nil)
+    }
+
     /// A project's `settings.local.json` displaces the wrapper exactly as its
     /// `settings.json` does, so checking only the latter reports a healthy
     /// statusline for a project that has none.

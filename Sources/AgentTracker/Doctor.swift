@@ -333,11 +333,17 @@ enum Doctor {
             // wrapper exactly as one in `settings.json` does.
             for name in ["settings.json", "settings.local.json"] {
                 let candidate = directory.appendingPathComponent(".claude/\(name)")
-                if let settings = readJSON(candidate), let value = settings["statusLine"],
-                    !(value is NSNull)
-                {
-                    return candidate.path
-                }
+                // The same parser the user-scope check uses, deliberately.
+                // Asking "is there a non-null value" here while asking "is there
+                // a non-empty command" there meant one file could answer the
+                // same question two ways — an empty `statusLine` counted as an
+                // override in a project and as unset at the user level.
+                guard let settings = readJSON(candidate),
+                    let command = statusLineCommand(in: settings)?
+                        .trimmingCharacters(in: .whitespacesAndNewlines),
+                    !command.isEmpty
+                else { continue }
+                return candidate.path
             }
             let parent = directory.deletingLastPathComponent().standardizedFileURL
             if parent == directory { return nil }
