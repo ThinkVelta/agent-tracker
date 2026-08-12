@@ -1,13 +1,13 @@
 # Permissions
 
-Three macOS grants, each for one feature. Only the first is needed for the app to
-be useful; the other two are for things that are off by default.
+Three macOS grants. Only the first is needed for the app to be useful; the other
+two serve features that are off by default.
 
 | Grant | Needed for | Without it |
 | --- | --- | --- |
 | **Accessibility** | click-to-focus | rows do not raise their terminal |
 | **Automation** (Ghostty) | scheduled continues, app-side rename | those refuse and say why |
-| **Notifications** | banners when a session needs you | no banners; everything else works |
+| **Notifications** | needs-you banners, and scheduled-continue receipts | no banners; everything else works |
 
 ## Accessibility
 
@@ -62,12 +62,21 @@ single biggest reliability improvement available.
 
 ## Notifications
 
-For the optional banner when a session flips to needing you. **Off by default**:
-the menu bar is the passive channel this app was built to be, and a notification
-is the most intrusive thing it could do.
+For two things, which is worth knowing because the second can surprise you:
 
-Turn it on in Settings › Sessions, which is also when the permission is
-requested.
+- **The banner when a session flips to needing you.** **Off by default**: the menu
+  bar is the passive channel this app was built to be, and a notification is the
+  most intrusive thing it could do. Turn it on in Settings › Sessions.
+- **Receipts from a scheduled continue** — a send, or a failure that left text on
+  a prompt.
+
+So the permission is requested from **either** of two places: enabling the
+banners, or arming your first scheduled continue. Arming asks even if you never
+turned the banners on, deliberately — a feature that types into a terminal while
+you are asleep should not also be silent about having done it.
+
+Declining costs you the announcement and nothing else in both cases. Deliveries
+still happen, and their receipts are still in the scheduling panel and the log.
 
 Banners are deliberately **not** marked time-sensitive, which is what lets Focus
 and Do Not Disturb hold them. Clicking one jumps to that session's terminal;
