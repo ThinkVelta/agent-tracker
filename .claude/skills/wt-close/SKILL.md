@@ -101,10 +101,13 @@ Interpret the result:
 
 **4c. If no PR exists, check merge status against the base branch locally:**
 
-Check against `dev`, not against `origin/HEAD`. GitHub's default branch is `main`, which
-here means *released* — a feature that merged into `dev` yesterday is legitimately absent from
-it, and asking `main` would report that branch as unmerged and warn about losing work that is
-not lost. `dev` is where feature branches actually land, so it is the only honest question.
+Ask `dev` by name, not `origin/HEAD`. The two happen to agree today — `dev` was made the
+default branch on 2026-08-12 — but the question here is "has this feature branch landed", and
+the honest answer to that is always about `dev` specifically, whatever the default happens to
+be. Resolving it from `origin/HEAD` would silently start asking about `main` the day someone
+flips the default back, and `main` means *released*: a branch that merged into `dev` yesterday
+is legitimately absent from it, so every close between releases would warn about losing work
+that is not lost.
 
 ```bash
 git -C "$MAIN_REPO" fetch -q origin dev
