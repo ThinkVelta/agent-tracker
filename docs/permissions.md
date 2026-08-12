@@ -1,13 +1,18 @@
 # Permissions
 
-Three macOS grants. Only the first is needed for the app to be useful; the other
-two serve features that are off by default.
+Three macOS grants, split by what they let the app *do*: read, write, or
+announce. Only the first affects tracking, which is what the app is for; the
+other two are asked for by the two features that write into a terminal, and one
+of them is not needed at all if you use tmux.
 
 | Grant | Needed for | Without it |
 | --- | --- | --- |
 | **Accessibility** | click-to-focus | rows do not raise their terminal |
-| **Automation** (Ghostty) | scheduled continues, app-side rename | those refuse and say why |
-| **Notifications** | needs-you banners, and scheduled-continue receipts | no banners; everything else works |
+| **Automation** (Ghostty) | writing into a **Ghostty** window: scheduled continues, app-side rename | those refuse via Ghostty and say why; tmux is unaffected |
+| **Notifications** | needs-you banners, scheduled-continue receipts | no banners; everything else works |
+
+Nothing here is needed to *watch* sessions. Reading state, the menu bar counts,
+the list, context and usage readings all work with no grant at all.
 
 ## Accessibility
 

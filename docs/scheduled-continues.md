@@ -6,14 +6,14 @@ reporting, never from a guess. **Off by default** — it is the
 only thing this app does that acts on a session rather than reporting on one, so
 it has its own switch in Settings › General.
 
-Two macOS permissions are requested when you arm, and **neither is a hard
-requirement** — they buy different things, and a tmux session needs neither:
+Arming requests **up to two** macOS permissions — how many depends on where the
+session lives, and neither is a hard requirement:
 
-- **Automation**, to talk to Ghostty. Required to deliver *through Ghostty*, and
-  not involved at all for a session running in tmux, which is addressed by pane
-  id instead. Also grantable up front from Settings › General › *Permission to
-  control Ghostty*, which is the way to get it before you have ever been
-  usage-limited.
+- **Automation**, to talk to Ghostty. Requested only when the session is *not* in
+  tmux: a tmux pane is addressed by id, so arming returns before the Ghostty path
+  is ever reached and no prompt appears. Also grantable up front from Settings ›
+  General › *Permission to control Ghostty*, which is the way to get it before
+  you have ever been usage-limited.
 - **Notifications**, to tell you what happened. Purely announcement: the banner
   is posted after the send, so declining it costs you the banner and nothing
   else. The receipt is still in the panel and the log.
