@@ -47,14 +47,18 @@ to make silently.
 
 ## It also cleans up Codex
 
-If you ever installed a version before v0.2.0, when this tracked Codex as well,
-the uninstaller still removes `~/.codex/hooks.json` entries and the
-`~/.codex/config.toml` notify setting.
+The uninstaller removes `~/.codex/hooks.json` entries and the
+`~/.codex/config.toml` notify setting, even though this app no longer tracks
+Codex.
 
-This is deliberate and is not leftover code. Agent Tracker no longer tracks
-Codex, but a user who installed it back then still has those hooks on disk, and
-dropping the cleanup would strand them forever — pointing at a script that
-uninstalling has just deleted.
+That is deliberate rather than leftover, and it applies to more people than it
+sounds: Codex support was removed on 2026-08-10, *after* v0.2.0 was released on
+2026-08-03. So **every released version so far installed those hooks**. Dropping
+the cleanup would strand them on every machine that has ever run this — pointing
+at a script the same uninstall has just deleted.
+
+Removing what we once installed is a different question from what we install
+now.
 
 ## Verifying it worked
 

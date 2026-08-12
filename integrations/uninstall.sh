@@ -7,10 +7,11 @@
 # independent — a broken config in one never blocks cleaning the others.
 #
 # The Codex sections are DELIBERATE, not leftovers from when this tracked Codex.
-# Anyone who installed a pre-0.2.0 version still has those hooks on disk, and an
-# uninstaller that ignored them would strand every one of them — pointing at a
-# script this same run has just deleted. Removing what we once installed is not
-# the same question as what we install now.
+# Codex support was removed on 2026-08-10, AFTER v0.2.0 shipped on 2026-08-03 —
+# so every released version so far installed those hooks, and this is not a
+# historical minority but everyone. An uninstaller that ignored them would strand
+# the lot, pointing at a script this same run has just deleted. Removing what we
+# once installed is not the same question as what we install now.
 # Idempotent. Session data in ~/.agent-tracker is kept unless --purge.
 set -euo pipefail
 

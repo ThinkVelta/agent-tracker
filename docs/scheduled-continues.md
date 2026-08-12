@@ -6,12 +6,21 @@ reporting, never from a guess. **Off by default** — it is the
 only thing this app does that acts on a session rather than reporting on one, so
 it has its own switch in Settings › General.
 
-It needs two macOS permissions, and neither is ever asked for while a schedule is
-firing — a prompt raised at 04:00 would sit unanswered and block the very delivery
-it was meant to authorise. **Automation** (to talk to Ghostty) is requested when
-you arm a schedule, or from Settings › General › *Permission to control Ghostty*,
-which is also the way to grant it before you have ever been usage-limited.
-**Notifications** are requested when you arm.
+Two macOS permissions are requested when you arm, and **neither is a hard
+requirement** — they buy different things, and a tmux session needs neither:
+
+- **Automation**, to talk to Ghostty. Required to deliver *through Ghostty*, and
+  not involved at all for a session running in tmux, which is addressed by pane
+  id instead. Also grantable up front from Settings › General › *Permission to
+  control Ghostty*, which is the way to get it before you have ever been
+  usage-limited.
+- **Notifications**, to tell you what happened. Purely announcement: the banner
+  is posted after the send, so declining it costs you the banner and nothing
+  else. The receipt is still in the panel and the log.
+
+Neither is ever asked for while a schedule is firing. A prompt raised at 04:00
+would sit unanswered and block the very delivery it was meant to authorise, so
+arming is the only moment either can appear.
 
 **It never wakes your Mac.** A schedule fires if the Mac is awake, or when it next
 wakes, and is abandoned after 12 hours — by then the window it was armed for is
@@ -55,7 +64,7 @@ are still in the log and the panel.
 
 ## Permission modes
 
-Every mode either agent is known to run in is allowed, **including
+Every mode Claude Code is known to run in is allowed, **including
 `bypassPermissions`**. Auto-resume adds no capability such a session did not
 already have — typing "Continue" yourself has exactly the same effect — so the
 only thing that changes is that you are not at the keyboard when it starts. The
