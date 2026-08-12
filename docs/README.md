@@ -12,6 +12,17 @@ For people who have already installed it and hit something. The
 | [Uninstalling](uninstall.md) | you want it gone, or want to know what it touched |
 | [How it works](architecture.md) | you want to know what is on disk and what reads it |
 
+## Before reading any of it
+
+```sh
+/Applications/AgentTracker.app/Contents/MacOS/AgentTracker --doctor
+```
+
+Checks the mechanical half of the troubleshooting page, and names the section
+explaining a finding where there is one. Read-only, never prompts, safe to run
+unasked. Run it from the project you are having trouble with — one check looks
+upward from the working directory.
+
 ## The three answers that come up most
 
 **Sessions that were already running when you installed do not appear.** Claude
@@ -35,9 +46,14 @@ Facts here are written to be quotable on their own rather than positionally, so 
 retrieved paragraph does not depend on the one above it. Where a claim is
 checkable, the command to check it is given rather than described.
 
-The single most useful thing to read when diagnosing is the log, which records
-what the app decided and why:
+Two things to reach for before reading prose. `--doctor` reports the state of
+the install, citing a section where one applies; the log records what the app
+decided and why:
 
 ```sh
+/Applications/AgentTracker.app/Contents/MacOS/AgentTracker --doctor
 tail -50 ~/.agent-tracker/logs/agent-tracker.log
 ```
+
+`--doctor` exits 0 when nothing failed and 1 when something did, so it composes
+with `&&`.

@@ -3,7 +3,23 @@ import Combine
 import SwiftUI
 import UserNotifications
 
+/// The real entry point, so `--doctor` can answer before AppKit exists.
+///
+/// `--render-preview` and `--onboarding` branch inside the app delegate, which
+/// is fine for them: both want a running NSApplication. A diagnostic does not.
+/// Booting AppKit to print text would make it unusable over ssh and would mean
+/// the tool most needed on a misbehaving machine is the one that needs the
+/// window server to start.
 @main
+enum AgentTrackerMain {
+    static func main() {
+        if CommandLine.arguments.contains("--doctor") {
+            exit(Doctor.run())
+        }
+        AgentTrackerApp.main()
+    }
+}
+
 struct AgentTrackerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 

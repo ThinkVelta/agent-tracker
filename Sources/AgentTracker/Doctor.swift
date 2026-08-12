@@ -1,0 +1,299 @@
+import Foundation
+import UserNotifications
+
+/// `AgentTracker --doctor`: the mechanical half of `docs/troubleshooting.md`,
+/// as a command.
+///
+/// **Read-only, and never prompts.** Both are load-bearing rather than tidy.
+/// Read-only is what makes it safe to run on a machine that is already
+/// misbehaving, and what stops it changing the thing it was asked to describe.
+/// Never-prompts is what makes it safe for an agent to run unasked — a
+/// diagnostic that puts a permission dialog on someone's screen has done harm
+/// no report can repay. `DoctorSafetyTests` asserts this file calls none of the
+/// prompting APIs, so the rule is checked rather than remembered.
+///
+/// One call is deliberately **not** made: Ghostty's Automation status. The
+/// non-prompting query still blocks, measured at over 100 seconds against a
+/// running-but-ungranted target, and a diagnostic that appears to hang is worse
+/// than one that admits it skipped something. It is reported as not-checked,
+/// with where to look instead.
+enum Doctor {
+    /// Runs every check and prints the report.
+    ///
+    /// - Returns: the process exit status — 0 when nothing failed, 1 when
+    ///   something did. Warnings do not fail: "you have no statusline wrapper"
+    ///   is worth knowing and is not a broken install.
+    static func run() -> Int32 {
+        let searched = FileManager.default.currentDirectoryPath
+        let input = probe(searchingFrom: searched)
+        let findings = Diagnosis.findings(input)
+
+        print("agent-tracker doctor")
+        print("  data:     \(SessionStore.baseDirectory.path)")
+        print("  claude:   \(claudeDirectory().path)")
+        // Printed because one check depends on it: a project-level statusLine is
+        // found by walking up from here, so run from $HOME it can only ever
+        // report nothing. Saying where it looked is the difference between "no
+        // override" and "did not look where you meant".
+        print("  searched: \(searched)")
+        print("")
+
+        // Width from the data, never a literal: a check name added later must
+        // not be silently truncated out of someone's grep.
+        let width = findings.map(\.check.count).max() ?? 0
+        let indent = String(repeating: " ", count: width)
+        for finding in findings {
+            let name = finding.check.padding(toLength: width, withPad: " ", startingAt: 0)
+            print("\(finding.level.label) \(name)  \(finding.detail)")
+            if let anchor = finding.anchor {
+                print("      \(indent)  -> docs/troubleshooting.md#\(anchor)")
+            }
+        }
+
+        print("")
+        print(
+            "not checked: Ghostty Automation. The status query itself can block for "
+                + "over a minute,\n             so it is left to Settings > General > "
+                + "Permission to control Ghostty.")
+        print("")
+        print(Diagnosis.summary(findings))
+        return Diagnosis.exitCode(findings)
+    }
+
+    // MARK: - Probes
+
+    /// `~/.claude`, honouring the same override the rest of the app does, so a
+    /// test run and a real run cannot silently describe different directories.
+    private static func claudeDirectory() -> URL {
+        if let override = ProcessInfo.processInfo.environment["AGENT_TRACKER_CLAUDE_DIR"],
+            !override.isEmpty
+        {
+            return URL(fileURLWithPath: override)
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
+    }
+
+    static func probe(searchingFrom searchRoot: String) -> Diagnosis.Input {
+        var input = Diagnosis.Input()
+        let claude = claudeDirectory()
+        input.claudeDirectoryExists = directoryExists(claude)
+
+        // Both user-scope files, merged. `settings.local.json` is where a
+        // per-machine override lives, and a hook or statusLine placed there is
+        // as real as one in `settings.json`.
+        let (settings, state) = userSettings(in: claude)
+        input.settingsState = state
+        input.registeredHooks = Self.registeredHooks(in: settings)
+        input.statusLineCommand = Self.statusLineCommand(in: settings)
+
+        let registeredPath = input.registeredHooks.first.map { scriptPath(fromCommand: $0.command) }
+        let installedPath = HookSetup.installedHookPath().path
+        // The path the registration NAMES, not the one this build would install
+        // to. A config carried between machines registers a path that does not
+        // exist while every other check still passes.
+        let probedPath = registeredPath ?? installedPath
+        input.registeredHookScriptPresent = FileManager.default.fileExists(atPath: probedPath)
+        input.registeredHookScriptExecutable = FileManager.default.isExecutableFile(
+            atPath: probedPath)
+        if let registeredPath, registeredPath != installedPath {
+            input.registeredHookPathMismatch = registeredPath
+        }
+        input.hookFreshness = hookFreshness(
+            at: probedPath, isPresent: input.registeredHookScriptPresent)
+
+        input.projectStatusLineOverride = projectStatusLineOverride(from: searchRoot)
+        input.statuslinePayloadPresent = statuslinePayloadPresent(claude: claude)
+
+        let sessions = SessionStore.loadStateFiles().map(\.session)
+        input.sessionFileCount = sessions.count
+        let live = sessions.filter { session in
+            guard let pid = session.pid, pid > 0 else { return true }
+            return SessionStore.isProcessAlive(pid)
+        }
+        input.staleSessionCount = sessions.count - live.count
+        // Live only. Telling someone to /rename two sessions is absurd one line
+        // after saying their processes are gone.
+        input.largestSameProjectGroup = largestSameProjectGroup(live)
+
+        input.accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
+        input.notifications = notificationState()
+        return input
+    }
+
+    /// `settings.json` plus `settings.local.json`, the latter winning per key.
+    ///
+    /// Unreadable beats absent: if either file exists and will not parse, the
+    /// answer to "what is configured" is *unknown*, and saying "nothing" would
+    /// send the user to an installer that fails on the same file.
+    static func userSettings(in claude: URL) -> ([String: Any], Diagnosis.SettingsState) {
+        var merged: [String: Any] = [:]
+        var state: Diagnosis.SettingsState = .absent
+        for name in ["settings.json", "settings.local.json"] {
+            let url = claude.appendingPathComponent(name)
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard let parsed = readJSON(url) else {
+                state = .unreadable
+                continue
+            }
+            if state != .unreadable { state = .parsed }
+            merged.merge(parsed) { _, newer in newer }
+        }
+        return (merged, state)
+    }
+
+    /// Which hook events run our script, and what command each runs.
+    ///
+    /// Structure-aware on purpose. A substring search for `agent-tracker` over
+    /// the whole file also matches the `statusLine` entry, so it reports
+    /// "installed" for a config with every hook removed — the failure this
+    /// check exists to catch, and the trap `docs/troubleshooting.md` warns
+    /// readers about.
+    static func registeredHooks(in settings: [String: Any]) -> [Diagnosis.RegisteredHook] {
+        guard let hooks = settings["hooks"] as? [String: Any] else { return [] }
+        var registered: [Diagnosis.RegisteredHook] = []
+        for (event, value) in hooks {
+            // `compactMap`, not a whole-array cast: one stray element must not
+            // drop an event that is correctly registered beside it.
+            let entries = (value as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+            for entry in entries {
+                let commands = (entry["hooks"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []
+                for command in commands {
+                    guard let text = command["command"] as? String,
+                        text.contains("agent-tracker-hook")
+                    else { continue }
+                    registered.append(Diagnosis.RegisteredHook(event: event, command: text))
+                }
+            }
+        }
+        return registered.sorted { $0.event < $1.event }
+    }
+
+    /// The script path out of a hook command line.
+    ///
+    /// The installer writes `<shell-quoted path> claude`, so the path is
+    /// everything before the trailing argument. Quoting is undone because
+    /// `shlex.quote` only adds quotes when the path needs them — exactly the
+    /// case where taking the string literally would produce a path that does
+    /// not exist, and so a false failure.
+    static func scriptPath(fromCommand command: String) -> String {
+        var text = command.trimmingCharacters(in: .whitespaces)
+        if text.hasSuffix(" claude") {
+            text = String(text.dropLast(" claude".count))
+        }
+        text = text.trimmingCharacters(in: .whitespaces)
+        if text.count >= 2, text.hasPrefix("'"), text.hasSuffix("'") {
+            text = String(text.dropFirst().dropLast())
+                .replacingOccurrences(of: "'\\''", with: "'")
+        } else if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") {
+            text = String(text.dropFirst().dropLast())
+        }
+        return (text as NSString).expandingTildeInPath
+    }
+
+    /// Claude's single statusline slot, whatever is in it.
+    static func statusLineCommand(in settings: [String: Any]) -> String? {
+        guard let statusLine = settings["statusLine"], !(statusLine is NSNull) else { return nil }
+        if let command = statusLine as? String { return command }
+        return (statusLine as? [String: Any])?["command"] as? String
+    }
+
+    /// A `.claude/settings.json` at or above `start` that sets its own
+    /// `statusLine`, displacing the wrapper for sessions there.
+    ///
+    /// **Only `statusLine`, deliberately.** Hooks merge: a project can add its
+    /// own and ours still run, measured against this very repo, which defines
+    /// two hook events of its own and whose sessions are tracked normally.
+    /// `statusLine` is a single command and cannot merge, so a project-level one
+    /// wins and the usage and context readings stop arriving.
+    static func projectStatusLineOverride(from start: String) -> String? {
+        let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
+        var directory = URL(fileURLWithPath: start).standardizedFileURL
+        for _ in 0..<32 {
+            if directory == home || directory.path == "/" { return nil }
+            let candidate = directory.appendingPathComponent(".claude/settings.json")
+            if let settings = readJSON(candidate), let value = settings["statusLine"],
+                !(value is NSNull)
+            {
+                return candidate.path
+            }
+            let parent = directory.deletingLastPathComponent().standardizedFileURL
+            if parent == directory { return nil }
+            directory = parent
+        }
+        return nil
+    }
+
+    /// Both sources the app actually reads. Ignoring the second would warn that
+    /// context is missing for someone whose own script tees the payload, which
+    /// the docs describe as a supported setup.
+    private static func statuslinePayloadPresent(claude: URL) -> Bool {
+        let sources = [
+            claude.appendingPathComponent("statusline-last.json"),
+            SessionStore.claudeStatuslineURL,
+        ]
+        return sources.contains { url in
+            (try? Data(contentsOf: url)).flatMap { StatuslineDirectory.parse($0) } != nil
+        }
+    }
+
+    private static func hookFreshness(at path: String, isPresent: Bool) -> Diagnosis.HookFreshness {
+        // No reachable bundled copy means no comparison — "cannot tell", never
+        // "up to date". A detached binary is the normal case for that.
+        guard isPresent, let integrations = HookSetup.installerDirectory(),
+            let bundled = try? Data(
+                contentsOf: integrations.appendingPathComponent("agent-tracker-hook.py"))
+        else { return .unknown }
+        // `hookNeedsRefresh` folds "unreadable" into "needs replacing", which is
+        // right for the installer and wrong for a report: unreadable is not
+        // something the user fixes by updating.
+        guard let onDisk = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
+            return .unknown
+        }
+        return HookSetup.hookNeedsRefresh(isInstalled: true, installed: onDisk, bundled: bundled)
+            ? .stale : .current
+    }
+
+    /// How many live sessions share the directory that titles their row.
+    private static func largestSameProjectGroup(_ sessions: [AgentSession]) -> Int {
+        var counts: [String: Int] = [:]
+        for session in sessions {
+            counts[session.projectKey, default: 0] += 1
+        }
+        return counts.values.max() ?? 0
+    }
+
+    /// Bounded, because this file's whole argument for skipping the Automation
+    /// check is that a diagnostic must not appear to hang — and this is an XPC
+    /// round trip before the first line of output. Measured at ~0.01s; the
+    /// timeout is for the day that stops being true.
+    private static func notificationState() -> Diagnosis.NotificationState {
+        guard Notifications.isAvailable else { return .unavailable }
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var status: UNAuthorizationStatus = .notDetermined
+        Task {
+            status = await Notifications.authorizationStatus()
+            done.signal()
+        }
+        guard done.wait(timeout: .now() + 2) == .success else { return .unavailable }
+        switch status {
+        case .authorized, .provisional, .ephemeral: return .authorized
+        case .notDetermined: return .notAsked
+        default: return .denied
+        }
+    }
+
+    // MARK: - Small helpers
+
+    private static func readJSON(_ url: URL) -> [String: Any]? {
+        guard let data = try? Data(contentsOf: url),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return object
+    }
+
+    private static func directoryExists(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
+    }
+}

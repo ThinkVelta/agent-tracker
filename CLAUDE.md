@@ -47,6 +47,11 @@ watches that directory and renders state. See README for the full picture.
   Xcode.app) builds but silently executes zero tests and exits 0 (see the
   Package.swift header for why)
 - Run: `swift run AgentTracker` (menu bar only, no Dock icon)
+- Diagnose an install: `swift run AgentTracker --doctor` (or the installed
+  binary directly — not `open -a`, whose stdout goes nowhere). Read-only and
+  never prompts, both enforced by `DoctorSafetyTests` reading the source; it
+  skips the Ghostty Automation grant on purpose, because that status query can
+  block for over a minute
 - Bundle: `make app` → `dist/AgentTracker.app` (self-validating; ad-hoc signed,
   `CODESIGN_IDENTITY` overrides); `make install` places it in /Applications.
   First-run onboarding shows once (`--onboarding` re-opens it on demand)
