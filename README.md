@@ -327,7 +327,12 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 
 ## Roadmap
 
-- [ ] Homebrew tap: `brew install --cask agent-tracker`
+- [ ] **Notarized builds**, which remove the first-launch block described in
+      Install. Releases are already Developer ID signed, which is the half that
+      keeps your Accessibility grant across updates; notarization is the half
+      that stops Gatekeeper asking. Blocked on an Apple Developer Program
+      enrolment rather than on anything in this repo
+- [x] Homebrew tap: `brew install --cask agent-tracker`
 - [x] **Scheduled continues** — arm a session that stopped on a usage limit to
       resume itself when the window resets, from the clock on its row. Claude
       Code. Off by default (Settings › General). See below.
