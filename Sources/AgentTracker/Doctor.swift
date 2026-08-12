@@ -323,6 +323,13 @@ enum Doctor {
     /// two hook events of its own and whose sessions are tracked normally.
     /// `statusLine` is a single command and cannot merge, so a project-level one
     /// wins and the usage and context readings stop arriving.
+    ///
+    /// Known gap, left deliberately: a project settings file that will not parse
+    /// is skipped silently, where the user-scope probe reports it as unreadable.
+    /// Closing it would mean asserting that Claude applies a `statusLine` from a
+    /// file it cannot read — not something measured here, and a malformed
+    /// project config is more likely ignored by Claude too, which makes "no
+    /// override" the right answer rather than a missing one.
     static func projectStatusLineOverride(from start: String) -> String? {
         let home = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL
         var directory = URL(fileURLWithPath: start).standardizedFileURL

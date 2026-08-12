@@ -376,6 +376,24 @@ enum Diagnosis {
     }
 
     private static func statuslineFinding(_ input: Input) -> Finding {
+        // Gated exactly as the hook findings are, and for the same reason: this
+        // reads the same merged settings, so a config we could not parse must
+        // not produce "no statusLine configured" — a definite claim about a
+        // file we did not read.
+        //
+        // The payload half is still worth saying, because it comes from disk
+        // rather than from the settings, so it is knowable either way.
+        if case .unreadable(let broken) = input.settingsState {
+            return Finding(
+                level: .unknown, check: "statusline",
+                detail: "can't tell what is configured — could not parse "
+                    + broken.joined(separator: ", ")
+                    + (input.statuslinePayloadPresent
+                        ? ". A payload is arriving, so something is running"
+                        : ". No payload is arriving"),
+                anchor: "usage-numbers-5h--7d-are-missing")
+        }
+
         let usesWrapper = input.statusLineCommand?.contains("agent-tracker-statusline") == true
 
         guard let command = input.statusLineCommand, !command.isEmpty else {

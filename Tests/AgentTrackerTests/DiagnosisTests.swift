@@ -190,6 +190,24 @@ struct DiagnosisTests {
         #expect(Diagnosis.exitCode(findings) == 0)
     }
 
+    /// The statusline finding reads the same merged settings the hook finding
+    /// does, so a config that would not parse must not produce a definite claim
+    /// about what is configured. Gating one and not the other was the gap.
+    @Test("an unparseable config makes the statusline verdict unknown too")
+    func unreadableSettingsGateStatuslineToo() {
+        var input = healthy
+        input.settingsState = .unreadable(["/Users/dev/.claude/settings.json"])
+        input.statusLineCommand = nil
+        let finding = find(Diagnosis.findings(input), "statusline")
+        #expect(finding?.level == .unknown)
+        #expect(finding?.detail.contains("could not parse") == true)
+        // Never the definite claim, which is what an unparseable file would
+        // otherwise have produced.
+        #expect(finding?.detail.contains("no statusLine configured") == false)
+        // The payload half is still reported: it comes from disk, not settings.
+        #expect(finding?.detail.contains("A payload is arriving") == true)
+    }
+
     /// Context readings arrive from either statusline source, so a payload
     /// without the wrapper means usage is missing and context is not.
     @Test("a payload without the wrapper narrows the claim to usage")
