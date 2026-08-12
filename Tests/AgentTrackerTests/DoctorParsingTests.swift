@@ -154,6 +154,21 @@ struct DoctorParsingTests {
             Doctor.scriptPath(fromCommand: "$MY_TOOLS/agent-tracker-hook.py claude") == nil)
     }
 
+    /// A variable that merely *starts with* HOME is a different variable.
+    /// Substring replacement rewrote it into a real-looking path, which then
+    /// passed the "still contains a $" guard and became a false failure — the
+    /// bug the expansion was written to prevent, inside the expansion.
+    @Test("a variable that only starts with HOME is not expanded")
+    func homePrefixIsNotHome() {
+        #expect(Doctor.scriptPath(fromCommand: "$HOMEDIR/agent-tracker-hook.py claude") == nil)
+        #expect(Doctor.scriptPath(fromCommand: "$HOME_TOOLS/agent-tracker-hook.py claude") == nil)
+        // Still expanded where it genuinely is $HOME.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        #expect(
+            Doctor.scriptPath(fromCommand: "$HOME/agent-tracker-hook.py claude")
+                == "\(home)/agent-tracker-hook.py")
+    }
+
     /// Nothing that looks like the hook means the answer is "cannot tell",
     /// rather than a path to accuse of not existing.
     @Test("a command with no recognisable hook token resolves to nothing")

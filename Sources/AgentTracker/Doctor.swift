@@ -240,8 +240,16 @@ enum Doctor {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let expanded =
             (hookToken as NSString).expandingTildeInPath
-            .replacingOccurrences(of: "${HOME}", with: home)
-            .replacingOccurrences(of: "$HOME", with: home)
+            .replacingOccurrences(
+                of: #"\$\{HOME\}"#, with: home, options: .regularExpression
+            )
+            // Anchored to a following slash or the end of the token. Plain
+            // substring replacement rewrote `$HOMEDIR` into a concrete path,
+            // which then passed the `$` guard below and became something to
+            // accuse — the exact failure this expansion was added to avoid,
+            // committed inside the fix for it.
+            .replacingOccurrences(
+                of: #"\$HOME(?=/|$)"#, with: home, options: .regularExpression)
         guard !expanded.contains("$") else { return nil }
         return expanded
     }
