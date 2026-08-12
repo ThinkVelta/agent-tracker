@@ -633,6 +633,7 @@ struct SessionRow: View {
             // hover, and the pair oscillated at screen refresh rate.
             .onHover { self.hovering = $0 }
             if editing { editorPanel }
+            if renaming { renamePanel }
         }
         .contextMenu {
             if session.state == .needsYou {
@@ -647,6 +648,14 @@ struct SessionRow: View {
             Button("Copy resume command") {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(session.resumeCommand, forType: .string)
+            }
+            Button("Rename…") {
+                // Seeded with the current name rather than blank: a rename is
+                // usually an edit of what is there, and an empty field would
+                // make the user retype it to change one word.
+                renameDraft = session.registryName ?? ""
+                renameOutcome = nil
+                renaming = true
             }
             if armedSchedule != nil {
                 Button("Cancel scheduled continue") {
@@ -668,6 +677,10 @@ struct SessionRow: View {
 
     @State private var editing = false
     @State private var draft = ContinueDraft()
+    @State private var renaming = false
+    @State private var renameDraft = ""
+    @State private var renameOutcome: String?
+    @State private var renameInFlight = false
     /// Read from the transcript when the editor opens, never in a view body —
     /// it is a bounded file read and the body runs on the main actor.
     @State private var unattendedWarning: String?
@@ -757,6 +770,48 @@ struct SessionRow: View {
                 } ?? row.permissionMode
             }.value
             unattendedWarning = ContinueDelivery.unattendedWarning(for: mode)
+        }
+    }
+
+    private var renamePanel: some View {
+        RenameEditor(
+            name: $renameDraft,
+            current: session.registryName,
+            outcome: renameOutcome,
+            isSending: renameInFlight,
+            onSubmit: submitRename,
+            onDismiss: { renaming = false })
+    }
+
+    /// Resolves the session's pane and types `/rename` into it.
+    ///
+    /// Resolution is the slow half — the Automation preflight was measured
+    /// taking over 100 seconds for a running-but-ungranted target — so it runs
+    /// off the main actor and the button says "Renaming…" meanwhile. The prompt
+    /// IS allowed here: the user just asked for this and is looking at the
+    /// panel, which is the same rule arming follows.
+    private func submitRename() {
+        guard !renameInFlight, let command = SessionRename.command(for: renameDraft) else { return }
+        renameInFlight = true
+        renameOutcome = nil
+        let sessionId = session.sessionId
+        // The same fallback arming uses, for the same reason — see the comment
+        // on the arming call site. Being stricter here would give rename less
+        // reach than a scheduled continue while asking the identical question.
+        let title = windowTitle ?? session.displayName
+        let lastEvent = session.lastEvent
+        Task {
+            let resolved = await SessionTarget.resolve(
+                for: sessionId, expectedTitle: title, promptIfNeeded: true)
+            let result = SessionRename.deliver(
+                command: command, resolved: resolved, lastEvent: lastEvent, ops: .ghostty)
+            await MainActor.run {
+                renameInFlight = false
+                renameOutcome = result.detail
+                // Left open on a refusal so the reason stays readable; closed on
+                // success, where the row itself is about to say what happened.
+                if result.outcome == .sent { renaming = false }
+            }
         }
     }
 
