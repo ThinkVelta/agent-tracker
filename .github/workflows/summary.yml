@@ -13,7 +13,7 @@ on:
   pull_request:
     branches:
       - main
-    types: [opened, synchronize]
+    types: [opened, synchronize, reopened]
 
 concurrency:
   group: release-summary-${{ github.event.pull_request.number }}
@@ -28,10 +28,23 @@ jobs:
   # everything in one job sidesteps it — no outputs key exists here, and none
   # may be added. (Same constraint as `pr.yml`.)
   summary:
-    # `head_ref == 'dev'` is the whole gate. `base_ref` is already `main` from
-    # the trigger, but assert it anyway: this must never fire on a hotfix, which
-    # also targets `main` and IS reviewed normally.
-    if: github.head_ref == 'dev' && github.base_ref == 'main'
+    # Three conditions, each ruling out a different wrong PR.
+    #
+    #   head_ref == 'dev'      the release PR, and the whole point
+    #   base_ref == 'main'     already true from the trigger, but asserted so
+    #                          this can never fire on a HOTFIX, which also
+    #                          targets `main` and IS reviewed normally
+    #   same repo              a fork can have a branch called `dev` too, and
+    #                          GitHub withholds secrets from fork-triggered
+    #                          `pull_request` runs — so this would fail on the
+    #                          missing key, putting a red X on an outside
+    #                          contributor's PR for a reason they can neither
+    #                          see nor fix. `pr.yml` skips forks for exactly
+    #                          this reason.
+    if: >-
+      github.head_ref == 'dev'
+      && github.base_ref == 'main'
+      && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
