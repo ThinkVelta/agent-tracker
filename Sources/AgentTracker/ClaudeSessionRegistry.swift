@@ -3,7 +3,7 @@ import Foundation
 /// Reads Claude Code's own per-process session registry, `~/.claude/sessions/<pid>.json`.
 ///
 /// One file per live session. It is the only place that carries a session's
-/// *name* — the slug the user sees in their own terminal ("planner-e8") — and
+/// *name* — the slug the user sees in their own terminal ("api-gateway-02") — and
 /// Claude's own activity status, neither of which any hook payload provides.
 /// Strictly read-only: the directory belongs to Claude Code, which owns the
 /// format and may change it, so every field is optional and anything
@@ -27,7 +27,7 @@ final class ClaudeSessionRegistry {
         /// session driving a worktree the two genuinely differ, and each is
         /// right for a different job (see `AgentSession.windowDirectories`).
         let cwd: String?
-        /// Claude's name for the session, e.g. "planner-e8".
+        /// Claude's name for the session, e.g. "api-gateway-02".
         let name: String?
         /// Whether the user picked that name rather than Claude inventing it.
         ///

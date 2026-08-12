@@ -51,8 +51,11 @@ Claude Code merges config from several scopes:
 3. `.claude/settings.local.json` (this repo) — your personal project overrides
 4. CLI flags
 
-Higher numbers override lower. Project-shared config is the right place for rules every session
-should follow; personal overrides go in `.local.json`.
+Higher numbers override lower, **per key** — `hooks` is the exception worth knowing, because it
+merges rather than replacing: a project can add its own hook events and the user-level ones still
+run. `statusLine` is a single command and cannot merge, so there the highest-numbered one simply
+wins. Project-shared config is the right place for rules every session should follow; personal
+overrides go in `.local.json`.
 
 ## Editing this directory
 

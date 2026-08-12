@@ -1,12 +1,42 @@
 # Troubleshooting
 
+## Run this first
+
+```sh
+/Applications/AgentTracker.app/Contents/MacOS/AgentTracker --doctor
+```
+
+It checks the mechanical half of this page — hooks, the hook script, the
+statusline wrapper, session files, permissions — and where a finding has a
+section here that explains it, prints the link. Read-only: it never writes,
+installs or grants anything, and never raises a permission dialog, so it is safe
+to run on a machine that is already misbehaving.
+
+**Run it from the project you are having trouble with.** One check walks up from
+the working directory looking for a project-level `statusLine`, so from your home
+directory it has nothing to find. The report prints which directory it searched.
+
+Exit status is 0 when nothing failed and 1 when something did. Warnings do not
+fail: not having the statusline wrapper is worth knowing and is not a broken
+install.
+
+It deliberately does **not** check the Ghostty Automation grant. Asking macOS
+for that status can block for over a minute even without prompting, and a
+diagnostic that looks like a hang is worse than one that says what it skipped.
+Check it in Settings › General › *Permission to control Ghostty*.
+
+The rest of this page is for what the doctor cannot decide.
+
+---
+
 Organised by what you are seeing, since that is what you know. Each entry says
 how to tell which cause you have rather than listing everything that could be
 wrong.
 
-If you are reading this through an agent: every fact here is stated so it can be
-quoted on its own, and the log at `~/.agent-tracker/logs/agent-tracker.log` is
-the single place the app records what it decided and why.
+If you are reading this through an agent: run `--doctor` first, then read the
+section it names. Every fact here is stated so it can be quoted on its own, and
+the log at `~/.agent-tracker/logs/agent-tracker.log` is the single place the app
+records what it decided and why.
 
 ## No sessions appear at all
 
@@ -17,19 +47,27 @@ not broken and they will not recover — start a new one, or restart that one.
 
 If a *new* session still does not appear, work down these in order.
 
-**Are the hooks registered?** They live in `~/.claude/settings.json`. Ask it
-which events are wired rather than grepping — `agent-tracker` also appears in the
-`statusLine` entry, so a raw count answers a different question than it looks
-like it does:
+**Are the hooks registered?** They live in `~/.claude/settings.json`, or in
+`~/.claude/settings.local.json` — either can carry them, so a check that reads
+only the first can report a phantom problem. Ask which events are wired rather
+than grepping, since `agent-tracker` also appears in the `statusLine` entry and a
+raw count answers a different question than it looks like it does:
 
 ```sh
 python3 -c "
 import json, os
-s = json.load(open(os.path.expanduser('~/.claude/settings.json')))
-print(sorted(e for e, v in s.get('hooks', {}).items()
+hooks = {}
+for name in ('settings.json', 'settings.local.json'):
+    path = os.path.expanduser('~/.claude/' + name)
+    if os.path.exists(path):
+        for event, entries in json.load(open(path)).get('hooks', {}).items():
+            hooks.setdefault(event, []).extend(entries)
+print(sorted(e for e, v in hooks.items()
              if any('agent-tracker' in x.get('command', '')
                     for c in v for x in c.get('hooks', []))))"
 ```
+
+Or just run `--doctor`, which does exactly this and more.
 
 All seven are expected:
 
@@ -57,10 +95,14 @@ echo '{"hook_event_name":"Stop","session_id":"probe"}' \
 
 Silence and an exit code of 0 is success. Anything printed is the fault.
 
-**A project-level settings file shadows the user-level one.** If the repo you are
-working in has its own `.claude/settings.json` with a `hooks` block, Claude uses
-that one and the user-level hooks do not run for those sessions. This is the
-cause that looks most like "it works everywhere except here".
+**Not** a project-level settings file, despite what you might expect. Hooks from
+a project's own `.claude/settings.json` are **merged** with the user-level ones
+rather than replacing them, so a repo with its own hooks still reports sessions
+normally. Measured rather than assumed: this project defines two of its own hook
+events and its sessions are tracked anyway.
+
+The single `statusLine` slot is the opposite, because one command cannot merge
+with another — see [usage numbers](#usage-numbers-5h--7d-are-missing) below.
 
 ## A session shows no context percentage
 

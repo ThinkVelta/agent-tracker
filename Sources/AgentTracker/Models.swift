@@ -93,7 +93,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
 
     // Set by the store when loading; not part of the on-disk schema.
     var fileURL: URL?
-    /// Claude Code's own name for this session ("planner-e8") — the name the
+    /// Claude Code's own name for this session ("api-gateway-02") — the name the
     /// user sees in their own terminal. Joined in from the session registry.
     var registryName: String?
     /// Whether that name was chosen by the user (`--name`, or `/rename`) rather
@@ -142,11 +142,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// terminal), as does the full path.
     ///
     /// The *project*, not the leaf directory: a session in a worktree lives at
-    /// `…/planner-backend/.claude/worktrees/ruben-pln-396-live-…-8419e2f7`, and
-    /// titling it with that generated name made worktree rows read as noise
-    /// beside plain ones. Same rule for both providers, wildly different
-    /// results — which is what "Planner" sitting next to
-    /// "ruben-pln-396-live-…" looked like.
+    /// `…/<project>/.claude/worktrees/<generated-branch-slug>-<hash>`, and
+    /// titling a row with that generated name made worktree rows read as noise
+    /// beside plain ones — a short project name sitting next to a forty-character
+    /// slug of a branch name, for two sessions in the same repo.
     var displayName: String {
         Self.projectAndWorktree(of: primaryDirectory)?.project ?? "Session"
     }
@@ -214,7 +213,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
         [cwd, registryCwd].compactMap { $0 }.filter { !$0.isEmpty }
     }
 
-    /// Short path context shown alongside the project name, e.g. "ProjectsVelta/Planner".
+    /// Short path context shown alongside the project name, e.g. "Projects/api-gateway".
     var pathContext: String? {
         Self.pathContext(of: cwd)
     }
