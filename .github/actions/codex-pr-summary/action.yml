@@ -1,0 +1,111 @@
+name: Codex PR Summary
+description: Run openai/codex-action with this project's release-summary prompt, for the `dev -> main` PR.
+
+inputs:
+  openai-api-key:
+    description: OpenAI API key forwarded to the Codex action.
+    required: true
+
+outputs:
+  final-message:
+    description: Codex's summary text.
+    value: ${{ steps.codex.outputs['final-message'] }}
+
+runs:
+  using: composite
+  steps:
+    - name: Fail fast on missing OPENAI_API_KEY
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        if [ -z "${OPENAI_API_KEY}" ]; then
+          echo "OPENAI_API_KEY is not set for this workflow run."
+          exit 1
+        fi
+
+    - name: Pre-fetch base and head refs for the PR
+      shell: bash
+      env:
+        BASE_REF: ${{ github.event.pull_request.base.ref }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+      run: |
+        git fetch --no-tags origin "$BASE_REF" "+refs/pull/${PR_NUMBER}/head"
+
+    - name: Prepare Codex home
+      shell: bash
+      run: |
+        mkdir -p "$HOME/.codex"
+
+    # No conversation history is fetched, unlike `codex-pr-review`. This PR is
+    # not a discussion: it is opened, summarized and merged, and its comments
+    # are the summary itself. Feeding them back in would only invite the model
+    # to summarize its own previous summary.
+    - id: codex
+      uses: openai/codex-action@v1
+      with:
+        openai-api-key: ${{ inputs.openai-api-key }}
+        model: gpt-5.3-codex
+        effort: medium
+        codex-args: '["-c", "model_reasoning_summary=none"]'
+        prompt: |
+          This is PR #${{ github.event.pull_request.number }} for ${{ github.repository }}.
+          Base SHA: ${{ github.event.pull_request.base.sha }}
+          Head SHA: ${{ github.event.pull_request.head.sha }}
+
+          This is the release PR: it promotes `dev` to `main`, so its diff IS the
+          release. Everything in it has already been reviewed once, on the way into
+          `dev`, so do NOT review it. Describe it.
+
+          Your summary is the human-readable changelog for this release. Someone
+          deciding whether to upgrade should be able to read it and know.
+
+          Summarize ONLY the changes between the base and head SHAs above.
+
+          This repository is Agent Tracker: a lightweight native macOS menu bar app
+          (Swift + SwiftUI, SwiftPM executable) that tracks the status of running
+          Claude Code sessions, plus the Python and shell hook helpers that report
+          session state into it and the repo's own tooling and workflow config.
+
+          Write in markdown, and format the message as follows:
+
+          ## What changed for users
+
+          Two to four sentences on what someone upgrading actually notices. Lead
+          with behaviour, not with file names. If nothing user-visible changed, say
+          so plainly rather than dressing up internal work as a feature.
+
+          ## Change overview
+
+          | Area | Type | Summary |
+          | - | - | - |
+
+          One row per meaningful change: the area or module, the Conventional Commit
+          type (feat/fix/refactor/docs/ci/chore/...), and a one-line description.
+          Make sure the header separator row is present. Inside a table cell, a
+          literal `|` breaks the row: escape every pipe as `\|` (including pipes
+          inside backticks, e.g. write `` `curl … \| bash` ``). When in doubt,
+          rewrite the cell to avoid the pipe (e.g. "piped to" instead of `|`).
+
+          ## Notable changes
+
+          A `###` subheading per significant change, each with:
+          - **What changed:** brief explanation
+          - **Why:** the motivation, where the code or commit messages make it clear
+          - **Key files:** the primary files affected
+
+          ## Upgrade notes
+
+          Anything a user or maintainer must DO rather than merely know: a changed
+          default, a migrated state file, a setting that moved, a hook or installer
+          that has to be re-run. Write "None." if there is nothing, and do not pad
+          this section to look thorough.
+
+          Do not speculate about intent the diff does not support, and do not
+          describe changes that are not in it. An accurate short summary is worth
+          more than a complete-looking long one.
+
+          Pull request title and body:
+          ----
+          ${{ github.event.pull_request.title }}
+          ${{ github.event.pull_request.body }}
