@@ -273,12 +273,14 @@ largest class of refusals outright.
   exposes no per-window identity that would settle it, and `WindowIdentity`
   documents the four routes that were tried and closed. **Naming one of them
   fixes it** — see [troubleshooting](docs/troubleshooting.md).
-- **Window matching, usage numbers and context readings all need a title
-  source.** All three come from Claude's statusline payload, which reaches the
-  app only through the [statusline wrapper](docs/statusline.md) or your own
-  script dumping it. Without one, window matching falls back to transcript
-  summaries and path fragments, and the app says it cannot tell rather than
-  claiming you have room left.
+- **Window matching, usage numbers and context readings all need the statusline
+  payload.** Different fields of it: window matching reads `session_name`, the
+  usage strip reads `rate_limits`, the per-row percentage reads
+  `context_window`. The payload reaches the app only through the
+  [statusline wrapper](docs/statusline.md) or your own script dumping it, so
+  without one, window matching falls back to transcript summaries and path
+  fragments, and the app says it cannot tell rather than claiming you have room
+  left.
 
 ## Build from source
 
