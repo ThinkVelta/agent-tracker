@@ -34,7 +34,12 @@ help: ## Show available commands
 prepare: ## Install the git hooks (pre-commit + commit-msg)
 	$(PRE_COMMIT) install --install-hooks
 
-lint: ## Run every pre-commit hook over the whole tree
+lint: ## Run every pre-commit hook over everything git tracks
+	@untracked="$$(git ls-files --others --exclude-standard)"; \
+	  if [ -n "$$untracked" ]; then \
+	    echo "note: these are NOT linted until git tracks them:"; \
+	    echo "$$untracked" | sed 's/^/  /'; \
+	  fi
 	$(PRE_COMMIT) run --all-files
 
 format: ## Rewrite Swift sources (swift-format, then swiftlint autocorrect)
