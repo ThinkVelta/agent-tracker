@@ -44,8 +44,11 @@ few seconds.
 No daemon, no telemetry, no account. Claude Code reports through the hooks it
 already supports, and the app reads plain JSON off disk.
 
-Already installed and something is off? **[Troubleshooting](docs/troubleshooting.md)**,
-or the [documentation index](docs/README.md).
+Already installed and something is off? Run
+`/Applications/AgentTracker.app/Contents/MacOS/AgentTracker --doctor`, which
+checks the install and points at what to read. Or start from
+**[Troubleshooting](docs/troubleshooting.md)** or the
+[documentation index](docs/README.md).
 
 ## Install
 

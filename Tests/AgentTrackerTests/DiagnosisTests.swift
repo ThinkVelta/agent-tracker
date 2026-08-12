@@ -16,10 +16,14 @@ struct DiagnosisTests {
                     event: $0, command: "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py claude"
                 )
             },
-            registeredHookPath: .resolved("/Users/dev/.agent-tracker/bin/agent-tracker-hook.py"),
+            hookScripts: [
+                Diagnosis.HookScript(
+                    events: Diagnosis.expectedHookEvents.sorted(),
+                    command: "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py claude",
+                    path: "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py",
+                    exists: true, isExecutable: true)
+            ],
             installedHookPath: "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py",
-            registeredHookScriptPresent: true,
-            registeredHookScriptExecutable: true,
             hookFreshness: .current,
             statusLineCommand: "~/.agent-tracker/bin/agent-tracker-statusline.py",
             projectStatusLineOverride: nil,
@@ -29,6 +33,15 @@ struct DiagnosisTests {
             statuslinePayloadPresent: true,
             accessibilityGranted: true,
             notifications: .authorized)
+    }
+
+    private func script(
+        path: String? = "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py",
+        exists: Bool = true, executable: Bool = true, events: [String] = ["Stop"]
+    ) -> Diagnosis.HookScript {
+        Diagnosis.HookScript(
+            events: events, command: "\(path ?? "?") claude", path: path,
+            exists: exists, isExecutable: executable)
     }
 
     private func hooks(_ events: [String]) -> [Diagnosis.RegisteredHook] {
@@ -81,7 +94,7 @@ struct DiagnosisTests {
     @Test("a non-executable hook script is a failure, not a warning")
     func nonExecutableHookIsAFailure() {
         var input = healthy
-        input.registeredHookScriptExecutable = false
+        input.hookScripts = [script(executable: false)]
         let findings = Diagnosis.findings(input)
         #expect(findings.contains { $0.check == "hook script" && $0.level == .fail })
         #expect(Diagnosis.exitCode(findings) == 1)
@@ -90,8 +103,7 @@ struct DiagnosisTests {
     @Test("a missing hook script stops before asking whether it is executable")
     func missingHookScriptIsOneFinding() {
         var input = healthy
-        input.registeredHookScriptPresent = false
-        input.registeredHookScriptExecutable = false
+        input.hookScripts = [script(exists: false, executable: false)]
         let script = Diagnosis.findings(input).filter { $0.check == "hook script" }
         #expect(script.count == 1)
         #expect(script.first?.detail.contains("does not exist") == true)
@@ -104,8 +116,7 @@ struct DiagnosisTests {
     @Test("a registration pointing at a path that does not exist fails")
     func deadRegisteredPathIsAFailure() {
         var input = healthy
-        input.registeredHookScriptPresent = false
-        input.registeredHookPath = .resolved("/nonexistent/agent-tracker-hook.py")
+        input.hookScripts = [script(path: "/nonexistent/agent-tracker-hook.py", exists: false)]
         let findings = Diagnosis.findings(input)
         let script = findings.first { $0.check == "hook script" }
         #expect(script?.level == .fail)
@@ -113,12 +124,49 @@ struct DiagnosisTests {
         #expect(Diagnosis.exitCode(findings) == 1)
     }
 
+    /// The finding this restructure exists for: checking only the first
+    /// registration let a healthy one hide a broken one, which is precisely the
+    /// state the check was added to catch. A half-reinstalled config, or one
+    /// event edited by hand, produces exactly this.
+    @Test("a broken registration is not hidden by a healthy one beside it")
+    func oneBrokenRegistrationIsNotHidden() {
+        var input = healthy
+        input.hookScripts = [
+            script(events: ["PreToolUse", "Stop"]),
+            script(path: "/gone/agent-tracker-hook.py", exists: false, events: ["SessionEnd"]),
+        ]
+        let findings = Diagnosis.findings(input)
+        let failure = findings.first { $0.check == "hook script" && $0.level == .fail }
+        #expect(failure != nil)
+        #expect(failure?.detail.contains("SessionEnd") == true)
+        // And it does not claim the healthy events are broken.
+        #expect(failure?.detail.contains("Stop") == false)
+        #expect(Diagnosis.exitCode(findings) == 1)
+    }
+
+    /// A config where every event points somewhere dead should not print seven
+    /// near-identical lines, nor list seven event names in one.
+    @Test("many broken events collapse to a count")
+    func manyEventsAreSummarised() {
+        var input = healthy
+        input.hookScripts = [
+            script(
+                path: "/gone/agent-tracker-hook.py", exists: false,
+                events: Diagnosis.expectedHookEvents.sorted())
+        ]
+        let failures = Diagnosis.findings(input).filter {
+            $0.check == "hook script" && $0.level == .fail
+        }
+        #expect(failures.count == 1)
+        #expect(failures.first?.detail.contains("7 events") == true)
+    }
+
     /// It exists, so it runs — but nothing will ever refresh it, which is worth
     /// saying and is not a failure.
     @Test("a registration somewhere unexpected but present is a warning")
     func mismatchedButPresentPathWarns() {
         var input = healthy
-        input.registeredHookPath = .resolved("/opt/custom/agent-tracker-hook.py")
+        input.hookScripts = [script(path: "/opt/custom/agent-tracker-hook.py")]
         let findings = Diagnosis.findings(input)
         #expect(findings.contains { $0.check == "hook script" && $0.level == .warn })
         #expect(Diagnosis.exitCode(findings) == 0)
@@ -179,7 +227,7 @@ struct DiagnosisTests {
         #expect(Diagnosis.summary(Diagnosis.findings(warned)).hasPrefix("No failures."))
 
         var failed = healthy
-        failed.registeredHookScriptExecutable = false
+        failed.hookScripts = [script(executable: false)]
         #expect(Diagnosis.summary(Diagnosis.findings(failed)).contains("problem(s) found"))
     }
 
@@ -291,7 +339,7 @@ struct DiagnosisTests {
         var input = healthy
         input.claudeDirectoryExists = false
         input.registeredHooks = []
-        input.registeredHookScriptPresent = false
+        input.hookScripts = [script(exists: false, executable: false)]
         let findings = Diagnosis.findings(input)
         #expect(findings.count == 1)
         #expect(findings.first?.level == .warn)
@@ -361,8 +409,20 @@ struct DiagnosisTests {
             { (probe: inout Diagnosis.Input) in probe.claudeDirectoryExists = false },
             { (probe: inout Diagnosis.Input) in probe.registeredHooks = [] },
             { (probe: inout Diagnosis.Input) in probe.registeredHooks = hooks(["Stop"]) },
-            { (probe: inout Diagnosis.Input) in probe.registeredHookScriptPresent = false },
-            { (probe: inout Diagnosis.Input) in probe.registeredHookScriptExecutable = false },
+            { (probe: inout Diagnosis.Input) in
+                probe.hookScripts = [
+                    Diagnosis.HookScript(
+                        events: ["Stop"], command: "/nope claude", path: "/nope",
+                        exists: false, isExecutable: false)
+                ]
+            },
+            { (probe: inout Diagnosis.Input) in
+                probe.hookScripts = [
+                    Diagnosis.HookScript(
+                        events: ["Stop"], command: "/x claude", path: "/x",
+                        exists: true, isExecutable: false)
+                ]
+            },
             { (probe: inout Diagnosis.Input) in probe.statusLineCommand = nil },
             { (probe: inout Diagnosis.Input) in probe.statusLineCommand = "other" },
             { (probe: inout Diagnosis.Input) in probe.statuslinePayloadPresent = false },

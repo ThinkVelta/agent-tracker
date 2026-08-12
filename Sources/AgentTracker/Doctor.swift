@@ -86,30 +86,24 @@ enum Doctor {
         input.registeredHooks = Self.registeredHooks(in: settings)
         input.statusLineCommand = Self.statusLineCommand(in: settings)
 
-        // The path the registration NAMES, not the one this build would install
-        // to. A config carried between machines registers a path that does not
-        // exist while every other check still passes.
+        // The paths the registrations NAME, not the one this build would install
+        // to. Every distinct command, because events can point at different ones
+        // and checking a single command lets a healthy registration hide a
+        // broken one.
         let installedPath = HookSetup.installedHookPath().path
-        let registeredPath = input.registeredHooks.first.flatMap {
-            scriptPath(fromCommand: $0.command)
-        }
-        if input.registeredHooks.isEmpty {
-            input.registeredHookPath = .none
-        } else if let registeredPath {
-            input.registeredHookPath = .resolved(registeredPath)
-        } else {
-            // A command we cannot parse is not a broken one. Say so instead of
-            // reporting a failure about a path we never found.
-            input.registeredHookPath = .unresolved(input.registeredHooks[0].command)
-        }
-
-        let probedPath = registeredPath ?? installedPath
-        input.registeredHookScriptPresent = FileManager.default.fileExists(atPath: probedPath)
-        input.registeredHookScriptExecutable = FileManager.default.isExecutableFile(
-            atPath: probedPath)
         input.installedHookPath = installedPath
+        input.hookScripts = resolveHookScripts(input.registeredHooks)
+
+        // Freshness is about the script an upgrade would replace, so it prefers
+        // the path this build installs to. A registration pointing elsewhere is
+        // warned about separately rather than measured for staleness.
+        let freshnessPath =
+            input.hookScripts.compactMap(\.path).first { $0 == installedPath }
+            ?? input.hookScripts.compactMap(\.path).first
+            ?? installedPath
         input.hookFreshness = hookFreshness(
-            at: probedPath, isPresent: input.registeredHookScriptPresent)
+            at: freshnessPath,
+            isPresent: FileManager.default.fileExists(atPath: freshnessPath))
 
         input.projectStatusLineOverride = projectStatusLineOverride(from: searchRoot)
         input.statuslinePayloadPresent = statuslinePayloadPresent(claude: claude)
@@ -128,6 +122,26 @@ enum Doctor {
         input.accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
         input.notifications = notificationState()
         return input
+    }
+
+    /// Every distinct command the registrations run, with what is true of the
+    /// file each one names. Grouped by command so a config registering the same
+    /// script for seven events produces one finding rather than seven.
+    static func resolveHookScripts(_ hooks: [Diagnosis.RegisteredHook]) -> [Diagnosis.HookScript] {
+        var byCommand: [String: [String]] = [:]
+        for hook in hooks {
+            byCommand[hook.command, default: []].append(hook.event)
+        }
+        return byCommand.keys.sorted().map { command in
+            let path = scriptPath(fromCommand: command)
+            return Diagnosis.HookScript(
+                events: byCommand[command] ?? [],
+                command: command,
+                path: path,
+                exists: path.map { FileManager.default.fileExists(atPath: $0) } ?? false,
+                isExecutable: path.map { FileManager.default.isExecutableFile(atPath: $0) } ?? false
+            )
+        }
     }
 
     /// `settings.json` plus `settings.local.json`, the latter winning per key.

@@ -95,16 +95,22 @@ enum Diagnosis {
         var command: String
     }
 
-    /// What we could work out about the path the registration names.
+    /// One registered command, resolved as far as it could be taken.
     ///
-    /// `unresolved` exists so a command shape nobody anticipated — the hook run
-    /// through an interpreter, say — is reported as "cannot tell" rather than
-    /// as a broken install. The check was added to catch a registration
-    /// pointing at nothing; it must not invent one.
-    enum RegisteredHookPath: Equatable {
-        case none
-        case resolved(String)
-        case unresolved(String)
+    /// Every distinct command is carried, not just the first. Events can point
+    /// at different commands — a config half-reinstalled, or one event edited by
+    /// hand — and checking only one lets a healthy registration hide a broken
+    /// one, which is the failure this whole check exists to catch.
+    struct HookScript: Equatable {
+        /// Which events run this command, so a report can name them.
+        var events: [String]
+        var command: String
+        /// nil when no token in the command looks like the hook. Reported as
+        /// "cannot tell" rather than as a missing file: a check for a broken
+        /// registration must not invent one.
+        var path: String?
+        var exists = false
+        var isExecutable = false
     }
 
     /// Whether notifications would actually arrive.
@@ -126,17 +132,12 @@ enum Diagnosis {
         var claudeDirectoryExists = false
         var settingsState: SettingsState = .absent
         var registeredHooks: [RegisteredHook] = []
-        /// What could be worked out about the path the registration names.
-        var registeredHookPath: RegisteredHookPath = .none
+        /// Every distinct command the registrations run, resolved.
+        var hookScripts: [HookScript] = []
         /// Where *this build* would install the hook. Compared against the
-        /// registered path here rather than in the probe, so the rule about
+        /// registered paths here rather than in the probe, so the rule about
         /// what a mismatch means is testable like every other rule.
         var installedHookPath = ""
-        /// Whether the path the *registration* names exists and is executable —
-        /// a different question from whether the path this build would install
-        /// to exists.
-        var registeredHookScriptPresent = false
-        var registeredHookScriptExecutable = false
         var hookFreshness: HookFreshness = .unknown
         var statusLineCommand: String?
         /// Path of a project-level settings file that sets its own `statusLine`,
@@ -269,51 +270,69 @@ enum Diagnosis {
     /// dotfiles under a different username, registers a path that does not
     /// exist — while every other check still passes, so the report would say the
     /// install is healthy when no event has ever been delivered.
+    /// Every registered command is checked, and a problem in any one of them is
+    /// reported. Checking only the first let a healthy registration hide a
+    /// broken one, which is the exact failure this exists to catch.
     private static func hookScriptFindings(_ input: Input) -> [Finding] {
-        if case .unresolved(let command) = input.registeredHookPath {
-            return [
-                Finding(
-                    level: .unknown, check: "hook script",
-                    detail: "can't tell which file this runs: \(command)", anchor: nil)
-            ]
-        }
-        // Only a path we actually resolved can be somewhere unexpected.
-        var registeredElsewhere: String?
-        if case .resolved(let path) = input.registeredHookPath, path != input.installedHookPath {
-            registeredElsewhere = path
-        }
+        var findings: [Finding] = []
 
-        guard input.registeredHookScriptPresent else {
-            return [
-                Finding(
-                    level: .fail, check: "hook script",
-                    detail:
-                        "the registered hooks point at a path that does not exist"
-                        + (registeredElsewhere.map { " (\($0))" } ?? "")
-                        + " — run ./install.sh",
-                    anchor: "no-sessions-appear-at-all")
-            ]
-        }
+        let missing = input.hookScripts.filter { $0.path != nil && !$0.exists }
+        let notExecutable = input.hookScripts.filter { $0.exists && !$0.isExecutable }
+        let unresolved = input.hookScripts.filter { $0.path == nil }
+        let working = input.hookScripts.filter { $0.exists && $0.isExecutable }
 
-        var findings = [
-            Finding(level: .ok, check: "hook script", detail: "present", anchor: nil)
-        ]
-        if let elsewhere = registeredElsewhere {
+        for script in missing {
             findings.append(
                 Finding(
-                    level: .warn, check: "hook script",
+                    level: .fail, check: "hook script",
+                    // Phrased so the number of events cannot make the verb
+                    // wrong: "SessionEnd point at" was the first version.
                     detail:
-                        "registered at \(elsewhere), which is not where this build installs — "
-                        + "it exists, so it runs, but upgrades will not refresh it",
-                    anchor: nil))
+                        "\(describe(script.events)) -> \(script.path ?? "?") does not exist "
+                        + "— run ./install.sh",
+                    anchor: "no-sessions-appear-at-all"))
         }
-        if !input.registeredHookScriptExecutable {
+        for script in notExecutable {
             // Registered, present, and silently doing nothing: the worst shape,
             // because every other check passes.
             findings.append(
                 Finding(
-                    level: .fail, check: "hook script", detail: "not executable — chmod +x it",
+                    level: .fail, check: "hook script",
+                    detail:
+                        "\(describe(script.events)) -> \(script.path ?? "?") is not executable "
+                        + "— chmod +x it",
                     anchor: "no-sessions-appear-at-all"))
+        }
+        for script in unresolved {
+            findings.append(
+                Finding(
+                    level: .unknown, check: "hook script",
+                    detail: "\(describe(script.events)) -> can't tell which file this runs: "
+                        + script.command,
+                    anchor: nil))
+        }
+
+        if missing.isEmpty && notExecutable.isEmpty && !working.isEmpty {
+            findings.append(
+                Finding(
+                    level: .ok, check: "hook script",
+                    detail: working.count == 1
+                        ? "present" : "present (\(working.count) distinct commands)",
+                    anchor: nil))
+        }
+
+        // More than one working script is legal and worth saying: only one of
+        // them is where upgrades look, so the others silently stop being
+        // refreshed.
+        let elsewhere = working.compactMap(\.path).filter { $0 != input.installedHookPath }
+        for path in Set(elsewhere).sorted() {
+            findings.append(
+                Finding(
+                    level: .warn, check: "hook script",
+                    detail:
+                        "registered at \(path), which is not where this build installs — "
+                        + "it exists, so it runs, but upgrades will not refresh it",
+                    anchor: nil))
         }
         switch input.hookFreshness {
         case .current:
@@ -340,6 +359,17 @@ enum Diagnosis {
     /// specifically. Saying "no usage or context" whenever the wrapper is
     /// absent would be wrong about half of it for anyone teeing the payload
     /// themselves, which the docs describe as a supported route.
+    /// "Stop" for one, "Stop, SessionEnd" for a few, a count beyond that — so a
+    /// config where every event is broken does not print all seven. Callers
+    /// phrase around it with an arrow rather than a verb, since no verb agrees
+    /// with both "SessionEnd" and "7 events".
+    private static func describe(_ events: [String]) -> String {
+        let sorted = events.sorted()
+        if sorted.count == 1 { return sorted[0] }
+        if sorted.count <= 3 { return sorted.joined(separator: ", ") }
+        return "\(sorted.count) events"
+    }
+
     private static func statuslineFinding(_ input: Input) -> Finding {
         let usesWrapper = input.statusLineCommand?.contains("agent-tracker-statusline") == true
 
