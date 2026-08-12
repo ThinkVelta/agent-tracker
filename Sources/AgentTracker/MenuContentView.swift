@@ -772,7 +772,6 @@ struct SessionRow: View {
             // rename less reach than a scheduled continue while asking the
             // identical question.
             expectedTitle: windowTitle ?? session.displayName,
-            lastEvent: session.lastEvent,
             onDismiss: { renaming = false })
     }
 
