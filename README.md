@@ -159,6 +159,20 @@ Code and the row takes that name — Claude owns the rename, so its terminal tab
 title follows too, and this app just reads what Claude recorded. Nothing to
 configure.
 
+**Or rename it from the app, which asks Claude to do it.** Right-click a row,
+*Rename…*, and the app types `/rename` into that session's own terminal. It does
+not keep a nickname of its own, deliberately: there is one name, Claude's, and
+the app reads it back like any other. So renaming here and renaming there cannot
+drift apart, and the terminal tab follows either way.
+
+It can be turned down, which a private label never could. A rename is typed into
+a live session, so the app refuses one that is not sitting at a finished turn —
+pressing Return at an open permission prompt would answer it. Outside tmux it
+also has to know which window is yours, and the sessions it cannot tell apart
+are the ones sharing a title with a sibling, which is exactly what renaming one
+would fix. When that happens it says so and points at `/rename` in the terminal,
+which has no such limit.
+
 **And two sessions in one repo stop looking identical.** Rows are otherwise
 titled by project, which is right until two of them share one — then the list
 shows the same word twice and the only way to tell which is which is to click

@@ -633,6 +633,7 @@ struct SessionRow: View {
             // hover, and the pair oscillated at screen refresh rate.
             .onHover { self.hovering = $0 }
             if editing { editorPanel }
+            if renaming { renamePanel }
         }
         .contextMenu {
             if session.state == .needsYou {
@@ -648,6 +649,7 @@ struct SessionRow: View {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(session.resumeCommand, forType: .string)
             }
+            Button("Rename…") { renaming = true }
             if armedSchedule != nil {
                 Button("Cancel scheduled continue") {
                     continues.disarm(sessionId: session.sessionId)
@@ -668,6 +670,7 @@ struct SessionRow: View {
 
     @State private var editing = false
     @State private var draft = ContinueDraft()
+    @State private var renaming = false
     /// Read from the transcript when the editor opens, never in a view body —
     /// it is a bounded file read and the body runs on the main actor.
     @State private var unattendedWarning: String?
@@ -758,6 +761,18 @@ struct SessionRow: View {
             }.value
             unattendedWarning = ContinueDelivery.unattendedWarning(for: mode)
         }
+    }
+
+    private var renamePanel: some View {
+        RenameEditor(
+            sessionId: session.sessionId,
+            current: session.registryName,
+            // The same fallback arming uses, for the same reason — see the
+            // comment on the arming call site. Being stricter here would give
+            // rename less reach than a scheduled continue while asking the
+            // identical question.
+            expectedTitle: windowTitle ?? session.displayName,
+            onDismiss: { renaming = false })
     }
 
     private var editorPanel: some View {
