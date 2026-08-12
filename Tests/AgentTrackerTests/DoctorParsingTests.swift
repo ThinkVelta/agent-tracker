@@ -94,10 +94,31 @@ struct DoctorParsingTests {
         #expect(
             Doctor.scriptPath(fromCommand: "\"/Users/dev/x/agent-tracker-hook.py\" claude")
                 == "/Users/dev/x/agent-tracker-hook.py")
-        // No trailing argument, which is what an older or hand-edited config
-        // looks like.
+    }
+
+    /// A registration can legitimately run the hook through an interpreter.
+    /// Treating the whole prefix as a path there produced a confident failure
+    /// about an install that works — a false positive introduced by the fix for
+    /// a false negative.
+    @Test("an interpreter prefix does not become part of the path")
+    func interpreterPrefixIsNotThePath() {
         #expect(
-            Doctor.scriptPath(fromCommand: "/Users/dev/hook.py") == "/Users/dev/hook.py")
+            Doctor.scriptPath(
+                fromCommand: "python3 /Users/dev/.agent-tracker/bin/agent-tracker-hook.py claude")
+                == "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py")
+        #expect(
+            Doctor.scriptPath(
+                fromCommand:
+                    "/usr/bin/env python3 '/Users/dev/My Files/agent-tracker-hook.py' claude")
+                == "/Users/dev/My Files/agent-tracker-hook.py")
+    }
+
+    /// Nothing that looks like the hook means the answer is "cannot tell",
+    /// rather than a path to accuse of not existing.
+    @Test("a command with no recognisable hook token resolves to nothing")
+    func unrecognisableCommandIsNil() {
+        #expect(Doctor.scriptPath(fromCommand: "/Users/dev/some-other-tool") == nil)
+        #expect(Doctor.scriptPath(fromCommand: "") == nil)
     }
 
     // MARK: - Statusline
@@ -179,5 +200,23 @@ struct DoctorParsingTests {
         try #"{"statusLine": {"command": "mine.sh"}}"#.write(
             to: claude.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8)
         #expect(Doctor.projectStatusLineOverride(from: nested.path) != nil)
+    }
+
+    /// A project's `settings.local.json` displaces the wrapper exactly as its
+    /// `settings.json` does, so checking only the latter reports a healthy
+    /// statusline for a project that has none.
+    @Test("a project settings.local.json statusLine is an override too")
+    func projectLocalSettingsAreChecked() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("doctor-project-local-\(UUID().uuidString)")
+        let claude = root.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try #"{"statusLine": {"command": "local-only.sh"}}"#.write(
+            to: claude.appendingPathComponent("settings.local.json"), atomically: true,
+            encoding: .utf8)
+        let found = Doctor.projectStatusLineOverride(from: root.path)
+        #expect(found?.hasSuffix("settings.local.json") == true)
     }
 }

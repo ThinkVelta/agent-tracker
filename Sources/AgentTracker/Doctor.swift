@@ -86,11 +86,23 @@ enum Doctor {
         input.registeredHooks = Self.registeredHooks(in: settings)
         input.statusLineCommand = Self.statusLineCommand(in: settings)
 
-        let registeredPath = input.registeredHooks.first.map { scriptPath(fromCommand: $0.command) }
-        let installedPath = HookSetup.installedHookPath().path
         // The path the registration NAMES, not the one this build would install
         // to. A config carried between machines registers a path that does not
         // exist while every other check still passes.
+        let installedPath = HookSetup.installedHookPath().path
+        let registeredPath = input.registeredHooks.first.flatMap {
+            scriptPath(fromCommand: $0.command)
+        }
+        if input.registeredHooks.isEmpty {
+            input.registeredHookPath = .none
+        } else if let registeredPath {
+            input.registeredHookPath = .resolved(registeredPath)
+        } else {
+            // A command we cannot parse is not a broken one. Say so instead of
+            // reporting a failure about a path we never found.
+            input.registeredHookPath = .unresolved(input.registeredHooks[0].command)
+        }
+
         let probedPath = registeredPath ?? installedPath
         input.registeredHookScriptPresent = FileManager.default.fileExists(atPath: probedPath)
         input.registeredHookScriptExecutable = FileManager.default.isExecutableFile(
@@ -168,26 +180,53 @@ enum Doctor {
         return registered.sorted { $0.event < $1.event }
     }
 
-    /// The script path out of a hook command line.
+    /// The script path out of a hook command line, or nil when it cannot be
+    /// told.
     ///
-    /// The installer writes `<shell-quoted path> claude`, so the path is
-    /// everything before the trailing argument. Quoting is undone because
-    /// `shlex.quote` only adds quotes when the path needs them — exactly the
-    /// case where taking the string literally would produce a path that does
-    /// not exist, and so a false failure.
-    static func scriptPath(fromCommand command: String) -> String {
-        var text = command.trimmingCharacters(in: .whitespaces)
-        if text.hasSuffix(" claude") {
-            text = String(text.dropLast(" claude".count))
+    /// Finds the *token* that names the hook rather than assuming the command
+    /// begins with it, because a perfectly valid registration can run it through
+    /// an interpreter — `python3 …/agent-tracker-hook.py claude`. Treating the
+    /// whole prefix as a path there yields something that does not exist, and a
+    /// confident failure about a working install.
+    ///
+    /// Returns nil rather than guessing when no token looks like the hook. A
+    /// diagnostic that cannot locate the script should say so, not accuse.
+    static func scriptPath(fromCommand command: String) -> String? {
+        let hookToken = tokenize(command).first {
+            $0.hasSuffix("agent-tracker-hook.py") || $0.hasSuffix("agent-tracker-hook")
         }
-        text = text.trimmingCharacters(in: .whitespaces)
-        if text.count >= 2, text.hasPrefix("'"), text.hasSuffix("'") {
-            text = String(text.dropFirst().dropLast())
-                .replacingOccurrences(of: "'\\''", with: "'")
-        } else if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") {
-            text = String(text.dropFirst().dropLast())
+        guard let hookToken else { return nil }
+        return (hookToken as NSString).expandingTildeInPath
+    }
+
+    /// Splits a command the way a shell would, for the two quoting styles
+    /// `shlex.quote` produces. Not a general shell parser: it exists to undo
+    /// exactly what the installer wrote.
+    static func tokenize(_ command: String) -> [String] {
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        var iterator = command.makeIterator()
+        while let character = iterator.next() {
+            if let open = quote {
+                if character == open {
+                    quote = nil
+                } else {
+                    current.append(character)
+                }
+            } else if character == "'" || character == "\"" {
+                quote = character
+            } else if character == " " || character == "\t" {
+                if !current.isEmpty {
+                    tokens.append(current)
+                    current = ""
+                }
+            } else {
+                current.append(character)
+            }
         }
-        return (text as NSString).expandingTildeInPath
+        if !current.isEmpty { tokens.append(current) }
+        return tokens
     }
 
     /// Claude's single statusline slot, whatever is in it.
@@ -210,11 +249,16 @@ enum Doctor {
         var directory = URL(fileURLWithPath: start).standardizedFileURL
         for _ in 0..<32 {
             if directory == home || directory.path == "/" { return nil }
-            let candidate = directory.appendingPathComponent(".claude/settings.json")
-            if let settings = readJSON(candidate), let value = settings["statusLine"],
-                !(value is NSNull)
-            {
-                return candidate.path
+            // Both project-scope files, for the same reason the user-scope probe
+            // reads both: a `statusLine` in `settings.local.json` displaces the
+            // wrapper exactly as one in `settings.json` does.
+            for name in ["settings.json", "settings.local.json"] {
+                let candidate = directory.appendingPathComponent(".claude/\(name)")
+                if let settings = readJSON(candidate), let value = settings["statusLine"],
+                    !(value is NSNull)
+                {
+                    return candidate.path
+                }
             }
             let parent = directory.deletingLastPathComponent().standardizedFileURL
             if parent == directory { return nil }

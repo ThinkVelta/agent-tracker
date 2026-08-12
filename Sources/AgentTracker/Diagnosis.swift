@@ -90,6 +90,18 @@ enum Diagnosis {
         var command: String
     }
 
+    /// What we could work out about the path the registration names.
+    ///
+    /// `unresolved` exists so a command shape nobody anticipated — the hook run
+    /// through an interpreter, say — is reported as "cannot tell" rather than
+    /// as a broken install. The check was added to catch a registration
+    /// pointing at nothing; it must not invent one.
+    enum RegisteredHookPath: Equatable {
+        case none
+        case resolved(String)
+        case unresolved(String)
+    }
+
     /// Whether notifications would actually arrive.
     ///
     /// `notAsked` is separate from `denied` because a fresh machine has never
@@ -109,6 +121,7 @@ enum Diagnosis {
         var claudeDirectoryExists = false
         var settingsState: SettingsState = .absent
         var registeredHooks: [RegisteredHook] = []
+        var registeredHookPath: RegisteredHookPath = .none
         /// Whether the path the *registration* names exists and is executable —
         /// a different question from whether the path this build would install
         /// to exists.
@@ -245,6 +258,13 @@ enum Diagnosis {
     /// exist — while every other check still passes, so the report would say the
     /// install is healthy when no event has ever been delivered.
     private static func hookScriptFindings(_ input: Input) -> [Finding] {
+        if case .unresolved(let command) = input.registeredHookPath {
+            return [
+                Finding(
+                    level: .unknown, check: "hook script",
+                    detail: "can't tell which file this runs: \(command)", anchor: nil)
+            ]
+        }
         guard input.registeredHookScriptPresent else {
             return [
                 Finding(
