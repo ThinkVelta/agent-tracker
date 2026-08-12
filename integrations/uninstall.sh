@@ -5,6 +5,12 @@
 # setting from ~/.codex/config.toml (single- or multi-line form), backing each
 # file up first and leaving everything else intact. The sections are
 # independent — a broken config in one never blocks cleaning the others.
+#
+# The Codex sections are DELIBERATE, not leftovers from when this tracked Codex.
+# Anyone who installed a pre-0.2.0 version still has those hooks on disk, and an
+# uninstaller that ignored them would strand every one of them — pointing at a
+# script this same run has just deleted. Removing what we once installed is not
+# the same question as what we install now.
 # Idempotent. Session data in ~/.agent-tracker is kept unless --purge.
 set -euo pipefail
 
