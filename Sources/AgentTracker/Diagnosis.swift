@@ -78,7 +78,10 @@ enum Diagnosis {
     enum SettingsState: Equatable {
         case parsed
         case absent
-        case unreadable
+        /// Carries the files that would not parse. Two are read, either can be
+        /// the broken one, and naming the wrong one sends someone to a file
+        /// that is fine.
+        case unreadable([String])
     }
 
     /// What Claude Code is configured to run for a given hook event.
@@ -121,15 +124,17 @@ enum Diagnosis {
         var claudeDirectoryExists = false
         var settingsState: SettingsState = .absent
         var registeredHooks: [RegisteredHook] = []
+        /// What could be worked out about the path the registration names.
         var registeredHookPath: RegisteredHookPath = .none
+        /// Where *this build* would install the hook. Compared against the
+        /// registered path here rather than in the probe, so the rule about
+        /// what a mismatch means is testable like every other rule.
+        var installedHookPath = ""
         /// Whether the path the *registration* names exists and is executable —
         /// a different question from whether the path this build would install
         /// to exists.
         var registeredHookScriptPresent = false
         var registeredHookScriptExecutable = false
-        /// Set when the registration points somewhere other than where this
-        /// build installs. Carries the registered path, for the report.
-        var registeredHookPathMismatch: String?
         var hookFreshness: HookFreshness = .unknown
         var statusLineCommand: String?
         /// Path of a project-level settings file that sets its own `statusLine`,
@@ -209,11 +214,12 @@ enum Diagnosis {
         // An unreadable config is not an uninstalled one, and the two have
         // opposite remedies. "None registered — run ./install.sh" would name a
         // false cause and prescribe a command that fails on the same file.
-        if input.settingsState == .unreadable {
+        if case .unreadable(let broken) = input.settingsState {
             return [
                 Finding(
                     level: .unknown, check: "hooks",
-                    detail: "could not parse ~/.claude/settings.json — fix the JSON first",
+                    detail:
+                        "could not parse \(broken.joined(separator: ", ")) — fix the JSON first",
                     anchor: "no-sessions-appear-at-all")
             ]
         }
@@ -265,13 +271,19 @@ enum Diagnosis {
                     detail: "can't tell which file this runs: \(command)", anchor: nil)
             ]
         }
+        // Only a path we actually resolved can be somewhere unexpected.
+        var registeredElsewhere: String?
+        if case .resolved(let path) = input.registeredHookPath, path != input.installedHookPath {
+            registeredElsewhere = path
+        }
+
         guard input.registeredHookScriptPresent else {
             return [
                 Finding(
                     level: .fail, check: "hook script",
                     detail:
                         "the registered hooks point at a path that does not exist"
-                        + (input.registeredHookPathMismatch.map { " (\($0))" } ?? "")
+                        + (registeredElsewhere.map { " (\($0))" } ?? "")
                         + " — run ./install.sh",
                     anchor: "no-sessions-appear-at-all")
             ]
@@ -280,7 +292,7 @@ enum Diagnosis {
         var findings = [
             Finding(level: .ok, check: "hook script", detail: "present", anchor: nil)
         ]
-        if let elsewhere = input.registeredHookPathMismatch {
+        if let elsewhere = registeredElsewhere {
             findings.append(
                 Finding(
                     level: .warn, check: "hook script",

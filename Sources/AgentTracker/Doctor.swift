@@ -107,9 +107,7 @@ enum Doctor {
         input.registeredHookScriptPresent = FileManager.default.fileExists(atPath: probedPath)
         input.registeredHookScriptExecutable = FileManager.default.isExecutableFile(
             atPath: probedPath)
-        if let registeredPath, registeredPath != installedPath {
-            input.registeredHookPathMismatch = registeredPath
-        }
+        input.installedHookPath = installedPath
         input.hookFreshness = hookFreshness(
             at: probedPath, isPresent: input.registeredHookScriptPresent)
 
@@ -139,18 +137,20 @@ enum Doctor {
     /// send the user to an installer that fails on the same file.
     static func userSettings(in claude: URL) -> ([String: Any], Diagnosis.SettingsState) {
         var merged: [String: Any] = [:]
-        var state: Diagnosis.SettingsState = .absent
+        var anyParsed = false
+        var broken: [String] = []
         for name in ["settings.json", "settings.local.json"] {
             let url = claude.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             guard let parsed = readJSON(url) else {
-                state = .unreadable
+                broken.append(url.path)
                 continue
             }
-            if state != .unreadable { state = .parsed }
+            anyParsed = true
             merged.merge(parsed) { _, newer in newer }
         }
-        return (merged, state)
+        if !broken.isEmpty { return (merged, .unreadable(broken)) }
+        return (merged, anyParsed ? .parsed : .absent)
     }
 
     /// Which hook events run our script, and what command each runs.

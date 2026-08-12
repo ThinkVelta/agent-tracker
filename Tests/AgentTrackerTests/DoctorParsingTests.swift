@@ -175,7 +175,34 @@ struct DoctorParsingTests {
         try "{ this is not json }".write(
             to: directory.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8
         )
-        #expect(Doctor.userSettings(in: directory).1 == .unreadable)
+        #expect(
+            Doctor.userSettings(in: directory).1
+                == .unreadable([directory.appendingPathComponent("settings.json").path]))
+    }
+
+    /// Either file can be the broken one, and the report names it — so someone
+    /// with a fine `settings.json` and a broken `settings.local.json` is not
+    /// sent to the file that is fine.
+    @Test("the unreadable state names the file that actually failed")
+    func unreadableNamesTheRightFile() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("doctor-settings-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try #"{"statusLine": {"command": "fine.sh"}}"#.write(
+            to: directory.appendingPathComponent("settings.json"), atomically: true, encoding: .utf8
+        )
+        try "{ broken".write(
+            to: directory.appendingPathComponent("settings.local.json"), atomically: true,
+            encoding: .utf8)
+
+        guard case .unreadable(let broken) = Doctor.userSettings(in: directory).1 else {
+            Issue.record("expected an unreadable state")
+            return
+        }
+        #expect(broken.count == 1)
+        #expect(broken[0].hasSuffix("settings.local.json"))
     }
 
     // MARK: - Project overrides

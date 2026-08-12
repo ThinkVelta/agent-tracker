@@ -16,9 +16,10 @@ struct DiagnosisTests {
                     event: $0, command: "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py claude"
                 )
             },
+            registeredHookPath: .resolved("/Users/dev/.agent-tracker/bin/agent-tracker-hook.py"),
+            installedHookPath: "/Users/dev/.agent-tracker/bin/agent-tracker-hook.py",
             registeredHookScriptPresent: true,
             registeredHookScriptExecutable: true,
-            registeredHookPathMismatch: nil,
             hookFreshness: .current,
             statusLineCommand: "~/.agent-tracker/bin/agent-tracker-statusline.py",
             projectStatusLineOverride: nil,
@@ -104,7 +105,7 @@ struct DiagnosisTests {
     func deadRegisteredPathIsAFailure() {
         var input = healthy
         input.registeredHookScriptPresent = false
-        input.registeredHookPathMismatch = "/nonexistent/agent-tracker-hook.py"
+        input.registeredHookPath = .resolved("/nonexistent/agent-tracker-hook.py")
         let findings = Diagnosis.findings(input)
         let script = findings.first { $0.check == "hook script" }
         #expect(script?.level == .fail)
@@ -117,7 +118,7 @@ struct DiagnosisTests {
     @Test("a registration somewhere unexpected but present is a warning")
     func mismatchedButPresentPathWarns() {
         var input = healthy
-        input.registeredHookPathMismatch = "/opt/custom/agent-tracker-hook.py"
+        input.registeredHookPath = .resolved("/opt/custom/agent-tracker-hook.py")
         let findings = Diagnosis.findings(input)
         #expect(findings.contains { $0.check == "hook script" && $0.level == .warn })
         #expect(Diagnosis.exitCode(findings) == 0)
@@ -129,12 +130,14 @@ struct DiagnosisTests {
     @Test("an unparseable settings file is unknown, not an empty one")
     func unreadableSettingsIsNotEmpty() {
         var input = healthy
-        input.settingsState = .unreadable
+        input.settingsState = .unreadable(["/Users/dev/.claude/settings.local.json"])
         input.registeredHooks = []
         let findings = Diagnosis.findings(input)
         let hooks = findings.first { $0.check == "hooks" }
         #expect(hooks?.level == .unknown)
         #expect(hooks?.detail.contains("could not parse") == true)
+        // Names the file that is actually broken, not the one that is fine.
+        #expect(hooks?.detail.contains("settings.local.json") == true)
         #expect(hooks?.detail.contains("install.sh") == false)
         #expect(Diagnosis.exitCode(findings) == 0)
     }
