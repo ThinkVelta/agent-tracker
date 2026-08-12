@@ -72,10 +72,22 @@ enum SessionRename {
     /// and it is not a nicety — pressing Return at an open permission prompt
     /// commits whichever option is focused, so a rename sent into a session
     /// sitting on a dialog would answer that dialog.
+    ///
+    /// - Parameters:
+    ///   - lastEvent: re-read from disk *after* resolution, not captured before
+    ///     it. Resolving a Ghostty target runs an Automation preflight measured
+    ///     at over 100 seconds, and "the session was at a finished turn" is a
+    ///     claim about the past by the time it returns. Same reason
+    ///     `SendContext` exists for scheduled continues.
+    ///   - liveAgent: likewise. Taken as a parameter rather than read off
+    ///     `resolved`, whose copy was sampled at the *start* of resolution, so
+    ///     that the staleness question is visible in the signature instead of
+    ///     hidden in a field.
     static func deliver(
         command: String,
         resolved: SessionTarget.Resolved,
         lastEvent: String?,
+        liveAgent: ProcessIdentity?,
         ops: ChannelOps,
         tmux: TmuxOps = .live
     ) -> ContinueDeliveryResult {
@@ -87,7 +99,7 @@ enum SessionRename {
 
         // The pane can be right while the process in it is not: an agent that
         // exited and had its pid reused would pass `kill(pid, 0)` and fail this.
-        guard let live = resolved.agent else {
+        guard let live = liveAgent else {
             return .refused("That session's process is gone")
         }
         if case .refused(let reason) = ContinueDelivery.foregroundAllows(

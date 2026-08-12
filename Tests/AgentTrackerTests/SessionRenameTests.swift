@@ -70,18 +70,16 @@ struct SessionRenameTests {
             pgid: pgid, tpgid: tpgid, tty: "ttys006")
     }
 
-    private func ghosttyResolved(agent live: ProcessIdentity? = nil) -> SessionTarget.Resolved {
+    private func ghosttyResolved() -> SessionTarget.Resolved {
         SessionTarget.Resolved(
             target: ContinueDelivery.Target(
-                surfaceId: surfaceId, title: "✳ demo", terminalPid: ghosttyPid),
-            agent: live ?? agent())
+                surfaceId: surfaceId, title: "✳ demo", terminalPid: ghosttyPid))
     }
 
     private func tmuxResolved() -> SessionTarget.Resolved {
         SessionTarget.Resolved(
             tmuxTarget: ContinueDelivery.TmuxTarget(
-                paneId: "%3", tty: "/dev/ttys007", socketPath: nil),
-            agent: agent())
+                paneId: "%3", tty: "/dev/ttys007", socketPath: nil))
     }
 
     private func ops(
@@ -127,7 +125,7 @@ struct SessionRenameTests {
             let recorder = Recorder()
             let result = SessionRename.deliver(
                 command: "/rename api", resolved: ghosttyResolved(), lastEvent: event,
-                ops: ops(recorder), tmux: tmuxOps(recorder))
+                liveAgent: agent(), ops: ops(recorder), tmux: tmuxOps(recorder))
             #expect(result.outcome == .refused)
             #expect(recorder.calls.isEmpty, "refused, so nothing may have been written")
         }
@@ -136,12 +134,27 @@ struct SessionRenameTests {
     @Test("a dead process is refused before anything is written")
     func deadProcessIsRefused() {
         let recorder = Recorder()
-        let resolved = SessionTarget.Resolved(
-            target: ContinueDelivery.Target(
-                surfaceId: surfaceId, title: "✳ demo", terminalPid: ghosttyPid), agent: nil)
         let result = SessionRename.deliver(
-            command: "/rename api", resolved: resolved, lastEvent: "Stop",
-            ops: ops(recorder), tmux: tmuxOps(recorder))
+            command: "/rename api", resolved: ghosttyResolved(), lastEvent: "Stop",
+            liveAgent: nil, ops: ops(recorder), tmux: tmuxOps(recorder))
+        #expect(result.outcome == .refused)
+        #expect(recorder.calls.isEmpty)
+    }
+
+    /// Regression: the process identity must come from the fresh read, not from
+    /// the copy `SessionTarget.resolve` sampled at its start. Resolution runs an
+    /// Automation preflight measured at over 100 seconds, so that copy can
+    /// describe a process that has since exited. Here `resolved` carries a
+    /// perfectly good agent and the live read says it is gone — the refusal
+    /// proves which one is consulted.
+    @Test("the agent that is checked is the freshly read one")
+    func staleAgentIsNotTrusted() {
+        let recorder = Recorder()
+        var stale = ghosttyResolved()
+        stale.agent = agent()
+        let result = SessionRename.deliver(
+            command: "/rename api", resolved: stale, lastEvent: "Stop",
+            liveAgent: nil, ops: ops(recorder), tmux: tmuxOps(recorder))
         #expect(result.outcome == .refused)
         #expect(recorder.calls.isEmpty)
     }
@@ -153,8 +166,9 @@ struct SessionRenameTests {
         let recorder = Recorder()
         let result = SessionRename.deliver(
             command: "/rename api",
-            resolved: ghosttyResolved(agent: agent(pgid: 5150, tpgid: 9999)),
-            lastEvent: "Stop", ops: ops(recorder), tmux: tmuxOps(recorder))
+            resolved: ghosttyResolved(), lastEvent: "Stop",
+            liveAgent: agent(pgid: 5150, tpgid: 9999), ops: ops(recorder),
+            tmux: tmuxOps(recorder))
         #expect(result.outcome == .refused)
         #expect(recorder.calls.isEmpty)
     }
@@ -167,10 +181,10 @@ struct SessionRenameTests {
     func unreachableNamesTheWayOut() {
         let recorder = Recorder()
         let resolved = SessionTarget.Resolved(
-            agent: agent(), refusal: "Can't tell which window this session is in")
+            refusal: "Can't tell which window this session is in")
         let result = SessionRename.deliver(
             command: "/rename api", resolved: resolved, lastEvent: "Stop",
-            ops: ops(recorder), tmux: tmuxOps(recorder))
+            liveAgent: agent(), ops: ops(recorder), tmux: tmuxOps(recorder))
         #expect(result.outcome == .refused)
         #expect(result.detail.contains("/rename in that terminal"))
         #expect(recorder.calls.isEmpty)
@@ -181,7 +195,7 @@ struct SessionRenameTests {
         let recorder = Recorder()
         let result = SessionRename.deliver(
             command: "/rename api", resolved: ghosttyResolved(), lastEvent: "Stop",
-            ops: ops(recorder), tmux: tmuxOps(recorder))
+            liveAgent: agent(), ops: ops(recorder), tmux: tmuxOps(recorder))
         #expect(result.outcome == .sent)
         #expect(recorder.calls == ["writeText@\(ghosttyPid)", "pressReturn@\(ghosttyPid)"])
     }
@@ -193,7 +207,7 @@ struct SessionRenameTests {
         let recorder = Recorder()
         let result = SessionRename.deliver(
             command: "/rename api", resolved: tmuxResolved(), lastEvent: "Stop",
-            ops: ops(recorder), tmux: tmuxOps(recorder))
+            liveAgent: agent(), ops: ops(recorder), tmux: tmuxOps(recorder))
         #expect(result.outcome == .sent)
         #expect(recorder.calls == ["writeText@%3", "pressReturn@%3"])
         #expect(!recorder.calls.contains("terminalPid"))
@@ -207,7 +221,8 @@ struct SessionRenameTests {
             let recorder = Recorder()
             let result = SessionRename.deliver(
                 command: "/rename api", resolved: tmux ? tmuxResolved() : ghosttyResolved(),
-                lastEvent: "Stop", ops: ops(recorder, writeSucceeds: false),
+                lastEvent: "Stop", liveAgent: agent(),
+                ops: ops(recorder, writeSucceeds: false),
                 tmux: tmuxOps(recorder, writeSucceeds: false))
             #expect(result.outcome == .failed)
             #expect(!recorder.calls.contains { $0.hasPrefix("pressReturn") })
@@ -222,7 +237,8 @@ struct SessionRenameTests {
         let recorder = Recorder()
         let result = SessionRename.deliver(
             command: "/rename api", resolved: ghosttyResolved(), lastEvent: "Stop",
-            ops: ops(recorder, returnSucceeds: false), tmux: tmuxOps(recorder))
+            liveAgent: agent(), ops: ops(recorder, returnSucceeds: false),
+            tmux: tmuxOps(recorder))
         #expect(result.outcome == .failed)
         #expect(result.detail.contains("waiting on the prompt"))
     }
