@@ -70,7 +70,9 @@ enum Diagnosis {
         case unknown
     }
 
-    /// What `~/.claude/settings.json` turned out to be.
+    /// What the user-scope settings turned out to be — `~/.claude/settings.json`
+    /// and `~/.claude/settings.local.json` together, since either can carry a
+    /// hook or a `statusLine`.
     ///
     /// "Absent" and "unreadable" have opposite remedies, and conflating them is
     /// actively harmful: the installer does a bare `json.load`, so telling
@@ -231,7 +233,11 @@ enum Diagnosis {
             return [
                 Finding(
                     level: .fail, check: "hooks",
-                    detail: "none registered in ~/.claude/settings.json — run ./install.sh",
+                    // Deliberately names no file: two are read, and the header
+                    // already prints the directory both came from. An earlier
+                    // version named one of them and was wrong whenever the
+                    // other was the relevant one.
+                    detail: "none registered — run ./install.sh",
                     anchor: "no-sessions-appear-at-all")
             ]
         }

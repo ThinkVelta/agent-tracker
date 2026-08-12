@@ -47,19 +47,26 @@ not broken and they will not recover — start a new one, or restart that one.
 
 If a *new* session still does not appear, work down these in order.
 
-**Are the hooks registered?** They live in `~/.claude/settings.json`. Ask it
-which events are wired rather than grepping — `agent-tracker` also appears in the
-`statusLine` entry, so a raw count answers a different question than it looks
-like it does:
+**Are the hooks registered?** They live in `~/.claude/settings.json`, or in
+`~/.claude/settings.local.json` — either can carry them, so a check that reads
+only the first can report a phantom problem. Ask which events are wired rather
+than grepping, since `agent-tracker` also appears in the `statusLine` entry and a
+raw count answers a different question than it looks like it does:
 
 ```sh
 python3 -c "
 import json, os
-s = json.load(open(os.path.expanduser('~/.claude/settings.json')))
-print(sorted(e for e, v in s.get('hooks', {}).items()
+merged = {}
+for name in ('settings.json', 'settings.local.json'):
+    path = os.path.expanduser('~/.claude/' + name)
+    if os.path.exists(path):
+        merged.update(json.load(open(path)))
+print(sorted(e for e, v in merged.get('hooks', {}).items()
              if any('agent-tracker' in x.get('command', '')
                     for c in v for x in c.get('hooks', []))))"
 ```
+
+Or just run `--doctor`, which does exactly this and more.
 
 All seven are expected:
 
