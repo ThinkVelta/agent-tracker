@@ -56,12 +56,13 @@ raw count answers a different question than it looks like it does:
 ```sh
 python3 -c "
 import json, os
-merged = {}
+hooks = {}
 for name in ('settings.json', 'settings.local.json'):
     path = os.path.expanduser('~/.claude/' + name)
     if os.path.exists(path):
-        merged.update(json.load(open(path)))
-print(sorted(e for e, v in merged.get('hooks', {}).items()
+        for event, entries in json.load(open(path)).get('hooks', {}).items():
+            hooks.setdefault(event, []).extend(entries)
+print(sorted(e for e, v in hooks.items()
              if any('agent-tracker' in x.get('command', '')
                     for c in v for x in c.get('hooks', []))))"
 ```

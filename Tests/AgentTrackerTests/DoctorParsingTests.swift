@@ -161,6 +161,56 @@ struct DoctorParsingTests {
         #expect(Doctor.statusLineCommand(in: merged) == "local.sh")
     }
 
+    /// The bug this replaced was quiet and likely: any `hooks` key in the local
+    /// file discarded every hook in the main one, so a user with one hook in
+    /// `settings.local.json` was told the other six were missing.
+    @Test("hooks from both files are unioned, not replaced")
+    func hooksUnionAcrossUserFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("doctor-settings-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let command = "~/.agent-tracker/bin/agent-tracker-hook.py claude"
+        try #"{"hooks": {"Stop": [{"hooks": [{"command": "COMMAND"}]}]}}"#
+            .replacingOccurrences(of: "COMMAND", with: command)
+            .write(
+                to: directory.appendingPathComponent("settings.json"), atomically: true,
+                encoding: .utf8)
+        try #"{"hooks": {"SessionEnd": [{"hooks": [{"command": "COMMAND"}]}]}}"#
+            .replacingOccurrences(of: "COMMAND", with: command)
+            .write(
+                to: directory.appendingPathComponent("settings.local.json"), atomically: true,
+                encoding: .utf8)
+
+        let (merged, _) = Doctor.userSettings(in: directory)
+        let events = Set(Doctor.registeredHooks(in: merged).map(\.event))
+        #expect(events == ["Stop", "SessionEnd"])
+    }
+
+    /// The same event registered in both files keeps both entries, rather than
+    /// the local one silently replacing the other.
+    @Test("the same event in both files keeps both registrations")
+    func sameEventInBothFiles() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("doctor-settings-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try #"{"hooks": {"Stop": [{"hooks": [{"command": "/a/agent-tracker-hook.py claude"}]}]}}"#
+            .write(
+                to: directory.appendingPathComponent("settings.json"), atomically: true,
+                encoding: .utf8)
+        try #"{"hooks": {"Stop": [{"hooks": [{"command": "/b/agent-tracker-hook.py claude"}]}]}}"#
+            .write(
+                to: directory.appendingPathComponent("settings.local.json"), atomically: true,
+                encoding: .utf8)
+
+        let (merged, _) = Doctor.userSettings(in: directory)
+        let commands = Set(Doctor.registeredHooks(in: merged).map(\.command))
+        #expect(commands.count == 2)
+    }
+
     /// Absent and unparseable have opposite remedies, so they must not collapse
     /// into one answer.
     @Test("absent settings and unparseable settings are different states")

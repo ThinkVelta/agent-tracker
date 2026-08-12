@@ -334,6 +334,11 @@ enum Diagnosis {
                         + "it exists, so it runs, but upgrades will not refresh it",
                     anchor: nil))
         }
+        // Nothing to say about the version of a script that is not there. The
+        // absence is already one finding; "can't compare" as a second line is
+        // the same fact wearing a different level.
+        guard !working.isEmpty else { return findings }
+
         switch input.hookFreshness {
         case .current:
             findings.append(

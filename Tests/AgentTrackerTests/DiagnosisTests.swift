@@ -231,6 +231,19 @@ struct DiagnosisTests {
         #expect(Diagnosis.summary(Diagnosis.findings(failed)).contains("problem(s) found"))
     }
 
+    /// A missing script is one problem, not two. Reporting the failure and then
+    /// "can't compare the version" is the same absence said twice, in a report
+    /// whose discipline is one fact per line.
+    @Test("no version line for a script that is not there")
+    func noVersionLineWithoutAScript() {
+        var input = healthy
+        input.hookScripts = [script(exists: false, executable: false)]
+        input.hookFreshness = .unknown
+        let findings = Diagnosis.findings(input)
+        #expect(findings.contains { $0.check == "hook script" && $0.level == .fail })
+        #expect(!findings.contains { $0.check == "hook version" })
+    }
+
     /// "Cannot compare" must not read as "up to date". A detached binary has no
     /// bundled copy to compare against, and that is the normal case rather than
     /// a fault.

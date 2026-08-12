@@ -144,13 +144,29 @@ enum Doctor {
         }
     }
 
-    /// `settings.json` plus `settings.local.json`, the latter winning per key.
+    /// `settings.json` plus `settings.local.json`.
+    ///
+    /// Last-writer-wins per key, **except `hooks`, which are unioned per event**.
+    /// Plain overwriting was wrong in a way that matters: any `hooks` key in
+    /// `settings.local.json` discarded every hook in `settings.json`, so a user
+    /// who put one hook in their local file would be told the other six were
+    /// missing. It also contradicted the model this app documents elsewhere,
+    /// that hooks merge rather than replace.
+    ///
+    /// Worth being precise about the evidence: hooks merging across the
+    /// *project* and *user* scopes is measured — this repo defines its own and
+    /// its sessions are tracked anyway. The split between these two user-scope
+    /// files is not measured, and the union follows the documented model. If
+    /// that turns out to be wrong, the cost is reporting an event as registered
+    /// when it does not run; the cost of the alternative was a false alarm on
+    /// every install that uses a local file at all.
     ///
     /// Unreadable beats absent: if either file exists and will not parse, the
     /// answer to "what is configured" is *unknown*, and saying "nothing" would
     /// send the user to an installer that fails on the same file.
     static func userSettings(in claude: URL) -> ([String: Any], Diagnosis.SettingsState) {
         var merged: [String: Any] = [:]
+        var hooks: [String: [Any]] = [:]
         var anyParsed = false
         var broken: [String] = []
         for name in ["settings.json", "settings.local.json"] {
@@ -161,8 +177,12 @@ enum Doctor {
                 continue
             }
             anyParsed = true
+            for (event, entries) in (parsed["hooks"] as? [String: Any]) ?? [:] {
+                hooks[event, default: []].append(contentsOf: (entries as? [Any]) ?? [])
+            }
             merged.merge(parsed) { _, newer in newer }
         }
+        if !hooks.isEmpty { merged["hooks"] = hooks }
         if !broken.isEmpty { return (merged, .unreadable(broken)) }
         return (merged, anyParsed ? .parsed : .absent)
     }
