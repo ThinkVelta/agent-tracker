@@ -135,6 +135,25 @@ struct DoctorParsingTests {
         #expect(Doctor.tokenize(#"'a\z' c"#) == [#"a\z"#, "c"])
     }
 
+    /// A command using `$HOME` expands at runtime and works, so reporting it as
+    /// a missing file is the same false positive as the interpreter prefix and
+    /// the escaped space. `$HOME` is knowable here; anything else is not.
+    @Test("$HOME is expanded, other variables are refused rather than guessed")
+    func shellVariablesInThePath() {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        #expect(
+            Doctor.scriptPath(fromCommand: "$HOME/.agent-tracker/bin/agent-tracker-hook.py claude")
+                == "\(home)/.agent-tracker/bin/agent-tracker-hook.py")
+        #expect(
+            Doctor.scriptPath(
+                fromCommand: "${HOME}/.agent-tracker/bin/agent-tracker-hook.py claude")
+                == "\(home)/.agent-tracker/bin/agent-tracker-hook.py")
+        // Not knowable from here: the value lives in the shell that runs the
+        // hook, so "cannot tell" beats inventing a path to accuse.
+        #expect(
+            Doctor.scriptPath(fromCommand: "$MY_TOOLS/agent-tracker-hook.py claude") == nil)
+    }
+
     /// Nothing that looks like the hook means the answer is "cannot tell",
     /// rather than a path to accuse of not existing.
     @Test("a command with no recognisable hook token resolves to nothing")

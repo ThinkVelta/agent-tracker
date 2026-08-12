@@ -230,7 +230,20 @@ enum Doctor {
             $0.hasSuffix("agent-tracker-hook.py") || $0.hasSuffix("agent-tracker-hook")
         }
         guard let hookToken else { return nil }
-        return (hookToken as NSString).expandingTildeInPath
+
+        // `$HOME` is expanded because it is knowable and overwhelmingly the
+        // common case in a hand-written command. Any *other* variable is not:
+        // the value lives in the shell Claude runs the hook in, not here, so a
+        // guess would be a path we invented. Anything still holding a `$` is
+        // reported as "can't tell" rather than accused of not existing — a
+        // command using a variable expands at runtime and works.
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let expanded =
+            (hookToken as NSString).expandingTildeInPath
+            .replacingOccurrences(of: "${HOME}", with: home)
+            .replacingOccurrences(of: "$HOME", with: home)
+        guard !expanded.contains("$") else { return nil }
+        return expanded
     }
 
     /// Splits a command roughly the way a shell would.
