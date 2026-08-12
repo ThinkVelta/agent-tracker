@@ -208,6 +208,38 @@ struct DiagnosisTests {
         #expect(finding?.detail.contains("A payload is arriving") == true)
     }
 
+    /// The class-level guard, after two findings of the form "you gated one
+    /// finding on unreadable settings and not its neighbour".
+    ///
+    /// Pins the whole report rather than one line: with a config we could not
+    /// parse, every finding derived from it must be `unknown`. The check-name
+    /// set is asserted exactly, so a *new* settings-derived finding added later
+    /// fails this until someone decides how it degrades — which is the step
+    /// that was skipped both times.
+    @Test("nothing derived from an unparseable config states a verdict")
+    func unreadableSettingsNeverProduceAVerdict() {
+        var input = healthy
+        input.settingsState = .unreadable(["/Users/dev/.claude/settings.json"])
+        let findings = Diagnosis.findings(input)
+
+        // Everything the settings feed. If this set changes, a finding was
+        // added or removed and its degraded behaviour needs deciding.
+        let fromSettings: Set<String> = ["hooks", "statusline"]
+        let produced = Set(findings.map(\.check))
+        #expect(
+            produced.intersection(fromSettings) == fromSettings,
+            "both settings-derived findings should still appear, as unknown")
+
+        for finding in findings where fromSettings.contains(finding.check) {
+            #expect(
+                finding.level == .unknown,
+                "\(finding.check) states a verdict from a config that could not be parsed")
+        }
+        // And the report as a whole does not fail on it: not knowing is not a
+        // defect in the install.
+        #expect(Diagnosis.exitCode(findings) == 0)
+    }
+
     /// Context readings arrive from either statusline source, so a payload
     /// without the wrapper means usage is missing and context is not.
     @Test("a payload without the wrapper narrows the claim to usage")
