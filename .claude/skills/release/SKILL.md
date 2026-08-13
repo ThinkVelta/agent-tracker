@@ -26,8 +26,15 @@ cannot merge either:
 | **C** | Pre-flight `main`, push the tag, verify what shipped | Nothing |
 
 Do not try to collapse them, and in particular do not try to put the bump straight onto a
-branch aimed at `main`: `main` must stay a fast-forward of `dev`, so that the two branches are
-identical the moment a release lands and any later difference between them means something.
+branch aimed at `main`: everything must reach `main` through `dev`, so that the two branches hold
+the same **tree** the moment a release lands.
+
+The same tree, not the same commit. Measured after v0.3.0, the first release through this flow:
+merging the promotion PR leaves `main` one merge commit ahead of `dev`, and one more after every
+release. `git diff origin/dev origin/main` is empty; `git rev-parse` of the two is not. So the
+check that means anything is **`git rev-list --count origin/main..origin/dev`** — nonzero means
+`dev` carries work that has not been released. Comparing the two SHAs would report a difference
+after every single release and mean nothing by it.
 
 Work out which phase you are in from the repo's state (Step 0) rather than from memory, so an
 interrupted release resumes correctly.
