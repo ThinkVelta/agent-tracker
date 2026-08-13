@@ -186,23 +186,16 @@ final class SessionStore: ObservableObject {
         for limit in ClaudeStatusline.limits(at: Self.claudeStatuslineURL) {
             accountLimits.record(limit)
         }
-        let fileManager = FileManager.default
         var loaded: [AgentSession] = []
-        if let files = try? fileManager.contentsOfDirectory(
-            at: Self.sessionsDirectory, includingPropertiesForKeys: nil
-        ) {
-            for file in files where Self.isOwnStateFile(file) {
-                guard let data = try? Data(contentsOf: file),
-                    var session = try? decoder.decode(AgentSession.self, from: data)
-                else { continue }
-                if let pid = session.pid, pid > 0, !Self.isProcessAlive(pid) {
-                    // Agent died without a clean SessionEnd (killed terminal, crash).
-                    try? fileManager.removeItem(at: file)
-                    continue
-                }
-                session.fileURL = file
-                loaded.append(session)
+        for (loadedSession, file) in Self.loadStateFiles() {
+            var session = loadedSession
+            if let pid = session.pid, pid > 0, !Self.isProcessAlive(pid) {
+                // Agent died without a clean SessionEnd (killed terminal, crash).
+                try? FileManager.default.removeItem(at: file)
+                continue
             }
+            session.fileURL = file
+            loaded.append(session)
         }
         fileSessions = loaded
         rebuild()
@@ -439,7 +432,35 @@ final class SessionStore: ObservableObject {
         return nil
     }
 
-    static func isProcessAlive(_ pid: Int) -> Bool {
+    /// Every state file this app owns, decoded, paired with where it came from.
+    ///
+    /// Deliberately does **not** prune. `reload` deletes the files whose process
+    /// is gone, which is right for the store and wrong for anything that only
+    /// wants to look — `--doctor` reports the stale count, and a reporter that
+    /// changed what it was reporting on would be lying about the machine it was
+    /// asked to describe.
+    ///
+    /// `nonisolated` so a one-shot command can call it without a main actor.
+    nonisolated static func loadStateFiles() -> [(session: AgentSession, file: URL)] {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard
+            let files = try? FileManager.default.contentsOfDirectory(
+                at: sessionsDirectory, includingPropertiesForKeys: nil)
+        else { return [] }
+        var loaded: [(session: AgentSession, file: URL)] = []
+        for file in files where isOwnStateFile(file) {
+            guard let data = try? Data(contentsOf: file),
+                let session = try? decoder.decode(AgentSession.self, from: data)
+            else { continue }
+            loaded.append((session, file))
+        }
+        return loaded
+    }
+
+    /// `nonisolated` because it is two lines of `kill(2)` over no state, and a
+    /// one-shot command has no main actor to hop to.
+    nonisolated static func isProcessAlive(_ pid: Int) -> Bool {
         if kill(pid_t(pid), 0) == 0 { return true }
         return errno == EPERM
     }

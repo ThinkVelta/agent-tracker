@@ -34,6 +34,11 @@ watches that directory and renders state. See README for the full picture.
   stdlib only) + idempotent installers + uninstaller. The statusline wrapper is
   opt-in: it occupies Claude's single `statusLine` slot to capture the usage
   windows, then `exec`s whatever command it displaced
+- `docs/` — user-facing documentation: troubleshooting, the statusline wrapper,
+  permissions, scheduled continues, uninstalling, and how it works. **A different
+  audience from this file** — `docs/` is for people and agents *using* the app,
+  `CLAUDE.md` is for working *on* it. Reference material belongs there and the
+  README links to it; the README is the tour, not the manual
 
 ## Commands
 
@@ -42,6 +47,11 @@ watches that directory and renders state. See README for the full picture.
   Xcode.app) builds but silently executes zero tests and exits 0 (see the
   Package.swift header for why)
 - Run: `swift run AgentTracker` (menu bar only, no Dock icon)
+- Diagnose an install: `swift run AgentTracker --doctor` (or the installed
+  binary directly — not `open -a`, whose stdout goes nowhere). Read-only and
+  never prompts, both enforced by `DoctorSafetyTests` reading the source; it
+  skips the Ghostty Automation grant on purpose, because that status query can
+  block for over a minute
 - Bundle: `make app` → `dist/AgentTracker.app` (self-validating; ad-hoc signed,
   `CODESIGN_IDENTITY` overrides); `make install` places it in /Applications.
   First-run onboarding shows once (`--onboarding` re-opens it on demand)

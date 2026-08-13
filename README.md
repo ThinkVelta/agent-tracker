@@ -44,6 +44,12 @@ few seconds.
 No daemon, no telemetry, no account. Claude Code reports through the hooks it
 already supports, and the app reads plain JSON off disk.
 
+Already installed and something is off? Run
+`/Applications/AgentTracker.app/Contents/MacOS/AgentTracker --doctor`, which
+checks the install and points at what to read. Or start from
+**[Troubleshooting](docs/troubleshooting.md)** or the
+[documentation index](docs/README.md).
+
 ## Install
 
 Requirements: macOS 14 or later.
@@ -106,21 +112,15 @@ macOS 15 removed that shortcut.
 
 </details>
 
-<details>
-<summary><strong>If click-to-focus stops working after an update</strong></summary>
+Settings › About checks for newer releases, when you press the button. There is
+no auto-updater, and nothing phones home on its own.
 
-Releases are signed with a stable certificate, so updating should keep your
-Accessibility permission. If it is ever lost anyway, remove AgentTracker from
-**System Settings › Privacy & Security › Accessibility** with **−**, then add it
-again. Toggling the existing entry off and on does not help.
-
-Builds you make yourself are ad-hoc signed unless you pass `CODESIGN_IDENTITY`,
-and those *do* lose the grant on every rebuild. See Build from source.
-
-</details>
-
-Settings › About checks for newer releases. There is no auto-updater, and
-nothing phones home on its own.
+Agent Tracker asks for up to three macOS permissions — Accessibility for
+click-to-focus, Automation for writing into a Ghostty window, Notifications for
+banners and receipts — and none of them is needed just to watch sessions. See
+**[permissions](docs/permissions.md)**, which covers which ones you will actually
+be asked for and the one thing that is not obvious: a lost Accessibility grant is
+fixed by *removing and re-adding* the entry, never by toggling it.
 
 ## What you get
 
@@ -158,6 +158,20 @@ not the same thing. Needs the statusline wrapper (below).
 Code and the row takes that name — Claude owns the rename, so its terminal tab
 title follows too, and this app just reads what Claude recorded. Nothing to
 configure.
+
+**Or rename it from the app, which asks Claude to do it.** Right-click a row,
+*Rename…*, and the app types `/rename` into that session's own terminal. It does
+not keep a nickname of its own, deliberately: there is one name, Claude's, and
+the app reads it back like any other. So renaming here and renaming there cannot
+drift apart, and the terminal tab follows either way.
+
+It can be turned down, which a private label never could. A rename is typed into
+a live session, so the app refuses one that is not sitting at a finished turn —
+pressing Return at an open permission prompt would answer it. Outside tmux it
+also has to know which window is yours, and the sessions it cannot tell apart
+are the ones sharing a title with a sibling, which is exactly what renaming one
+would fix. When that happens it says so and points at `/rename` in the terminal,
+which has no such limit.
 
 **And two sessions in one repo stop looking identical.** Rows are otherwise
 titled by project, which is right until two of them share one — then the list
@@ -218,6 +232,11 @@ which is what you want once a session has ended and you would like it back.
 
 ## How it works
 
+No daemon. Claude Code pushes events through its native hook mechanism; a
+dependency-free Python script turns each one into a per-session JSON file, and
+the app watches those files. Dead sessions are pruned by pid, so a killed
+terminal disappears without a clean exit.
+
 <div align="center">
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.png">
@@ -225,115 +244,27 @@ which is what you want once a session has ended and you would like it back.
 </picture>
 </div>
 
-- **No daemon; event-driven at the core.** Claude Code pushes events through
-  its native hook mechanism; a tiny dependency-free Python script
-  (`integrations/agent-tracker-hook.py`) translates each event into a per-session
-  JSON state file, and the app watches those directories with dispatch
-  sources/FSEvents. One light timer backs that up: a 1-second re-read (tunable
-  in Settings) that prunes dead sessions and refreshes relative timestamps.
-- **Dead sessions are pruned** automatically: each state file records the agent
-  CLI's pid, and the app removes files whose process is gone (killed terminal,
-  crash) even without a clean `SessionEnd`.
-- **Click-to-focus** uses the Accessibility API: it matches the session to a
-  terminal window by title, then raises the window. macOS switches to its
-  Space automatically. For Claude Code the exact window title is learned live
-  from Claude's statusline payload: it carries `session_id` + `session_name`,
-  and the terminal titles the window with that name behind a status glyph,
-  which the matcher strips before comparing. Claude hands that payload to a
-  statusline script and nowhere else, so the app reads it from either of two
-  files — `~/.claude/statusline-last.json`, if your own script dumps its stdin
-  there, or the copy the optional statusline wrapper below saves. Transcript
-  task summaries ("✳ &lt;task summary&gt;") and working-directory fragments
-  remain as fallbacks when neither exists.
-- **A session waiting on a usage limit says so** instead of claiming it is
-  ready. Claude reports a refusal into its transcript, and — if you opt into the
-  statusline wrapper (`./install.sh --statusline`) — how much of the 5-hour and
-  7-day windows is used and when each resets, *before* anything is refused.
-  The wrapper occupies the single `statusLine` slot in `settings.json` and runs
-  whatever was there before behind it, unchanged, recording it so uninstall
-  puts it back. When the numbers are absent the app says it cannot tell, never
-  that you have room left.
-- **A finished turn is not always "needs you".** Claude's `Stop` fires when the
-  assistant's turn ends, which is not the same as the work being done: a turn
-  that backgrounded a shell is resumed when it finishes, and one that handed off
-  to subagents or teammates is not over either. Claude publishes its own status
-  for each of those (`shell` for background work, `busy` for delegated work), so
-  a red row is re-derived as running until the session genuinely settles. It
-  goes red once, at the end, instead of blinking on every hand-off.
-- **A dialog is "needs you", whatever the hooks said.** A session showing a
-  permission prompt, sandbox request or elicitation publishes `waiting`, and the
-  row turns red quoting what Claude is blocked on ("input needed"). Acknowledged
-  rows are left alone, so clearing a row by hand always sticks.
+**[How it works, in full](docs/architecture.md)** — what is on disk, how
+click-to-focus matches a window, why a finished turn is not always "needs you",
+and how writing into a terminal is gated.
 
 ## Scheduled continues
 
-A session that stops on a usage limit can be armed, from the clock on its row,
-to resume itself when the window resets. The moment comes from Claude's own
-reporting, never from a guess. **Off by default** — it is the
-only thing this app does that acts on a session rather than reporting on one, so
-it has its own switch in Settings › General.
+A session that stops on a usage limit can be armed, from the clock on its row, to
+resume itself when the window resets. The moment comes from Claude's own
+reporting, never from a guess.
 
-It needs two macOS permissions, and neither is ever asked for while a schedule is
-firing — a prompt raised at 04:00 would sit unanswered and block the very delivery
-it was meant to authorise. **Automation** (to talk to Ghostty) is requested when
-you arm a schedule, or from Settings › General › *Permission to control Ghostty*,
-which is also the way to grant it before you have ever been usage-limited.
-**Notifications** are requested when you arm.
+**Off by default.** It is the only thing this app does that acts on a session
+rather than reporting on one, so it has its own switch in Settings › General.
 
-**It never wakes your Mac.** A schedule fires if the Mac is awake, or when it next
-wakes, and is abandoned after 12 hours — by then the window it was armed for is
-long gone and the session has probably been worked in since.
-
-### What it refuses, and why that is most of the feature
-
-Typing into the wrong session is the one thing here that cannot be undone, so
-delivery refuses far more often than it fires, and always says why:
-
-- **It can't tell which window is yours.** Ghostty exposes only an id, a title and
-  a working directory per surface, and a session cannot report which surface it is
-  in. If two windows share a title, both are refused. On one real machine, 2 of 9
-  windows were uniquely identifiable. **Running the session inside `tmux` removes
-  this problem entirely**: a pane reports its own id and tty, the hook records
-  both when the session starts, and nothing is matched by title — so every pane is
-  addressable, and no macOS permission is involved.
-- **The session isn't at a finished turn.** Return at an open permission prompt
-  *approves the focused option*, so anything other than a completed turn is a hard
-  refusal, re-checked from disk immediately before writing.
-- **Something else is in the foreground.** In `vim`, "Continue" is
-  change-to-end-of-line; at a `sudo` prompt it is submitted as a password. The
-  agent must own the terminal (`pgid == tpgid`) before a single character is sent.
-- **The window or process changed.** The pane recorded when you armed it is
-  re-resolved before writing, and any disagreement aborts — a closed window, a
-  reused one, a restarted Ghostty (surface ids are only meaningful within one run)
-  or a recycled pid all refuse.
-- **Only Ghostty and tmux.** Terminal.app is excluded permanently: its entire
-  scripting dictionary has one text-injecting command, `do script`, which *runs*
-  what you give it.
-
-Every attempt is recorded — sent, refused or failed. The most recent outcome for a
-session shows in its scheduling panel (click the clock), and every one is written
-to `~/.agent-tracker/logs/agent-tracker.log`. A feature that acts while nobody is
+It refuses far more often than it fires, and that is the point: typing into the
+wrong session is the one thing here that cannot be undone. Every attempt is
+recorded — sent, refused or failed — because a feature that acts while nobody is
 watching owes you a receipt.
 
-**Notifications** are raised when something happened: a send, or a failure that
-left a message sitting on a prompt. Refusals stay quiet — they are the normal case
-here, not a malfunction, and one alert per refused schedule would be noise. They
-are still in the log and the panel.
-
-### Permission modes
-
-Every mode either agent is known to run in is allowed, **including
-`bypassPermissions`**. Auto-resume adds no capability such a session did not
-already have — typing "Continue" yourself has exactly the same effect — so the
-only thing that changes is that you are not at the keyboard when it starts. The
-arming panel says so plainly for those modes rather than refusing. A mode this
-version does not recognise *is* refused, because a mode nobody has seen cannot be
-reasoned about.
-
-Claude writes the mode into its transcript, which is read on arming, and also
-onto every hook payload, which is the fallback. That redundancy matters more
-than it sounds: an absent mode counts as permitted, so a session with no source
-at all would slip this gate rather than be stopped by it.
+**[What it refuses and why](docs/scheduled-continues.md)**, including the
+permission modes it allows, and why running sessions in `tmux` removes the
+largest class of refusals outright.
 
 ## Known limitations
 
@@ -342,20 +273,18 @@ at all would slip this gate rather than be stopped by it.
   terminals report nothing that tells them apart. Clicking is better than a coin
   flip: the rows are spread across the candidate windows rather than all pointing
   at the first, and clicking again walks the rest, so two rows normally open two
-  terminals. What is *not* guaranteed is that each one opens its own. Neither
-  Ghostty exposes no per-window identity that would settle it;
-  `WindowIdentity` documents the four routes that were tried and closed.
-- **Window matching is exact only when a title source exists.** Claude Code
-  sessions get exact titles from the statusline payload, which means either your
-  own script dumping it to `~/.claude/statusline-last.json` or the optional
-  statusline wrapper; without one, matching falls back to transcript summaries
-  and path fragments.
-- **Claude's usage numbers come from the statusline and nowhere else.** Without
-  the wrapper the app only learns of a limit once a request has already been
-  refused, and most refusals do not say when the window resets. A `statusLine`
-  set in a project's own settings shadows the user-level one, and nothing runs
-  for `-p`, background agents, SDK sessions or an untrusted workspace, so those
-  sessions report no usage at all.
+  terminals. What is *not* guaranteed is that each one opens its own. Ghostty
+  exposes no per-window identity that would settle it, and `WindowIdentity`
+  documents the four routes that were tried and closed. **Naming one of them
+  fixes it** — see [troubleshooting](docs/troubleshooting.md).
+- **Window matching, usage numbers and context readings all need the statusline
+  payload.** Different fields of it: window matching reads `session_name`, the
+  usage strip reads `rate_limits`, the per-row percentage reads
+  `context_window`. The payload reaches the app only through the
+  [statusline wrapper](docs/statusline.md) or your own script dumping it, so
+  without one, window matching falls back to transcript summaries and path
+  fragments, and the app says it cannot tell rather than claiming you have room
+  left.
 
 ## Build from source
 
@@ -402,7 +331,12 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 
 ## Roadmap
 
-- [ ] Homebrew tap: `brew install --cask agent-tracker`
+- [ ] **Notarized builds**, which remove the first-launch block described in
+      Install. Releases are already Developer ID signed, which is the half that
+      keeps your Accessibility grant across updates; notarization is the half
+      that stops Gatekeeper asking. Blocked on an Apple Developer Program
+      enrolment rather than on anything in this repo
+- [x] Homebrew tap: `brew install --cask agent-tracker`
 - [x] **Scheduled continues** — arm a session that stopped on a usage limit to
       resume itself when the window resets, from the clock on its row. Claude
       Code. Off by default (Settings › General). See below.
