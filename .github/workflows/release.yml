@@ -164,6 +164,21 @@ jobs:
             -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: \
             -s -k "$password" "$keychain" > /dev/null
+
+          # Importing successfully is not the same as importing the right
+          # thing: v0.3.0 shipped ad-hoc because the p12 held a self-signed
+          # placeholder cert, and every step here still reported success. The
+          # identity the bundle step will sign with must exist in this keychain
+          # and be a Developer ID Application identity, or the release is not
+          # what the secrets claim it is.
+          if ! security find-identity -v -p codesigning "$keychain" \
+            | grep -F "\"$MACOS_SIGNING_IDENTITY\"" \
+            | grep -q "Developer ID Application"; then
+            echo "::error::MACOS_SIGNING_IDENTITY is not a valid Developer ID Application identity in the imported p12:"
+            security find-identity -v -p codesigning "$keychain" | sed 's/^/::error::/'
+            exit 1
+          fi
+
           # Prepend, don't replace: dropping the system keychain breaks
           # anything that needs a root certificate later in the job. Collected
           # into an array rather than split on whitespace, so a keychain path
