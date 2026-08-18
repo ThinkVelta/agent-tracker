@@ -179,6 +179,90 @@ final class StatuslineDirectoryTests {
         #expect(titles.title(for: "late") == "Late title")
     }
 
+    // MARK: - Session registry (~/.claude/sessions/<pid>.json)
+
+    private func writeRegistry(
+        pid: Int, id: String, name: String?, in directory: URL
+    ) throws {
+        let sessions = directory.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        let nameField = name.map { ", \"name\": \"\($0)\", \"nameSource\": \"derived\"" } ?? ""
+        let json = """
+            {"pid": \(pid), "sessionId": "\(id)"\(nameField), \
+            "cwd": "/tmp", "status": "idle", "version": "2.1.234"}
+            """
+        try json.write(
+            to: sessions.appendingPathComponent("\(pid).json"),
+            atomically: true, encoding: .utf8)
+    }
+
+    @Test func parseRegistryExtractsIdAndName() {
+        let json = """
+            {"pid": 123, "sessionId": "abc-123", "name": "Blog", "status": "idle"}
+            """
+        let entry = StatuslineDirectory.parseRegistry(Data(json.utf8))
+        #expect(entry?.sessionId == "abc-123")
+        #expect(entry?.name == "Blog")
+    }
+
+    @Test func parseRegistryRejectsForeignAndHalfWrittenFiles() {
+        #expect(StatuslineDirectory.parseRegistry(Data("{\"name\": \"x\"}".utf8)) == nil)
+        #expect(StatuslineDirectory.parseRegistry(Data("{\"sessionId\": \"\"}".utf8)) == nil)
+        #expect(StatuslineDirectory.parseRegistry(Data("not json".utf8)) == nil)
+        // A registry file with no name is a session, just not a titled one.
+        let unnamed = StatuslineDirectory.parseRegistry(
+            Data("{\"sessionId\": \"abc\", \"name\": \"\"}".utf8))
+        #expect(unnamed?.sessionId == "abc")
+        #expect(unnamed?.name == nil)
+    }
+
+    /// The scenario that motivated the registry: Claude Code ≥2.1.234 sends no
+    /// `session_name` in statusline payloads at all, so without the registry
+    /// every session is unnamed and click-to-focus degrades to path matching.
+    @Test @MainActor func registryNamesSessionsTheStatuslineNoLongerDoes() throws {
+        let directory = try makeDirectory()
+        try writePayload(payload(id: "renamed", name: nil, context: 40), in: directory)
+        try writeRegistry(pid: 101, id: "renamed", name: "AgentTracker", in: directory)
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
+        #expect(titles.title(for: "renamed") == "AgentTracker")
+        // The statusline stays the context source even when it names nothing.
+        #expect(titles.contextUsedPercent(for: "renamed") == 40)
+    }
+
+    /// A rename lands in the registry immediately, while a stale statusline
+    /// capture keeps replaying the old name for as long as that session stays
+    /// the file's last writer — so the registry must win.
+    @Test @MainActor func theRegistryBeatsAStaleStatuslineName() throws {
+        let directory = try makeDirectory()
+        try writeCapture(payload(id: "s", name: "Old statusline name"), in: directory)
+        try writeRegistry(pid: 7, id: "s", name: "Renamed in registry", in: directory)
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
+        #expect(titles.title(for: "s") == "Renamed in registry")
+    }
+
+    @Test @MainActor func everyRegistryFileContributesItsOwnSession() throws {
+        let directory = try makeDirectory()
+        try writeRegistry(pid: 1, id: "a", name: "planner-4e", in: directory)
+        try writeRegistry(pid: 2, id: "b", name: "planner-d0", in: directory)
+        try writeRegistry(pid: 3, id: "c", name: nil, in: directory)
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
+        #expect(titles.title(for: "a") == "planner-4e")
+        #expect(titles.title(for: "b") == "planner-d0")
+        #expect(titles.title(for: "c") == nil)
+    }
+
+    @Test @MainActor func registryAppearingAfterInitIsAbsorbedOnRefresh() throws {
+        // The registry directory is created by Claude Code's first session,
+        // which can start after the app — refresh() (driven by the store's
+        // reload tick) must pick it up, same as the payload directory.
+        let directory = try makeDirectory()
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
+        #expect(titles.title(for: "late") == nil)
+        try writeRegistry(pid: 9, id: "late", name: "Late session", in: directory)
+        titles.refresh()
+        #expect(titles.title(for: "late") == "Late session")
+    }
+
     @Test @MainActor func survivesDirectoryDeleteAndRecreate() throws {
         // Regression: rm -rf ~/.claude + recreation leaves the old watcher
         // bound to the unlinked inode; refresh() must keep absorbing (and the
