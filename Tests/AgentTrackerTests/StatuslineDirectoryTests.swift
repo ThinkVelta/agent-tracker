@@ -263,6 +263,24 @@ final class StatuslineDirectoryTests {
         #expect(titles.title(for: "late") == "Late session")
     }
 
+    @Test @MainActor func registrySurvivesParentDeleteAndRecreate() throws {
+        // Regression (review on #83): deleting ~/.claude cleared only the
+        // payload watcher, leaving the registry watcher bound to the dead
+        // inode. After the parent is recreated with sessions/ already inside,
+        // the next refresh must re-arm and absorb immediately.
+        let directory = try makeDirectory()
+        try writeRegistry(pid: 1, id: "old", name: "Before delete", in: directory)
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
+        #expect(titles.title(for: "old") == "Before delete")
+
+        try FileManager.default.removeItem(at: directory)
+        titles.refresh()
+        try writeRegistry(pid: 2, id: "new", name: "After recreate", in: directory)
+        titles.refresh()
+        #expect(titles.title(for: "old") == "Before delete")
+        #expect(titles.title(for: "new") == "After recreate")
+    }
+
     @Test @MainActor func survivesDirectoryDeleteAndRecreate() throws {
         // Regression: rm -rf ~/.claude + recreation leaves the old watcher
         // bound to the unlinked inode; refresh() must keep absorbing (and the

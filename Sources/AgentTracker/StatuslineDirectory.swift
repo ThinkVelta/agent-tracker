@@ -99,8 +99,13 @@ final class StatuslineDirectory {
     private func armWatcherIfNeeded() {
         var status = stat()
         guard stat(directory.path, &status) == 0 else {
+            // Both watchers, not just the payload one: the registry lives
+            // inside this directory, so if the parent is gone the registry
+            // watcher is bound to a dead inode too.
             watcher = nil
             watchedInode = nil
+            registryWatcher = nil
+            registryInode = nil
             return
         }
         let inode = UInt64(status.st_ino)
