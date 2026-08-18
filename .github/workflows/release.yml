@@ -15,7 +15,10 @@ permissions:
   contents: write
 
 # Never cancel a release mid-flight: a half-published tag is worse than a slow
-# one, and notarization can take minutes.
+# one, and notarization can take minutes — or, for a team's first-ever
+# submission, over an hour of extended vetting (measured: ~95 minutes on
+# v0.3.1). The timeouts below are sized for that worst case, because the
+# fast lane never needs them.
 concurrency:
   group: release-${{ github.ref_name }}
   cancel-in-progress: false
@@ -24,7 +27,7 @@ jobs:
   release:
     name: Build and publish
     runs-on: macos-26
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     # Signing and notarization are OPTIONAL. Without these secrets the job still
     # produces a release — an ad-hoc signed zip that users must clear through
@@ -224,7 +227,7 @@ jobs:
 
           xcrun notarytool submit "$ARCHIVE" \
             --key "$key" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" \
-            --wait --timeout 30m
+            --wait --timeout 75m
           xcrun stapler staple dist/AgentTracker.app
           # Prove the ticket travels with the bundle rather than trusting the
           # staple command's exit code.
