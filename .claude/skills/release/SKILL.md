@@ -325,6 +325,13 @@ from the notes the workflow actually produced rather than from assumption.
 - **Before "Publish the release"**: nothing is public. Fix the cause. If the fix is a code
   change the tag must move, and deleting a remote tag is blocked here, so ask the human to
   delete it or roll the version forward. If nothing needs to change, `gh run rerun` is enough.
+- **Notarization timed out**: also nothing public, and usually nothing wrong — a team's
+  **first-ever submission** goes through extended vetting (measured: ~95 minutes on v0.3.1)
+  while every later one takes minutes. Do not resubmit into the queue: the run's log names the
+  submission id, so poll `xcrun notarytool info <id>` until it concludes, then
+  `gh run rerun <run-id> --failed` — the rerun's fresh submission rides the now-vetted fast
+  lane. If a team's first notarization is still ahead of you, bootstrap it with a throwaway
+  local submission *before* tagging, so no release run ever waits on the slow lane.
 - **After the release is published**: the version number is spent. The digest cannot be
   reproduced (the bundle carries a commit count and a signing timestamp), watchers were already
   notified, and every installed copy is already advertising it through the update check. The
