@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Tracker — know which Claude Code session needs you</title>
+  <meta name="description" content="A macOS menu bar app that shows which of your Claude Code sessions needs you — red, green, grey — with click-to-focus that jumps to the right terminal.">
+  <link rel="icon" href="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/icon.png">
+  <meta property="og:title" content="Agent Tracker">
+  <meta property="og:description" content="Know which Claude Code session needs you, without hunting through terminals.">
+  <meta property="og:image" content="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/dropdown-light.png">
+  <style>
+    :root {
+      --bg: #ffffff;
+      --fg: #1d1d1f;
+      --muted: #6e6e73;
+      --accent: #0071e3;
+      --button-bg: #1d1d1f;
+      --button-fg: #ffffff;
+      --card: #f5f5f7;
+      --border: #d2d2d7;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #101014;
+        --fg: #f5f5f7;
+        --muted: #98989d;
+        --accent: #2997ff;
+        --button-bg: #f5f5f7;
+        --button-fg: #101014;
+        --card: #1c1c21;
+        --border: #38383d;
+      }
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-align: center;
+    }
+    main { max-width: 720px; margin: 0 auto; padding: 72px 24px 48px; }
+    .kicker {
+      font-size: 14px; font-weight: 600; letter-spacing: 0.18em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 20px;
+    }
+    h1 {
+      font-size: clamp(40px, 8vw, 64px); font-weight: 700;
+      letter-spacing: -0.02em; line-height: 1.05; margin-bottom: 24px;
+    }
+    h1 .tinted { color: var(--accent); }
+    .lede {
+      font-size: clamp(18px, 3vw, 22px); line-height: 1.45;
+      color: var(--muted); margin: 0 auto 36px; max-width: 34em;
+    }
+    .download {
+      display: inline-flex; align-items: baseline; gap: 10px;
+      background: var(--button-bg); color: var(--button-fg);
+      font-size: 18px; font-weight: 600; text-decoration: none;
+      padding: 16px 32px; border-radius: 999px;
+      transition: transform 0.12s ease, opacity 0.12s ease;
+    }
+    .download:hover { transform: scale(1.03); opacity: 0.92; }
+    .download .version { font-weight: 400; opacity: 0.65; font-size: 15px; }
+    .requires { font-size: 13px; color: var(--muted); margin-top: 14px; }
+    .hero-shot { margin: 56px auto 0; max-width: 420px; }
+    .hero-shot img { width: 100%; height: auto; display: block; }
+    .alt {
+      margin: 64px auto 0; max-width: 520px; text-align: left;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px 24px;
+    }
+    .alt h2 { font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+    .alt pre {
+      font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      font-size: 13px; line-height: 1.7; overflow-x: auto; color: var(--fg);
+    }
+    .alt p { font-size: 13px; color: var(--muted); margin-top: 10px; line-height: 1.5; }
+    footer {
+      margin-top: 72px; padding: 28px 24px 40px; font-size: 13px; color: var(--muted);
+    }
+    footer a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--border); }
+    footer a:hover { color: var(--fg); }
+    footer .links { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <main>
+    <p class="kicker">Claude Code session monitor</p>
+    <h1>Know which session <span class="tinted">needs you</span></h1>
+    <p class="lede">
+      Agent Tracker is a free, open-source macOS menu bar app: three dots —
+      red&nbsp;needs&nbsp;you, green&nbsp;running, grey&nbsp;idle — a dropdown of
+      every Claude&nbsp;Code session, and click-to-focus that jumps to the right
+      terminal, wherever it lives.
+    </p>
+    <a id="download" class="download" href="https://github.com/ThinkVelta/agent-tracker/releases/latest">
+      <span>&#8595;&#65038; Download for Mac</span>
+      <span class="version" id="version"></span>
+    </a>
+    <p class="requires">Requires macOS 14+ · Apple Silicon &amp; Intel · Signed and notarized</p>
+
+    <div class="hero-shot">
+      <picture>
+        <source media="(prefers-color-scheme: dark)"
+          srcset="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/dropdown-dark.png">
+        <img alt="The Agent Tracker dropdown, listing Claude Code sessions grouped by state"
+          src="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/dropdown-light.png">
+      </picture>
+    </div>
+
+    <div class="alt">
+      <h2>Prefer Homebrew?</h2>
+      <pre>brew tap ThinkVelta/tap
+brew trust --cask thinkvelta/tap/agent-tracker
+brew install --cask agent-tracker</pre>
+      <p>The <code>trust</code> line is Homebrew&nbsp;6's guard for third-party
+      taps — without it the install refuses to load the cask.</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="links">
+      <a href="https://github.com/ThinkVelta/agent-tracker">GitHub</a>
+      <a href="https://github.com/ThinkVelta/agent-tracker/tree/main/docs">Documentation</a>
+      <a href="https://github.com/ThinkVelta/agent-tracker/blob/main/docs/uninstall.md">Uninstall</a>
+      <a href="https://github.com/ThinkVelta/agent-tracker/blob/main/LICENSE">MIT License</a>
+    </div>
+    <p>Built by <a href="https://www.thinkvelta.ai">Velta</a>. Not affiliated with Anthropic.</p>
+  </footer>
+
+  <script>
+    // Stamp the live version and point the button at the exact asset. The
+    // static href above (the releases page) is the no-JS/API-down fallback;
+    // releases/latest/download/AgentTracker.zip is the stable direct link
+    // published alongside every release from v0.3.3 on.
+    fetch("https://api.github.com/repos/ThinkVelta/agent-tracker/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (release) {
+        if (!release) return;
+        var asset = (release.assets || []).find(function (a) {
+          return /^AgentTracker-.*\.zip$/.test(a.name);
+        });
+        if (asset) document.getElementById("download").href = asset.browser_download_url;
+        if (release.tag_name) document.getElementById("version").textContent = release.tag_name;
+      })
+      .catch(function () { /* fallback href already set */ });
+  </script>
+</body>
+</html>
