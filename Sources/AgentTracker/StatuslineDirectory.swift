@@ -45,6 +45,7 @@ final class StatuslineDirectory {
     private(set) var contextUsedPercent: [String: Double] = [:]
     private let directory: URL
     private let registryDirectory: URL
+    private let replayDirectory: URL?
     private let sources: [URL]
     private var watcher: DirectoryWatcher?
     private var watchedInode: UInt64?
@@ -60,9 +61,30 @@ final class StatuslineDirectory {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude")
     }()
 
-    init(directory: URL = defaultDirectory, capture: URL = SessionStore.claudeStatuslineURL) {
+    init(
+        directory: URL = defaultDirectory,
+        capture: URL = SessionStore.claudeStatuslineURL,
+        replay: URL? = nil
+    ) {
         self.directory = directory
         registryDirectory = directory.appendingPathComponent("sessions")
+        // The replay channel exists so the docs fixture can seed the readings
+        // a live machine accumulates across repaints, which a one-shot render
+        // never sees happen. It is a fixture input, so it must not exist as a
+        // data path in a normally running app, where a stale file could
+        // reseed a live row forever: outside --render-preview (and absent an
+        // explicit injection, which is how tests reach it) there is no replay
+        // directory at all, not merely an empty one.
+        if let replay {
+            replayDirectory = replay
+        } else if CommandLine.arguments.contains("--render-preview") {
+            // Beside the capture, so a fixture that redirects the capture
+            // gets a replay directory inside its own sandbox.
+            replayDirectory =
+                capture.deletingLastPathComponent().appendingPathComponent("statusline-replay")
+        } else {
+            replayDirectory = nil
+        }
         // Read in order, so the last one wins for a session both describe. The
         // capture goes last because it is the one we know is current: a
         // `statusline-last.json` can be a leftover from a tee the user has since
@@ -138,6 +160,23 @@ final class StatuslineDirectory {
     }
 
     func absorbLatest() {
+        // Replay first, in filename order, so anything a live source says
+        // about the same session wins over the seeded value.
+        if let replayDirectory {
+            let replayFiles =
+                ((try? FileManager.default.contentsOfDirectory(
+                    at: replayDirectory, includingPropertiesForKeys: nil)) ?? [])
+                .filter { $0.pathExtension == "json" }
+                .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            for url in replayFiles {
+                guard let data = try? Data(contentsOf: url), let entry = Self.parse(data)
+                else { continue }
+                if let name = entry.name { titles[entry.sessionId] = name }
+                if let used = entry.contextUsedPercent {
+                    contextUsedPercent[entry.sessionId] = used
+                }
+            }
+        }
         for url in sources {
             guard let data = try? Data(contentsOf: url), let entry = Self.parse(data) else {
                 continue

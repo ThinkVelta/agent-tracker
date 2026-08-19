@@ -92,11 +92,12 @@ def main():
     # always has. Invented numbers, chosen to sit below every warning threshold
     # so the picture shows the resting state rather than an alarm.
     #
-    # The same payload carries per-session context pressure, and this is where
-    # the fixture has to respect a real constraint rather than fake past it: one
-    # file holds ONE session's payload, so two sessions can only both have a
-    # reading if they come from the two different sources the app reads. That is
-    # exactly how it works on a real machine.
+    # The same payload carries per-session context pressure. One file holds
+    # ONE session's payload, so the two live sources the app reads can seed two
+    # readings at most; a live machine fills the rest as each session repaints,
+    # which a one-shot render never sees happen. The statusline-replay
+    # directory below stands in for that accumulation, and these two stay on
+    # the live sources so the render keeps exercising them.
     resets_at = int((datetime.now(timezone.utc) + timedelta(hours=2)).timestamp())
     statusline = {
         "session_id": "demo-checkout-service-00",
@@ -125,6 +126,28 @@ def main():
                 {
                     "session_id": "demo-api-gateway-02",
                     "context_window": {"used_percentage": 34},
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+
+    # The accumulated readings a live machine would have by now, one payload
+    # per file. Values spread across the urgency tiers on purpose: quiet,
+    # amber past 70, and the live capture above supplies the red one. Sorted
+    # filename order is the absorb order, and live sources still win.
+    replay = root / "statusline-replay"
+    replay.mkdir(parents=True, exist_ok=True)
+    seeded = {1: 74, 3: 27, 4: 61, 5: 12}
+    for index, (cwd, _state, _reason, _age) in enumerate(DEMO):
+        if index not in seeded:
+            continue
+        name = pathlib.PurePath(cwd).name
+        (replay / f"{index:02d}.json").write_text(
+            json.dumps(
+                {
+                    "session_id": f"demo-{name}-{index:02d}",
+                    "context_window": {"used_percentage": seeded[index]},
                 },
                 indent=2,
                 sort_keys=True,

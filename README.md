@@ -52,7 +52,13 @@ checks the install and points at what to read. Or start from
 
 ## Install
 
-Requirements: macOS 14 or later.
+Requirements: macOS 14 or later. Releases are Developer ID signed and
+notarized by Apple, so the first launch opens without any Gatekeeper dialog.
+
+[**Download the latest release**](https://github.com/ThinkVelta/agent-tracker/releases/latest),
+unzip it, and drag **AgentTracker.app** to `/Applications`.
+
+Or install through Homebrew:
 
 ```sh
 brew tap ThinkVelta/tap
@@ -61,66 +67,33 @@ brew install --cask agent-tracker
 ```
 
 Homebrew 6 refuses to load casks from taps outside its own repositories until
-you trust them, so without the middle line the install stops with *"Refusing to
-load cask … from untrusted tap"*. That applies to every third-party tap, not
-just this one, and trusting is per-machine.
+you trust them. Without the middle line the install stops with *"Refusing to
+load cask … from untrusted tap"*. That applies to every third-party tap, and
+trusting is per-machine.
 
-Trusting the single cask rather than the tap is deliberate: `brew trust
-thinkvelta/tap` also works, but it covers everything added to the tap in future,
-including casks that do not exist yet.
+Trusting the single cask rather than the tap is deliberate. `brew trust
+thinkvelta/tap` also works, but it covers everything added to the tap in
+future, including casks that do not exist yet.
 
-Or download it by hand:
-
-1. Download `AgentTracker-x.y.z.zip` from
-   [the latest release](https://github.com/ThinkVelta/agent-tracker/releases/latest).
-2. Unzip it and drag **AgentTracker.app** to `/Applications`.
-
-Either way, launch it: a first-run window walks you through granting
+Either way, launch it. A first-run window walks you through granting
 Accessibility, connecting Claude Code, and starting at login.
 
-> [!IMPORTANT]
-> **The first launch is blocked, and the dialog's default button deletes the
-> app.** This build is not yet notarized, so macOS shows *"AgentTracker Not
-> Opened — Apple could not verify AgentTracker is free of malware"*, offering
-> **Move to Trash** (highlighted) and **Done**.
->
-> Click **Done**. Never Move to Trash.
->
-> Then open **System Settings › Privacy & Security**, scroll to Security, and
-> click **Open Anyway** next to *"AgentTracker was blocked to protect your
-> Mac."* Launch the app again and it opens normally from then on.
->
-> Only the first launch needs this. Notarized builds are coming, which removes
-> the block entirely.
-
-<details>
-<summary><strong>Skipping that prompt from the terminal</strong></summary>
-
-The block comes from the quarantine attribute macOS attaches to downloads.
-Clearing it before the first launch avoids the dialog:
-
-```sh
-xattr -dr com.apple.quarantine -- /Applications/AgentTracker.app
-```
-
-That is a real Gatekeeper check you are switching off for this app, so only do
-it if you are comfortable with that. The System Settings route above is the
-safer one and reaches the same place.
-
-On macOS 14 and earlier you could right-click the app and choose **Open**;
-macOS 15 removed that shortcut.
-
-</details>
+> [!NOTE]
+> Releases before v0.3.1 were not notarized. If you install one of those older
+> zips, macOS blocks the first launch with *"AgentTracker Not Opened"* and
+> highlights **Move to Trash**. Click **Done** instead, then allow the app
+> under **System Settings › Privacy & Security › Open Anyway**.
 
 Settings › About checks for newer releases, when you press the button. There is
 no auto-updater, and nothing phones home on its own.
 
-Agent Tracker asks for up to three macOS permissions — Accessibility for
-click-to-focus, Automation for writing into a Ghostty window, Notifications for
-banners and receipts — and none of them is needed just to watch sessions. See
-**[permissions](docs/permissions.md)**, which covers which ones you will actually
-be asked for and the one thing that is not obvious: a lost Accessibility grant is
-fixed by *removing and re-adding* the entry, never by toggling it.
+Agent Tracker asks for up to three macOS permissions (Accessibility for
+click-to-focus, Automation for writing into a Ghostty window, Notifications
+for banners and receipts), and none of them is needed just to watch sessions.
+See **[permissions](docs/permissions.md)**, which covers which ones you will
+actually be asked for, plus one thing that is not obvious. A lost
+Accessibility grant is fixed by *removing and re-adding* the entry, never by
+toggling it.
 
 ## What you get
 
@@ -134,7 +107,7 @@ the same thing.
 
 **A menu bar that stays out of the way.** Four icon modes, from counts on every
 dot down to a single dot that appears only when something needs you, each of
-them available in monochrome — which takes the menu bar's tint like a system
+them available in monochrome, which takes the menu bar's tint like a system
 icon and tells the states apart by shape:
 
 <div align="center">
@@ -144,9 +117,9 @@ icon and tells the states apart by shape:
 </picture>
 </div>
 
-**Quota, before it stops you.** A strip above the footer shows both windows —
-`5h 38%   7d 49%` — so the number that decides whether to start something big is
-readable at a glance rather than discovered when a request is refused. Both,
+**Quota, before it stops you.** A strip above the footer shows both windows,
+`5h 38%   7d 49%`, so the number that decides whether to start something big
+is readable at a glance rather than discovered when a request is refused. Both,
 because they answer different questions: the 5-hour one is *can I start this
 now*, the weekly one is *how much of this week is left*. They stay in that
 order whatever the numbers do, so the one you want is always in the same place.
@@ -155,26 +128,26 @@ shows only when a reading exists, because "nothing known" and "nothing used" are
 not the same thing. Needs the statusline wrapper (below).
 
 **Name a session and the row says so.** Run `/rename billing spike` in Claude
-Code and the row takes that name — Claude owns the rename, so its terminal tab
-title follows too, and this app just reads what Claude recorded. Nothing to
+Code and the row takes that name. Claude owns the rename, so its terminal
+tab title follows too, and this app just reads what Claude recorded. Nothing to
 configure.
 
 **Or rename it from the app, which asks Claude to do it.** Right-click a row,
 *Rename…*, and the app types `/rename` into that session's own terminal. It does
-not keep a nickname of its own, deliberately: there is one name, Claude's, and
-the app reads it back like any other. So renaming here and renaming there cannot
+deliberately not keep a nickname of its own. There is one name, Claude's,
+and the app reads it back like any other. So renaming here and renaming there cannot
 drift apart, and the terminal tab follows either way.
 
 It can be turned down, which a private label never could. A rename is typed into
-a live session, so the app refuses one that is not sitting at a finished turn —
-pressing Return at an open permission prompt would answer it. Outside tmux it
+a live session, so the app refuses one that is not sitting at a finished
+turn, because pressing Return at an open permission prompt would answer it. Outside tmux it
 also has to know which window is yours, and the sessions it cannot tell apart
 are the ones sharing a title with a sibling, which is exactly what renaming one
 would fix. When that happens it says so and points at `/rename` in the terminal,
 which has no such limit.
 
 **And two sessions in one repo stop looking identical.** Rows are otherwise
-titled by project, which is right until two of them share one — then the list
+titled by project, which is right until two of them share one. Then the list
 shows the same word twice and the only way to tell which is which is to click
 one and find out. Claude also derives a name for every session
 (`api-gateway-02`), so an ambiguous row wears that. Only an ambiguous one: a
@@ -187,8 +160,8 @@ searchable.
 reading* says how full its context window is. Below 70% the number is set
 exactly like the timestamp beside it and recedes into the line; past 70% it
 takes weight and turns amber, and red past 90%. So a glance costs nothing and
-still tells you which session is running out of room — and a row with no reading
-at all stays blank rather than showing a zero, so "plenty left" and "nothing
+still tells you which session is running out of room, and a row with no
+reading at all stays blank rather than showing a zero, so "plenty left" and "nothing
 known" never look the same. It sits in its own slot rather than in the row's
 metadata line, because that line truncates and this is precisely the number you
 would not want cut. The reading arrives once that session's statusline has
@@ -197,8 +170,8 @@ rendered, which needs the statusline wrapper (below).
 **A banner, if you want one.** Off by default: the menu bar is the passive
 channel this app was built to be, and a notification is the most intrusive thing
 it can do. Switch it on in Settings › Sessions and a session flipping to
-needs-you posts one banner — the project, the agent, and what it is waiting for —
-which takes you to that terminal when clicked, exactly as clicking the row does.
+needs-you posts one banner naming the project, the agent, and what it is
+waiting for, which takes you to that terminal when clicked, exactly as clicking the row does.
 It announces the flip and not the state, so a session waiting at a prompt is one
 banner rather than one a second; going to the terminal yourself withdraws it
 again. Focus and Do Not Disturb hold these back like any other app's, which is
@@ -208,13 +181,13 @@ the point of not marking them time-sensitive.
 default, because the app's question is *which one needs me*. Settings › General
 switches them to project, which is what you want once several sessions live in
 one repo and the state grouping scatters them across three headings. A project
-takes the most urgent state inside it — for its dot and for its place in the
-list — so a repo holding something that needs you still leads, and cannot read
+takes the most urgent state inside it, for its dot and for its place in the
+list, so a repo holding something that needs you still leads, and cannot read
 as calm.
 
 **Pin the one you are watching.** A pinned session sits in its own group at the
 top of the list whatever it is doing, so it stops moving between sections while
-you are looking at it — right-click a row and choose *Pin to top*. It leaves its
+you are looking at it. Right-click a row and choose *Pin to top*. It leaves its
 state section rather than appearing twice, and the dot counts are unchanged: a
 pinned needs-you session is still one of the red ones. The group has no collapse
 chevron, because hiding what you asked to keep visible is not a thing to offer.
@@ -223,8 +196,8 @@ chevron, because hiding what you asked to keep visible is not a thing to offer.
 agent that finishes a turn every few minutes: it is doing exactly what it
 should, and every completion turns the menu bar red for something you never
 intended to look at. A muted session displays as idle and keeps the reason it
-gave, so the row still reads `Muted · Claude · api-gateway · Approve Bash?` —
-it says what it wants, it just does not pull you. Counts, sections and
+gave, so the row still reads `Muted · Claude · api-gateway · Approve Bash?`.
+It says what it wants, it just does not pull you. Counts, sections and
 notifications all follow, because they read the state. The mute lasts as long as
 the session does; the next session in that directory has not asked to be
 ignored. *Copy resume command* puts `claude --resume <id>` on the clipboard,
@@ -244,8 +217,8 @@ terminal disappears without a clean exit.
 </picture>
 </div>
 
-**[How it works, in full](docs/architecture.md)** — what is on disk, how
-click-to-focus matches a window, why a finished turn is not always "needs you",
+**[How it works, in full](docs/architecture.md)** covers what is on disk,
+how click-to-focus matches a window, why a finished turn is not always "needs you",
 and how writing into a terminal is gated.
 
 ## Scheduled continues
@@ -257,10 +230,10 @@ reporting, never from a guess.
 **Off by default.** It is the only thing this app does that acts on a session
 rather than reporting on one, so it has its own switch in Settings › General.
 
-It refuses far more often than it fires, and that is the point: typing into the
-wrong session is the one thing here that cannot be undone. Every attempt is
-recorded — sent, refused or failed — because a feature that acts while nobody is
-watching owes you a receipt.
+It refuses far more often than it fires, and that is deliberate, because
+typing into the wrong session is the one thing here that cannot be undone.
+Every attempt is recorded, whether sent, refused or failed, because a feature
+that acts while nobody is watching owes you a receipt.
 
 **[What it refuses and why](docs/scheduled-continues.md)**, including the
 permission modes it allows, and why running sessions in `tmux` removes the
@@ -276,15 +249,14 @@ largest class of refusals outright.
   terminals. What is *not* guaranteed is that each one opens its own. Ghostty
   exposes no per-window identity that would settle it, and `WindowIdentity`
   documents the four routes that were tried and closed. **Naming one of them
-  fixes it** — see [troubleshooting](docs/troubleshooting.md).
-- **Window matching, usage numbers and context readings all need the statusline
-  payload.** Different fields of it: window matching reads `session_name`, the
-  usage strip reads `rate_limits`, the per-row percentage reads
+  fixes it**; see [troubleshooting](docs/troubleshooting.md).
+- **Usage numbers and context readings need the statusline payload.** The
+  usage strip reads `rate_limits` and the per-row percentage reads
   `context_window`. The payload reaches the app only through the
   [statusline wrapper](docs/statusline.md) or your own script dumping it, so
-  without one, window matching falls back to transcript summaries and path
-  fragments, and the app says it cannot tell rather than claiming you have room
-  left.
+  without one the app says it cannot tell rather than claiming you have room
+  left. Session names travel separately, through `~/.claude/sessions/`, so
+  rows and window matching keep their names either way.
 
 ## Build from source
 
@@ -322,7 +294,7 @@ run `./integrations/uninstall.sh` (add `--purge` to also delete
 
 Claude's usage windows and context pressure are a separate opt-in, because
 capturing them means
-occupying the one `statusLine` slot in `~/.claude/settings.json`: the picker
+occupying the one `statusLine` slot in `~/.claude/settings.json`. The picker
 asks, or pass `--statusline` (`--no-statusline` to skip the question). The
 wrapper saves the payload and then runs your previous statusline command with
 the same bytes on its stdin, so what you see is unchanged; the displaced setting
@@ -331,17 +303,15 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 
 ## Roadmap
 
-- [ ] **Notarized builds**, which remove the first-launch block described in
-      Install. Releases are already Developer ID signed, which is the half that
-      keeps your Accessibility grant across updates; notarization is the half
-      that stops Gatekeeper asking. Blocked on an Apple Developer Program
-      enrolment rather than on anything in this repo
+- [x] **Notarized builds** (since v0.3.1). Releases are Developer ID
+      signed, which keeps your Accessibility grant across updates, and
+      notarized, which is why Gatekeeper opens them without asking
 - [x] Homebrew tap: `brew install --cask agent-tracker`
-- [x] **Scheduled continues** — arm a session that stopped on a usage limit to
-      resume itself when the window resets, from the clock on its row. Claude
+- [x] **Scheduled continues**. Arm a session that stopped on a usage limit
+      to resume itself when the window resets, from the clock on its row. Claude
       Code. Off by default (Settings › General). See below.
-- [x] **Notifications** when a session flips to needs-you — opt-in, click to jump
-      to that terminal (Settings › Sessions). See below.
+- [x] **Notifications** when a session flips to needs-you. Opt-in; click
+      jumps to that terminal (Settings › Sessions). See below.
 - [x] Onboarding: install as .app + login item
 - [x] Downloadable releases, signed so the Accessibility grant survives an update
 
