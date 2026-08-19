@@ -320,8 +320,15 @@ jobs:
           ARCHIVE: ${{ steps.package.outputs.archive }}
           NOTES: ${{ steps.notes.outputs.path }}
         run: |
+          # A second, version-stable copy of the archive, so
+          # releases/latest/download/AgentTracker.zip is a permanent link —
+          # the landing page's download button and anything else that wants
+          # "the latest" without asking the API first. The versioned name
+          # stays the canonical artifact: the notes digest and the cask keep
+          # referring to it.
+          cp "$ARCHIVE" dist/AgentTracker.zip
           gh release create "$GITHUB_REF_NAME" \
-            "$ARCHIVE" "$ARCHIVE.sha256" \
+            "$ARCHIVE" "$ARCHIVE.sha256" dist/AgentTracker.zip \
             --title "$GITHUB_REF_NAME" \
             --notes-file "$NOTES" \
             --generate-notes

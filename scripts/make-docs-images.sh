@@ -66,4 +66,10 @@ render icons dark icon-modes-dark.png
 render architecture light architecture-light.png
 render architecture dark architecture-dark.png
 
+# The landing page (docs/index.html) serves these relatively so the Pages
+# site is self-contained; published here so this script stays the single
+# authority on what the pictures show.
+mkdir -p docs/assets
+cp assets/icon.png assets/dropdown-light.png assets/dropdown-dark.png docs/assets/
+
 echo "==> done"
