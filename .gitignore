@@ -42,3 +42,4 @@ playground.xcworkspace
 .claude/agent-memory/
 .claude/*.lock
 dist/
+__pycache__/
