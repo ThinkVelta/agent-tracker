@@ -733,8 +733,10 @@ struct SessionRow: View {
 
     private var accessibilityLabel: String {
         if armedSchedule != nil { return "Edit scheduled continue" }
-        if arming.resetsAt != nil { return "Schedule a continue" }
-        return "Why this session cannot be scheduled"
+        // A reason only exists when the feature is off; every other row is
+        // schedulable now, reset anchor or not.
+        if arming.reason != nil { return "Why this session cannot be scheduled" }
+        return "Schedule a continue"
     }
 
     /// Off the main actor: reading a transcript tail is I/O, and a mode that
