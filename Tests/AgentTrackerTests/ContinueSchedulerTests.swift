@@ -436,9 +436,12 @@ final class ContinueSchedulerTests {
             for: session(), armableResetBySession: resets, enabled: false)
         #expect(off.reason?.contains("Settings") == true)
 
+        // Any row is armable while the feature is on; a row that is not the
+        // one waiting on a limit simply has no reset to anchor to.
         let notBlocked = ContinueScheduler.availability(
             for: session(), armableResetBySession: [:], enabled: true)
-        #expect(notBlocked.reason?.contains("waiting on a usage limit") == true)
+        #expect(notBlocked == .available(resetsAt: nil))
+        #expect(notBlocked.reason == nil)
 
         let ready = ContinueScheduler.availability(
             for: session(), armableResetBySession: resets, enabled: true)
@@ -447,22 +450,112 @@ final class ContinueSchedulerTests {
     }
 
     /// Regression: availability used to be keyed by *provider*. A usage limit is
-    /// account-wide, so one blocked row made every Claude row offer the clock —
-    /// including rows that were running, or sitting at a permission prompt.
-    @Test func onlyTheBlockedRowIsArmableNotEveryRowOnThatAccount() {
+    /// account-wide, so one blocked row handed the reset anchor to every Claude
+    /// row — including rows that were running, or sitting at a permission
+    /// prompt. Those rows are armable (everything is), but only at a moment the
+    /// user picks: the reset belongs to the blocked row alone.
+    @Test func onlyTheBlockedRowAnchorsToTheReset() {
         let armable = ["blocked": reset]
 
         let blocked = ContinueScheduler.availability(
             for: session("blocked"), armableResetBySession: armable, enabled: true)
         #expect(blocked == .available(resetsAt: reset))
 
-        // Same provider, same account, same reset — but this row is not the one
-        // waiting on it.
         for other in ["running", "prompted", "idle"] {
-            let unavailable = ContinueScheduler.availability(
+            let armableToo = ContinueScheduler.availability(
                 for: session(other), armableResetBySession: armable, enabled: true)
-            #expect(unavailable.resetsAt == nil, "\(other) must not be armable")
-            #expect(unavailable.reason?.contains("waiting on a usage limit") == true)
+            #expect(armableToo.resetsAt == nil, "\(other) must not inherit the reset")
+            #expect(armableToo.reason == nil, "\(other) must still be armable")
         }
+    }
+
+    // MARK: - Clock anchors, the user's own moments
+
+    private func clockSchedule(
+        _ id: String = "s1",
+        at moment: Date,
+        settledThrough: Date? = nil
+    ) -> ScheduledContinue {
+        ScheduledContinue(
+            sessionId: id, armedForResetAt: moment,
+            anchor: .clock, settledThrough: settledThrough)
+    }
+
+    /// A clock moment fires at that instant exactly. The safety pad exists
+    /// because a reset reading estimates the provider's clock; a user-picked
+    /// moment is exact by definition and padding it would just be late.
+    @Test func aClockScheduleFiresAtItsMomentWithoutThePad() {
+        let moment = reset
+        let early = ContinueScheduler.plan(
+            pass(now: moment.addingTimeInterval(-1), schedules: [clockSchedule(at: moment)]))
+        #expect(early.fires.isEmpty)
+        #expect(early.nextWakeUp == moment)
+
+        let due = ContinueScheduler.plan(
+            pass(now: moment, schedules: [clockSchedule(at: moment)]))
+        #expect(due.fires.count == 1)
+    }
+
+    /// A provider reading has no business moving a moment the user picked,
+    /// however close the two happen to sit.
+    @Test func aClockMomentIsNeverRefinedByAnObservedReset() {
+        let moment = reset
+        let nearby = moment.addingTimeInterval(30)
+        let planned = ContinueScheduler.plan(
+            pass(
+                now: moment.addingTimeInterval(-60),
+                schedules: [clockSchedule(at: moment)],
+                blockingReset: nearby))
+        #expect(planned.schedules.first?.armedForResetAt == moment)
+    }
+
+    /// Clock schedules are one-shots: there is no observable next occurrence
+    /// to re-arm against, so even a repeat flag (hand-edited, or an older
+    /// build) must not resurrect one.
+    @Test func aSettledClockScheduleIsDroppedEvenWithARepeatFlag() {
+        var record = clockSchedule(at: reset, settledThrough: reset)
+        record.repeats = true
+        let planned = ContinueScheduler.plan(
+            pass(
+                now: reset.addingTimeInterval(600),
+                schedules: [record],
+                blockingReset: reset.addingTimeInterval(18_000)))
+        #expect(planned.fires.isEmpty)
+        #expect(planned.schedules.isEmpty)
+    }
+
+    /// R1 holds for clock anchors exactly as for resets: scheduling a running
+    /// session is the whole point of a picked time, and the fire waits until
+    /// the session is sitting at a finished turn.
+    @Test func aClockFireHoldsWhileTheSessionIsMidTurn() {
+        let moment = reset
+        let held = ContinueScheduler.plan(
+            pass(
+                now: moment,
+                schedules: [clockSchedule(at: moment)],
+                sessions: [session(lastEvent: "PreToolUse")]))
+        #expect(held.fires.isEmpty)
+        #expect(held.schedules.count == 1)
+        #expect(held.receipts.first?.summary.contains("held") == true)
+
+        let released = ContinueScheduler.plan(
+            pass(
+                now: moment.addingTimeInterval(60),
+                schedules: held.schedules,
+                sessions: [session(lastEvent: "Stop")]))
+        #expect(released.fires.count == 1)
+    }
+
+    /// Old records decode as reset-anchored: the field is absent from every
+    /// schedule written before clock anchors existed.
+    @Test func aRecordWithoutAnAnchorIsResetAnchored() throws {
+        let old = Data(
+            """
+            {"sessionId": "s1", "message": "Continue",
+             "armedForResetAt": 776732400, "repeats": false, "sendsOnWake": true}
+            """.utf8)
+        let decoded = try JSONDecoder().decode(ScheduledContinue.self, from: old)
+        #expect(decoded.anchor == nil)
+        #expect(!decoded.isClockAnchored)
     }
 }

@@ -645,9 +645,16 @@ struct SessionRow: View {
             }
             Button(session.isPinned ? "Unpin" : "Pin to top") { pinned.toggle(session.id) }
             Button(session.isMuted ? "Unmute" : "Mute") { muted.toggle(session.id) }
-            Button("Copy resume command") {
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(session.resumeCommand, forType: .string)
+            if session.terminal?.tmuxPane == nil && windowTitle == nil {
+                // The fallback for rows the app cannot type into: no tmux pane
+                // reported and no window title known means delivery has nothing
+                // to aim at, and reviving the conversation elsewhere is the one
+                // path left. Everywhere else the scheduler covers it and this
+                // is noise.
+                Button("Copy resume command") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(session.resumeCommand, forType: .string)
+                }
             }
             Button("Rename…") { renaming = true }
             if armedSchedule != nil {
@@ -679,34 +686,22 @@ struct SessionRow: View {
         continues.schedule(for: session.sessionId)
     }
 
-    /// Shown greyed with its reason only where a user would plausibly reach for
-    /// it — a stopped row, with the feature on. Everywhere else the row keeps the
-    /// decorative jump arrow it has always had, rather than growing a permanently
-    /// disabled control.
-    private var explainsUnavailability: Bool {
-        preferences.scheduledContinues && session.state == .needsYou && arming.reason != nil
-    }
-
-    /// Every case that draws a clock is clickable, including the greyed one. A
-    /// control the user can see and cannot press is worse than no control, and
-    /// the greyed clock exists precisely so the reason can be read — opening the
-    /// editor is how it is read. Only the plain jump arrow is inert, and that is
-    /// what it has always been.
+    /// Always the clock, on every row. The jump arrow that used to fill the
+    /// idle slot duplicated the row click and did nothing else; a control that
+    /// looks like a button and is not one is worse than the button. Scheduling
+    /// is available for any session — the anchor just differs (a usage-limit
+    /// reset when this row is the blocked one, a picked time otherwise) — so
+    /// the affordance is the same everywhere and clicking it always opens the
+    /// editor, including when the feature is off, which is where the editor
+    /// says how to turn it on.
     private var trailingAffordance: some View {
         Group {
             if armedSchedule != nil {
                 armingButton(icon: "clock.fill", tint: .accentColor, alwaysVisible: true)
-            } else if arming.resetsAt != nil {
-                armingButton(icon: "clock", tint: .secondary, alwaysVisible: false)
-            } else if explainsUnavailability {
-                armingButton(
-                    icon: "clock", tint: Color.secondary.opacity(0.5), alwaysVisible: false)
             } else {
-                Image(systemName: "arrow.up.forward.app")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                    .opacity(hovering ? 1 : 0)
-                    .frame(width: Theme.Metrics.rowTrailingControl)
+                // Always visible, not hover-revealed: an affordance the user
+                // has to discover by mousing around is one most never find.
+                armingButton(icon: "clock", tint: .secondary, alwaysVisible: true)
             }
         }
         .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
@@ -775,6 +770,16 @@ struct SessionRow: View {
             onDismiss: { renaming = false })
     }
 
+    /// Whether the schedule being edited or created anchors to a usage-limit
+    /// reset. True when this row is the one waiting on a limit, or when an
+    /// armed reset schedule is being edited — its anchor is kept rather than
+    /// silently converted just because the limit has since expired.
+    private var anchorsToReset: Bool {
+        if arming.resetsAt != nil { return true }
+        if let armedSchedule { return !armedSchedule.isClockAnchored }
+        return false
+    }
+
     private var editorPanel: some View {
         ContinueEditor(
             draft: $draft,
@@ -783,6 +788,7 @@ struct SessionRow: View {
             // present that past time as a promise. Nil is what makes it say it is
             // waiting for the next reset to be reported.
             resetsAt: arming.resetsAt ?? armedSchedule?.pendingMoment,
+            usesReset: anchorsToReset,
             isArmed: armedSchedule != nil,
             // Only when there is nothing armed. An armed schedule knows its own
             // moment, so an armed row whose limit has since expired must still
@@ -797,14 +803,26 @@ struct SessionRow: View {
                 // schedule must keep the record's own moment — `settledThrough`
                 // travels with it, so it stays settled and does not fire — where
                 // `pendingMoment` would be nil and the edit would be dropped.
-                guard let moment = arming.resetsAt ?? armedSchedule?.armedForResetAt else { return }
+                // A clock anchor takes the picker's moment instead, on every
+                // edit: that moment is the user's and the draft is where they
+                // just expressed it.
+                let moment: Date
+                if anchorsToReset {
+                    guard let kept = arming.resetsAt ?? armedSchedule?.armedForResetAt else {
+                        return
+                    }
+                    moment = kept
+                } else {
+                    moment = draft.fireAt
+                }
                 continues.armResolvingPane(
                     ScheduledContinue(
                         sessionId: session.sessionId,
                         message: draft.message,
                         armedForResetAt: moment,
-                        repeats: draft.repeats,
+                        repeats: anchorsToReset && draft.repeats,
                         sendsOnWake: draft.sendsOnWake,
+                        anchor: anchorsToReset ? .reset : .clock,
                         // Preserved, so editing the text of a schedule that has
                         // already fired cannot make it owe that moment again.
                         settledThrough: armedSchedule?.settledThrough,
