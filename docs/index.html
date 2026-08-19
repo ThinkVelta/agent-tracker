@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Agent Tracker — know which Claude Code session needs you</title>
-  <meta name="description" content="A macOS menu bar app that shows which of your Claude Code sessions needs you — red, green, grey — with click-to-focus that jumps to the right terminal.">
+  <title>Agent Tracker, the Claude Code session monitor for your menu bar</title>
+  <meta name="description" content="A macOS menu bar app that shows which of your Claude Code sessions needs you, with click-to-focus that jumps to the right terminal.">
   <link rel="icon" href="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/icon.png">
   <meta property="og:title" content="Agent Tracker">
   <meta property="og:description" content="Know which Claude Code session needs you, without hunting through terminals.">
@@ -12,24 +12,24 @@
   <style>
     :root {
       --bg: #ffffff;
-      --fg: #1d1d1f;
-      --muted: #6e6e73;
-      --accent: #0071e3;
-      --button-bg: #1d1d1f;
+      --fg: #16112e;
+      --muted: #67617f;
+      --accent: #55409a;
+      --button-bg: #55409a;
       --button-fg: #ffffff;
-      --card: #f5f5f7;
-      --border: #d2d2d7;
+      --card: #f6f4fb;
+      --border: #ddd8ec;
     }
     @media (prefers-color-scheme: dark) {
       :root {
-        --bg: #101014;
-        --fg: #f5f5f7;
-        --muted: #98989d;
-        --accent: #2997ff;
-        --button-bg: #f5f5f7;
-        --button-fg: #101014;
-        --card: #1c1c21;
-        --border: #38383d;
+        --bg: #0d081e;
+        --fg: #f2f0f9;
+        --muted: #9d96b8;
+        --accent: #9d87ea;
+        --button-bg: #55409a;
+        --button-fg: #ffffff;
+        --card: #171130;
+        --border: #322a52;
       }
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -90,10 +90,10 @@
     <p class="kicker">Claude Code session monitor</p>
     <h1>Know which session <span class="tinted">needs you</span></h1>
     <p class="lede">
-      Agent Tracker is a free, open-source macOS menu bar app: three dots —
-      red&nbsp;needs&nbsp;you, green&nbsp;running, grey&nbsp;idle — a dropdown of
-      every Claude&nbsp;Code session, and click-to-focus that jumps to the right
-      terminal, wherever it lives.
+      Agent Tracker is a free, open-source macOS menu bar app. Three dots
+      (red&nbsp;needs&nbsp;you, green&nbsp;running, grey&nbsp;idle), a dropdown
+      of every Claude&nbsp;Code session, and click-to-focus that jumps to the
+      right terminal, wherever it lives.
     </p>
     <a id="download" class="download" href="https://github.com/ThinkVelta/agent-tracker/releases/latest">
       <span>&#8595;&#65038; Download for Mac</span>
@@ -115,8 +115,8 @@
       <pre>brew tap ThinkVelta/tap
 brew trust --cask thinkvelta/tap/agent-tracker
 brew install --cask agent-tracker</pre>
-      <p>The <code>trust</code> line is Homebrew&nbsp;6's guard for third-party
-      taps — without it the install refuses to load the cask.</p>
+      <p>The <code>trust</code> line is Homebrew&nbsp;6's guard for
+      third-party taps. Without it the install refuses to load the cask.</p>
     </div>
   </main>
 
