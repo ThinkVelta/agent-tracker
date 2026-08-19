@@ -217,10 +217,12 @@ def ask_statusline():
         print(wrap_bullet(caveat, indent="  - ", subsequent="    "))
     print()
     try:
-        answer = input(bold("Capture the usage windows?") + " [y/N] ")
+        answer = input(bold("Capture the usage windows?") + " [Y/n] ")
     except EOFError:
         return False
-    return answer.strip().lower() in ("y", "yes")
+    # Enter means yes; anything unrecognized stays no, so a mistyped answer
+    # cannot claim the statusLine slot by accident.
+    return answer.strip().lower() in ("", "y", "yes")
 
 
 def show_plan(selected, statusline=False):
@@ -359,8 +361,11 @@ def main():
         print()
         statusline = False
     elif claude_selected and statusline is None:
-        # Off unless asked for: it takes over a settings.json slot that may
-        # already be someone's own script, so silence must not mean consent.
+        # Interactively the default answer is yes: the wrapper preserves
+        # whatever script the slot held, and the app's usage strip and
+        # per-row context readings only exist with it. Non-interactively it
+        # stays off, because a pipe pressing Enter is not a person saying
+        # yes; --statusline is the explicit route there.
         statusline = ask_statusline() if interactive else False
         print()
 
