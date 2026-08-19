@@ -773,13 +773,13 @@ struct SessionRow: View {
     }
 
     /// Whether the schedule being edited or created anchors to a usage-limit
-    /// reset. True when this row is the one waiting on a limit, or when an
-    /// armed reset schedule is being edited — its anchor is kept rather than
-    /// silently converted just because the limit has since expired.
+    /// reset. An armed schedule keeps its own anchor, whichever way the limit
+    /// state has moved since: a reset schedule is not converted because the
+    /// limit expired, and a clock schedule is not converted because a limit
+    /// appeared. Only a new schedule derives its anchor from the row.
     private var anchorsToReset: Bool {
-        if arming.resetsAt != nil { return true }
         if let armedSchedule { return !armedSchedule.isClockAnchored }
-        return false
+        return arming.resetsAt != nil
     }
 
     private var editorPanel: some View {
@@ -788,8 +788,10 @@ struct SessionRow: View {
             // `pendingMoment`, not `armedForResetAt`: a settled repeating schedule
             // still holds the moment it last fired for, and the editor would
             // present that past time as a promise. Nil is what makes it say it is
-            // waiting for the next reset to be reported.
-            resetsAt: arming.resetsAt ?? armedSchedule?.pendingMoment,
+            // waiting for the next reset to be reported. Gated on the anchor,
+            // so a clock edit on a row that has since hit a limit shows the
+            // picker and clock copy, never reset copy.
+            resetsAt: anchorsToReset ? (arming.resetsAt ?? armedSchedule?.pendingMoment) : nil,
             usesReset: anchorsToReset,
             isArmed: armedSchedule != nil,
             // Only when there is nothing armed. An armed schedule knows its own
