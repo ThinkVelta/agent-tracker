@@ -263,6 +263,24 @@ final class StatuslineDirectoryTests {
         #expect(titles.title(for: "late") == "Late session")
     }
 
+    /// The replay directory exists for the docs fixture: it seeds the readings
+    /// a live machine accumulates across repaints, which a one-shot render
+    /// never sees happen. Live sources are absorbed after it, so a live payload
+    /// for the same session always wins over the seeded value.
+    @Test @MainActor func replaySeedsReadingsAndLiveSourcesWin() throws {
+        let directory = try makeDirectory()
+        let replay = directory.appendingPathComponent("statusline-replay")
+        try FileManager.default.createDirectory(at: replay, withIntermediateDirectories: true)
+        try payload(id: "seeded", name: nil, context: 18).write(
+            to: replay.appendingPathComponent("01.json"), atomically: true, encoding: .utf8)
+        try payload(id: "both", name: nil, context: 50).write(
+            to: replay.appendingPathComponent("02.json"), atomically: true, encoding: .utf8)
+        try writeCapture(payload(id: "both", name: nil, context: 92), in: directory)
+        let titles = StatuslineDirectory(directory: directory, capture: capture(in: directory))
+        #expect(titles.contextUsedPercent(for: "seeded") == 18)
+        #expect(titles.contextUsedPercent(for: "both") == 92)
+    }
+
     @Test @MainActor func registrySurvivesParentDeleteAndRecreate() throws {
         // Regression (review on #83): deleting ~/.claude cleared only the
         // payload watcher, leaving the registry watcher bound to the dead

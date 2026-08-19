@@ -45,6 +45,7 @@ final class StatuslineDirectory {
     private(set) var contextUsedPercent: [String: Double] = [:]
     private let directory: URL
     private let registryDirectory: URL
+    private let replayDirectory: URL
     private let sources: [URL]
     private var watcher: DirectoryWatcher?
     private var watchedInode: UInt64?
@@ -63,6 +64,14 @@ final class StatuslineDirectory {
     init(directory: URL = defaultDirectory, capture: URL = SessionStore.claudeStatuslineURL) {
         self.directory = directory
         registryDirectory = directory.appendingPathComponent("sessions")
+        // Beside the capture, so a fixture that redirects the capture gets a
+        // replay directory inside its own sandbox and a test can never read
+        // the real one. On a live machine this directory does not exist and
+        // costs one failed stat per refresh; the docs fixture uses it to seed
+        // the readings that a live machine accumulates across repaints, which
+        // a one-shot render never sees happen.
+        replayDirectory =
+            capture.deletingLastPathComponent().appendingPathComponent("statusline-replay")
         // Read in order, so the last one wins for a session both describe. The
         // capture goes last because it is the one we know is current: a
         // `statusline-last.json` can be a leftover from a tee the user has since
@@ -138,6 +147,22 @@ final class StatuslineDirectory {
     }
 
     func absorbLatest() {
+        // Replay first, in filename order, so anything a live source says
+        // about the same session wins over the seeded value.
+        let replayFiles =
+            ((try? FileManager.default.contentsOfDirectory(
+                at: replayDirectory, includingPropertiesForKeys: nil)) ?? [])
+            .filter { $0.pathExtension == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+        for url in replayFiles {
+            guard let data = try? Data(contentsOf: url), let entry = Self.parse(data) else {
+                continue
+            }
+            if let name = entry.name { titles[entry.sessionId] = name }
+            if let used = entry.contextUsedPercent {
+                contextUsedPercent[entry.sessionId] = used
+            }
+        }
         for url in sources {
             guard let data = try? Data(contentsOf: url), let entry = Self.parse(data) else {
                 continue
