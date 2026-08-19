@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Agent Tracker, the Claude Code session monitor for your menu bar</title>
   <meta name="description" content="A macOS menu bar app that shows which of your Claude Code sessions needs you, with click-to-focus that jumps to the right terminal.">
-  <link rel="icon" href="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/icon.png">
+  <link rel="icon" href="./assets/icon.png">
   <meta property="og:title" content="Agent Tracker">
   <meta property="og:description" content="Know which Claude Code session needs you, without hunting through terminals.">
-  <meta property="og:image" content="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/dropdown-light.png">
+  <meta property="og:image" content="https://thinkvelta.github.io/agent-tracker/assets/dropdown-light.png">
   <style>
     :root {
       --bg: #ffffff;
@@ -103,10 +103,9 @@
 
     <div class="hero-shot">
       <picture>
-        <source media="(prefers-color-scheme: dark)"
-          srcset="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/dropdown-dark.png">
+        <source media="(prefers-color-scheme: dark)" srcset="./assets/dropdown-dark.png">
         <img alt="The Agent Tracker dropdown, listing Claude Code sessions grouped by state"
-          src="https://raw.githubusercontent.com/ThinkVelta/agent-tracker/main/assets/dropdown-light.png">
+          src="./assets/dropdown-light.png">
       </picture>
     </div>
 
@@ -131,17 +130,20 @@ brew install --cask agent-tracker</pre>
   </footer>
 
   <script>
-    // Stamp the live version and point the button at the exact asset. The
-    // static href above (the releases page) is the no-JS/API-down fallback;
-    // releases/latest/download/AgentTracker.zip is the stable direct link
-    // published alongside every release from v0.3.3 on.
+    // Stamp the live version and point the button at the exact asset,
+    // preferring the version-stable name so the versioned pattern is only a
+    // compatibility fallback. The static href above (the releases page) is
+    // the no-JS/API-down fallback; it stays the releases page rather than
+    // releases/latest/download/AgentTracker.zip because that stable asset
+    // only exists from the first release published after this page.
     fetch("https://api.github.com/repos/ThinkVelta/agent-tracker/releases/latest")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (release) {
         if (!release) return;
-        var asset = (release.assets || []).find(function (a) {
-          return /^AgentTracker-.*\.zip$/.test(a.name);
-        });
+        var assets = release.assets || [];
+        var asset =
+          assets.find(function (a) { return a.name === "AgentTracker.zip"; }) ||
+          assets.find(function (a) { return /^AgentTracker-.*\.zip$/.test(a.name); });
         if (asset) document.getElementById("download").href = asset.browser_download_url;
         if (release.tag_name) document.getElementById("version").textContent = release.tag_name;
       })
