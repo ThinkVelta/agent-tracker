@@ -220,9 +220,12 @@ def ask_statusline():
         answer = input(bold("Capture the usage windows?") + " [Y/n] ")
     except EOFError:
         return False
-    # Enter means yes; anything unrecognized stays no, so a mistyped answer
-    # cannot claim the statusLine slot by accident.
-    return answer.strip().lower() in ("", "y", "yes")
+    # Plain Enter means yes; anything else unrecognized stays no, including
+    # whitespace-only input, so a mistyped answer cannot claim the statusLine
+    # slot by accident.
+    if answer == "":
+        return True
+    return answer.strip().lower() in ("y", "yes")
 
 
 def show_plan(selected, statusline=False):
