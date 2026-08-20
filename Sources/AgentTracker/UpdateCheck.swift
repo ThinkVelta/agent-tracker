@@ -10,9 +10,19 @@ enum UpdateCheck {
     static let releasesPage = URL(
         string: "https://github.com/ThinkVelta/agent-tracker/releases")!
 
+    /// One release, as much of it as the payload offered. `zip`/`digest` are
+    /// nil when the assets are missing or fail `Updater.isPinned` — the check
+    /// still reports the version, and installing is simply not offered.
+    struct Release: Equatable {
+        let tag: String
+        let page: URL
+        let zip: URL?
+        let digest: URL?
+    }
+
     enum Outcome: Equatable {
         case upToDate
-        case updateAvailable(version: String, url: URL)
+        case updateAvailable(Release)
         /// The repo has no published releases — true today; say so rather
         /// than pretending "up to date" means something.
         case noReleases
@@ -51,13 +61,39 @@ enum UpdateCheck {
         return false
     }
 
-    /// Extracts (tag, html page) from a GitHub "latest release" payload.
-    static func parseRelease(_ data: Data) -> (tag: String, url: URL)? {
+    /// Extracts the release from a GitHub "latest release" payload. The
+    /// versioned zip is chosen over the stable-named `AgentTracker.zip`
+    /// because the digest file is published under the versioned name, and a
+    /// digest for a different filename verifies nothing. Asset URLs that fail
+    /// the pin are dropped rather than failing the parse: the *check* is
+    /// trustworthy from the tag alone, only *installing* needs the assets.
+    static func parseRelease(_ data: Data) -> Release? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let tag = object["tag_name"] as? String, !tag.isEmpty
         else { return nil }
         let page = (object["html_url"] as? String).flatMap(URL.init(string:)) ?? releasesPage
-        return (tag, page)
+
+        var zip: URL?
+        var digest: URL?
+        let assets = object["assets"] as? [[String: Any]] ?? []
+        let named: [(name: String, url: URL)] = assets.compactMap { asset in
+            guard let name = asset["name"] as? String,
+                let url = (asset["browser_download_url"] as? String).flatMap(URL.init(string:)),
+                Updater.isPinned(url)
+            else { return nil }
+            return (name, url)
+        }
+        // The exact name this repo's releases publish for this tag, nothing
+        // broader: a first-match pattern would make installability depend on
+        // asset order the moment a release carried a second matching zip.
+        let normalized =
+            tag.hasPrefix("v") || tag.hasPrefix("V") ? String(tag.dropFirst()) : tag
+        let expected = "AgentTracker-\(normalized).zip"
+        if let archive = named.first(where: { $0.name == expected }) {
+            zip = archive.url
+            digest = named.first(where: { $0.name == expected + ".sha256" })?.url
+        }
+        return Release(tag: tag, page: page, zip: zip, digest: digest)
     }
 
     static func check(currentVersion: String) async -> Outcome {
@@ -72,7 +108,7 @@ enum UpdateCheck {
             guard http.statusCode == 200 else { return .failed("HTTP \(http.statusCode)") }
             guard let release = parseRelease(data) else { return .failed("unrecognized payload") }
             return isNewer(release.tag, than: currentVersion)
-                ? .updateAvailable(version: release.tag, url: release.url)
+                ? .updateAvailable(release)
                 : .upToDate
         } catch {
             return .failed(error.localizedDescription)
