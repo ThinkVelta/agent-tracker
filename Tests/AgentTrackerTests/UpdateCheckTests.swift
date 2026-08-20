@@ -107,6 +107,18 @@ final class UpdateCheckTests {
         }
     }
 
+    /// Exact-name selection: decoys cannot make installability depend on
+    /// asset order, whichever side of the real archive they land on.
+    @Test func decoyArchivesAreIgnoredWhereverTheySit() {
+        let release = UpdateCheck.parseRelease(
+            payload(assets: [
+                ("AgentTracker-debug.zip", "\(pinnedBase)/AgentTracker-debug.zip"),
+                ("AgentTracker-9.9.9.zip", "\(pinnedBase)/AgentTracker-9.9.9.zip"),
+                ("AgentTracker-10.0.0.zip", "\(pinnedBase)/AgentTracker-10.0.0.zip"),
+            ]))
+        #expect(release?.zip?.lastPathComponent == "AgentTracker-9.9.9.zip")
+    }
+
     @Test func aDigestForADifferentArchiveIsNotAdopted() {
         let release = UpdateCheck.parseRelease(
             payload(assets: [

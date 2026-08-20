@@ -117,25 +117,40 @@ struct UpdaterTests {
 
     // MARK: - Install source
 
-    @Test func aCaskroomDirectoryMeansHomebrew() {
-        let source = InstallSource.detect(isBundled: true) {
+    private let managed = InstallSource.homebrewManagedBundlePath
+
+    @Test func aCaskroomEntryPlusTheManagedPathMeansHomebrew() {
+        let source = InstallSource.detect(isBundled: true, bundlePath: managed) {
             $0 == "/opt/homebrew/Caskroom/agent-tracker"
         }
         #expect(source == .homebrew)
-        let intel = InstallSource.detect(isBundled: true) {
+        let intel = InstallSource.detect(isBundled: true, bundlePath: managed) {
             $0 == "/usr/local/Caskroom/agent-tracker"
         }
         #expect(intel == .homebrew)
     }
 
     @Test func noCaskroomMeansDirect() {
-        #expect(InstallSource.detect(isBundled: true) { _ in false } == .direct)
+        let source = InstallSource.detect(isBundled: true, bundlePath: managed) { _ in false }
+        #expect(source == .direct)
+    }
+
+    /// The Caskroom says brew believes it manages the cask; the bundle path
+    /// says whether THIS copy is the one it manages. A direct copy in
+    /// ~/Applications beside a stale Caskroom entry must self-update rather
+    /// than defer to a brew that does not own it.
+    @Test func aBundleOutsideTheManagedPathIsDirectDespiteACaskroom() {
+        let source = InstallSource.detect(
+            isBundled: true, bundlePath: "/Users/dev/Applications/AgentTracker.app"
+        ) { _ in true }
+        #expect(source == .direct)
     }
 
     /// `swift run` is not an install at all, Caskroom or no Caskroom — a
     /// developer with a brew copy on the side must not have their dev build
     /// told to `brew upgrade`.
     @Test func anUnbundledBuildIsDevelopmentEvenWithACaskroom() {
-        #expect(InstallSource.detect(isBundled: false) { _ in true } == .development)
+        let source = InstallSource.detect(isBundled: false, bundlePath: managed) { _ in true }
+        #expect(source == .development)
     }
 }

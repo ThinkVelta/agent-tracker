@@ -27,18 +27,33 @@ enum InstallSource: Equatable {
         "/usr/local/Caskroom/agent-tracker",
     ]
 
+    /// The one path brew's cask actually manages. The Caskroom holds only
+    /// metadata; the app itself is moved here — so a bundle running from
+    /// anywhere else cannot be the brew-managed copy, however many Caskroom
+    /// entries exist beside it. (A custom --appdir is invisible to an app
+    /// launched from Finder, the same tradeoff as a custom prefix.)
+    static let homebrewManagedBundlePath = "/Applications/AgentTracker.app"
+
     /// Pure given its inputs, so tests cover every combination without a
-    /// Caskroom on the test machine.
+    /// Caskroom on the test machine. Both conditions, deliberately: the
+    /// Caskroom entry says brew believes it manages this cask, and the bundle
+    /// path says this running copy is the one it manages. A direct copy in
+    /// ~/Applications beside a stale Caskroom entry is a direct install.
     static func detect(
         isBundled: Bool,
+        bundlePath: String,
         directoryExists: (String) -> Bool
     ) -> InstallSource {
         guard isBundled else { return .development }
+        guard bundlePath == homebrewManagedBundlePath else { return .direct }
         return caskroomDirectories.contains(where: directoryExists) ? .homebrew : .direct
     }
 
     static var current: InstallSource {
-        detect(isBundled: AppInfo.isBundled) { path in
+        detect(
+            isBundled: AppInfo.isBundled,
+            bundlePath: Bundle.main.bundleURL.resolvingSymlinksInPath().path
+        ) { path in
             var isDirectory: ObjCBool = false
             return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory)
                 && isDirectory.boolValue

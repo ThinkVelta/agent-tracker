@@ -83,11 +83,15 @@ enum UpdateCheck {
             else { return nil }
             return (name, url)
         }
-        if let archive = named.first(where: {
-            $0.name.hasPrefix("AgentTracker-") && $0.name.hasSuffix(".zip")
-        }) {
+        // The exact name this repo's releases publish for this tag, nothing
+        // broader: a first-match pattern would make installability depend on
+        // asset order the moment a release carried a second matching zip.
+        let normalized =
+            tag.hasPrefix("v") || tag.hasPrefix("V") ? String(tag.dropFirst()) : tag
+        let expected = "AgentTracker-\(normalized).zip"
+        if let archive = named.first(where: { $0.name == expected }) {
             zip = archive.url
-            digest = named.first(where: { $0.name == archive.name + ".sha256" })?.url
+            digest = named.first(where: { $0.name == expected + ".sha256" })?.url
         }
         return Release(tag: tag, page: page, zip: zip, digest: digest)
     }
