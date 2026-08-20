@@ -12,6 +12,7 @@ struct MenuContentView: View {
     var onSizeChange: () -> Void = {}
 
     @ObservedObject private var preferences = Preferences.shared
+    @ObservedObject private var updates = UpdateScheduler.shared
     @Environment(\.openSettings) private var openSettings
 
     @State private var searchText = ""
@@ -90,6 +91,10 @@ struct MenuContentView: View {
             Divider()
             if !TerminalFocuser.hasAccessibilityPermission {
                 permissionBanner
+                Divider()
+            }
+            if let release = updates.available {
+                UpdateBanner(release: release) { openSettings() }
                 Divider()
             }
             if store.sessions.isEmpty {

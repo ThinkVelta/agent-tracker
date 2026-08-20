@@ -84,8 +84,15 @@ Accessibility, connecting Claude Code, and starting at login.
 > highlights **Move to Trash**. Click **Done** instead, then allow the app
 > under **System Settings › Privacy & Security › Open Anyway**.
 
-Settings › About checks for newer releases, when you press the button. There is
-no auto-updater, and nothing phones home on its own.
+The app checks for newer releases once at launch and once a day. Finding one
+shows a line in the dropdown, and posts a notification when banners are
+allowed. That check is a single request to the GitHub
+releases API and the only unprompted network activity in the app; Settings ›
+About turns it off, houses the manual check, and offers the install. Nothing
+installs without you. Installing by hand verifies the release's own digest and
+the Developer ID signature before swapping the app; you can also opt in to
+installing automatically at launch. A Homebrew install is recognized and left
+to `brew upgrade`.
 
 Agent Tracker asks for up to three macOS permissions (Accessibility for
 click-to-focus, Automation for writing into a Ghostty window, Notifications
@@ -311,12 +318,14 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
 - [x] Homebrew tap: `brew install --cask agent-tracker`
 - [x] **Scheduled continues**. Arm any session, from the clock on its row, to
       type a line at a chosen moment; a usage-limited session anchors to the
-      reset Claude reports. Claude
-      Code. Off by default (Settings › General). See below.
+      reset Claude reports. Off by default (Settings › General). See below.
 - [x] **Notifications** when a session flips to needs-you. Opt-in; click
       jumps to that terminal (Settings › Sessions). See below.
 - [x] Onboarding: install as .app + login item
 - [x] Downloadable releases, signed so the Accessibility grant survives an update
+- [x] **Updates that install themselves**, for direct downloads: daily check
+      (on by default), digest and signature verified before the swap,
+      automatic install opt-in. Homebrew installs defer to `brew upgrade`
 
 ## Support this project
 

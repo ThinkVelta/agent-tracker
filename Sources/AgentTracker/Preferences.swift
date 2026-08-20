@@ -173,6 +173,23 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(scheduledContinues, forKey: Keys.scheduledContinues) }
     }
 
+    // MARK: - Updates
+
+    /// One GitHub API request at launch and daily. On by default because the
+    /// result is a notification, not an action — and the README names this as
+    /// the app's only unprompted network request, so changing what it does
+    /// means changing that sentence too.
+    @Published var updateChecksAutomatically: Bool {
+        didSet { defaults.set(updateChecksAutomatically, forKey: Keys.updateChecks) }
+    }
+
+    /// Install what the launch-time check finds, without asking. Off by
+    /// default: it swaps the running app. Meaningless (and ignored) for
+    /// Homebrew installs, which `brew upgrade` owns.
+    @Published var updateInstallsAutomatically: Bool {
+        didSet { defaults.set(updateInstallsAutomatically, forKey: Keys.updateInstalls) }
+    }
+
     // MARK: - Quit confirmation
 
     /// Ask before quitting from the panel's power button. Turned off by the
@@ -195,6 +212,8 @@ final class Preferences: ObservableObject {
         static let attentionCue = "attentionCue"
         static let notifyNeedsYou = "notifyNeedsYou"
         static let scheduledContinues = "scheduledContinues"
+        static let updateChecks = "updateChecksAutomatically"
+        static let updateInstalls = "updateInstallsAutomatically"
     }
 
     /// The mode 0.1.0 stored when monochrome was one of the icon modes rather
@@ -263,5 +282,9 @@ final class Preferences: ObservableObject {
         attentionCue = defaults.object(forKey: Keys.attentionCue) as? Bool ?? true
         notifyNeedsYou = defaults.object(forKey: Keys.notifyNeedsYou) as? Bool ?? false
         scheduledContinues = defaults.object(forKey: Keys.scheduledContinues) as? Bool ?? false
+        updateChecksAutomatically =
+            defaults.object(forKey: Keys.updateChecks) as? Bool ?? true
+        updateInstallsAutomatically =
+            defaults.object(forKey: Keys.updateInstalls) as? Bool ?? false
     }
 }

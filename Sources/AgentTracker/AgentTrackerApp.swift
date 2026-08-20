@@ -70,6 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setUpStatusItem(for: store)
         focusObserver = TerminalFocusObserver(store: store)
         showOnboardingIfNeeded()
+        // After everything the update could interrupt is set up: the launch
+        // check may (opt-in) install and relaunch on the spot.
+        UpdateScheduler.shared.start()
 
         // Debug utility: `--show-panel` opens the dropdown at launch, so
         // panel chrome (radius, material, position) can be screenshotted
