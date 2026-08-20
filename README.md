@@ -223,9 +223,11 @@ and how writing into a terminal is gated.
 
 ## Scheduled continues
 
-A session that stops on a usage limit can be armed, from the clock on its row, to
-resume itself when the window resets. The moment comes from Claude's own
-reporting, never from a guess.
+Any session can be armed, from the clock on its row, to have a line typed into
+its terminal at a chosen moment. A session that stopped on a usage limit
+anchors to the reset Claude itself reports, never to a guess; every other
+session takes a time you pick. The send waits until the session sits at a
+finished turn, so scheduling a running one is safe.
 
 **Off by default.** It is the only thing this app does that acts on a session
 rather than reporting on one, so it has its own switch in Settings › General.
@@ -307,8 +309,9 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
       signed, which keeps your Accessibility grant across updates, and
       notarized, which is why Gatekeeper opens them without asking
 - [x] Homebrew tap: `brew install --cask agent-tracker`
-- [x] **Scheduled continues**. Arm a session that stopped on a usage limit
-      to resume itself when the window resets, from the clock on its row. Claude
+- [x] **Scheduled continues**. Arm any session, from the clock on its row, to
+      type a line at a chosen moment; a usage-limited session anchors to the
+      reset Claude reports. Claude
       Code. Off by default (Settings › General). See below.
 - [x] **Notifications** when a session flips to needs-you. Opt-in; click
       jumps to that terminal (Settings › Sessions). See below.
