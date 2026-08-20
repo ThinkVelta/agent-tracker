@@ -524,15 +524,21 @@ private struct AdvancedSettingsTab: View {
 
 // MARK: - About
 
-/// The app's identity page: what this is, whose it is, how to reach it.
-/// Nothing here changes behaviour — those controls live in the tabs before it.
+/// The app's identity page: what this is, whose it is, how to reach it —
+/// plus updates, which live here because the version they act on is the line
+/// above them.
 private struct AboutSettingsTab: View {
+    @ObservedObject private var preferences = Preferences.shared
     @State private var updateState: UpdateState = .idle
+    /// Read once per appearance rather than per render: it stats the Caskroom.
+    @State private var installSource: InstallSource = .development
 
     private enum UpdateState: Equatable {
         case idle
         case checking
         case done(UpdateCheck.Outcome)
+        case installing
+        case installFailed(String)
     }
 
     var body: some View {
@@ -542,7 +548,31 @@ private struct AboutSettingsTab: View {
                 SettingsRow(title: "Updates", detail: updateDetail) {
                     updateAccessory
                 }
+                SettingsRow(
+                    title: "Check automatically",
+                    detail: "Once at launch and daily, a single GitHub API request "
+                        + "each time. Finding one shows in the menu, and posts a "
+                        + "notification when banners are allowed. Nothing installs "
+                        + "by itself.",
+                    divided: true
+                ) {
+                    Toggle("", isOn: $preferences.updateChecksAutomatically)
+                        .labelsHidden()
+                }
+                if installSource == .direct {
+                    SettingsRow(
+                        title: "Install automatically",
+                        detail: "Install what the launch-time check finds, then relaunch. "
+                            + "Updates found while running still only notify.",
+                        divided: true
+                    ) {
+                        Toggle("", isOn: $preferences.updateInstallsAutomatically)
+                            .labelsHidden()
+                            .disabled(!preferences.updateChecksAutomatically)
+                    }
+                }
             }
+            .onAppear { installSource = InstallSource.current }
             credits
         }
         .padding(20)
@@ -604,22 +634,50 @@ private struct AboutSettingsTab: View {
 
     private var updateDetail: String {
         switch updateState {
-        case .idle: return "Checks the GitHub releases page. Nothing runs in the background."
+        case .idle: return "Checks the GitHub releases page."
         case .checking: return "Checking…"
         case .done(.upToDate): return "You're on the latest release."
-        case .done(.updateAvailable(let version, _)): return "\(version) is available."
-        case .done(.noReleases): return "No releases published yet — you're ahead of them."
+        case .done(.updateAvailable(let release)):
+            switch installSource {
+            case .homebrew:
+                return "\(release.tag) is available. This install is Homebrew's; "
+                    + "update with brew upgrade --cask agent-tracker"
+            case .direct:
+                return release.zip == nil
+                    ? "\(release.tag) is available."
+                    : "\(release.tag) is available. Installing verifies the digest and "
+                        + "signature, swaps the app, and relaunches."
+            case .development:
+                return "\(release.tag) is available."
+            }
+        case .done(.noReleases): return "No releases published yet; you're ahead of them."
         case .done(.failed(let reason)): return "Check failed: \(reason)"
+        case .installing: return "Downloading and verifying…"
+        case .installFailed(let reason): return reason
         }
     }
 
     @ViewBuilder
     private var updateAccessory: some View {
         switch updateState {
-        case .checking:
+        case .checking, .installing:
             ProgressView().controlSize(.small)
-        case .done(.updateAvailable(_, let url)):
-            Link("View release", destination: url)
+        case .done(.updateAvailable(let release)):
+            if installSource == .direct, release.zip != nil {
+                Button("Install Update") {
+                    updateState = .installing
+                    Task {
+                        switch await Updater.downloadAndInstall(release) {
+                        case .installed:
+                            Updater.relaunch()
+                        case .failed(let reason):
+                            updateState = .installFailed(reason)
+                        }
+                    }
+                }
+            } else {
+                Link("View release", destination: release.page)
+            }
         default:
             Button("Check for Updates") {
                 updateState = .checking
