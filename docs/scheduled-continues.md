@@ -1,10 +1,15 @@
 # Scheduled continues
 
-A session that stops on a usage limit can be armed, from the clock on its row,
-to resume itself when the window resets. The moment comes from Claude's own
-reporting, never from a guess. **Off by default** — it is the
-only thing this app does that acts on a session rather than reporting on one, so
-it has its own switch in Settings › General.
+Any session can be armed, from the clock on its row, to have a line typed into
+its terminal at a chosen moment. The moment is anchored one of two ways. A
+session that stopped on a usage limit anchors to the reset Claude itself
+reports, never to a guess, and can repeat at the next window. Every other
+session takes a time you pick, fires at that instant exactly, and runs once.
+Either way the send waits until the session is sitting at a finished turn, so
+scheduling a running session is safe and simply queues the message as its next
+input. **Off by default** because it is the
+only thing this app does that acts on a session rather than reporting on one,
+so it has its own switch in Settings › General.
 
 Arming requests **up to two** macOS permissions — how many depends on where the
 session lives, and neither is a hard requirement:

@@ -22,6 +22,20 @@ struct ScheduledContinue: Equatable, Codable {
     var repeats: Bool
     /// Send anyway when the machine wakes to find the moment already past.
     var sendsOnWake: Bool
+    /// What the moment in `armedForResetAt` is anchored to. `nil` (every
+    /// record written before clock schedules existed) means `.reset`.
+    ///
+    /// A reset-anchored schedule tracks the provider: its moment refines as
+    /// later readings arrive, fires wait out a safety pad past the reset, and
+    /// `repeats` re-arms against the next observed window. A clock-anchored
+    /// moment is the user's own choice: it fires at that instant exactly,
+    /// never moves, and cannot repeat, because there is no observable event
+    /// to repeat against.
+    var anchor: Anchor?
+
+    enum Anchor: String, Codable { case reset, clock }
+
+    var isClockAnchored: Bool { anchor == .clock }
     /// No moment at or before this instant is owed anything any more.
     ///
     /// One field rather than a `(firedAt, dueAt, state)` trio that can disagree.
@@ -50,6 +64,7 @@ struct ScheduledContinue: Equatable, Codable {
         armedForResetAt: Date,
         repeats: Bool = false,
         sendsOnWake: Bool = true,
+        anchor: Anchor? = nil,
         settledThrough: Date? = nil,
         target: ContinueDelivery.Target? = nil,
         tmuxTarget: ContinueDelivery.TmuxTarget? = nil,
@@ -60,6 +75,7 @@ struct ScheduledContinue: Equatable, Codable {
         self.armedForResetAt = armedForResetAt
         self.repeats = repeats
         self.sendsOnWake = sendsOnWake
+        self.anchor = anchor
         self.settledThrough = settledThrough
         self.target = target
         self.tmuxTarget = tmuxTarget
@@ -219,8 +235,12 @@ enum ContinueScheduler {
 
     /// Whether a row can be armed, and if not, what to tell the user. The reason
     /// is the whole self-discoverability point, so there is always one.
+    ///
+    /// `resetsAt` rides along when this session is the one waiting on a usage
+    /// limit: it anchors the schedule to the provider's own reset. Without one
+    /// the row is still armable, at a moment the user picks.
     enum Availability: Equatable {
-        case available(resetsAt: Date)
+        case available(resetsAt: Date?)
         case unavailable(reason: String)
 
         var resetsAt: Date? {
@@ -234,15 +254,14 @@ enum ContinueScheduler {
         }
     }
 
-    /// Gated on the same condition that makes a row say "Usage limit reached":
-    /// `AccountLimits` is not published, so the only thing that redraws a row
-    /// when a limit appears or expires is `sessions` republishing. Tying arming
-    /// to that predicate makes the armable row and the redrawn row the same row.
+    /// Every row is armable while the feature is on; what varies is the anchor.
     ///
-    /// Keyed **per session**, not per provider. A usage limit is account-wide, so
-    /// a provider-keyed lookup would offer the clock on every Claude row the
-    /// moment any one of them was blocked — including rows that are running, or
-    /// sitting at a permission prompt.
+    /// Keyed **per session**, not per provider. A usage limit is account-wide,
+    /// so a provider-keyed lookup would hand a reset anchor to every Claude row
+    /// the moment any one of them was blocked — including rows that are
+    /// running, or sitting at a permission prompt. Those rows are still
+    /// armable, just at a time the user picks rather than at a reset that is
+    /// not theirs.
     static func availability(
         for session: AgentSession,
         armableResetBySession: [String: Date],
@@ -251,10 +270,7 @@ enum ContinueScheduler {
         guard enabled else {
             return .unavailable(reason: "Turn on scheduled continues in Settings")
         }
-        guard let moment = armableResetBySession[session.sessionId] else {
-            return .unavailable(reason: "Available once this session is waiting on a usage limit")
-        }
-        return .available(resetsAt: moment)
+        return .available(resetsAt: armableResetBySession[session.sessionId])
     }
 
     /// A message safe to hand to a terminal later: one line, trimmed, bounded.
@@ -317,8 +333,11 @@ enum ContinueScheduler {
             let observed = pass.blockingReset
 
             if schedule.isSettled {
-                // A one-shot is done; the record goes.
-                guard schedule.repeats else { continue }
+                // A one-shot is done; the record goes. Clock-anchored schedules
+                // are always one-shots — there is no observable event to
+                // re-arm against — so a repeat flag on one (hand-edited, or an
+                // older build) is ignored rather than honoured.
+                guard schedule.repeats, !schedule.isClockAnchored else { continue }
                 // Repeating: re-arm only when a genuinely later window is
                 // observed. Within the tolerance it is the same reset we already
                 // fired for, which would otherwise fire again immediately.
@@ -337,14 +356,22 @@ enum ContinueScheduler {
             // keeps the later of two near-identical resets, so the stored
             // instant can legitimately move a little after arming, and a
             // schedule frozen at arm time would fire before the reset happened.
-            if let observed,
+            // Never for a clock anchor: that moment is the user's, and no
+            // provider reading has any business moving it.
+            if !schedule.isClockAnchored,
+                let observed,
                 abs(observed.timeIntervalSince(schedule.armedForResetAt)) <= punctualTolerance,
                 observed > schedule.armedForResetAt
             {
                 schedule.armedForResetAt = observed
             }
 
-            let fireAt = schedule.armedForResetAt.addingTimeInterval(resetSafetyPad)
+            // The pad exists because a reset reading is an estimate of the
+            // provider's clock; a user-picked moment is exact by definition.
+            let fireAt =
+                schedule.isClockAnchored
+                ? schedule.armedForResetAt
+                : schedule.armedForResetAt.addingTimeInterval(resetSafetyPad)
             guard pass.now >= fireAt else {
                 considerWakeUp(fireAt)
                 kept.append(schedule)
@@ -361,8 +388,9 @@ enum ContinueScheduler {
                 note(
                     schedule.sessionId,
                     .skipped(
-                        reason: "\(Int(late / 3600))h past the reset — beyond the "
-                            + "\(Int(maximumLateness / 3600))h limit"))
+                        reason: "\(Int(late / 3600))h past the "
+                            + (schedule.isClockAnchored ? "scheduled time" : "reset")
+                            + " — beyond the \(Int(maximumLateness / 3600))h limit"))
                 if schedule.repeats { kept.append(schedule) }
                 continue
             }
