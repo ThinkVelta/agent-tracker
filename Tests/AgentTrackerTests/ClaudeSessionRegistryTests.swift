@@ -91,6 +91,23 @@ final class ClaudeSessionRegistryTests {
         #expect(text?.statusUpdatedAt == nil)
     }
 
+    // MARK: - Name precedence at the store seam
+
+    /// The precedence the click-to-focus fix established, kept testable after
+    /// the two registry readers became one: a rename lands in the registry
+    /// immediately, while a stale statusline capture can keep replaying the
+    /// old name for as long as that session stays the file's last writer.
+    @Test func theRegistryNameBeatsAStaleStatuslineTitle() {
+        #expect(
+            SessionStore.coalescedWindowTitle(
+                registryName: "renamed", statuslineTitle: "stale") == "renamed")
+        #expect(
+            SessionStore.coalescedWindowTitle(
+                registryName: nil, statuslineTitle: "older claude") == "older claude")
+        #expect(
+            SessionStore.coalescedWindowTitle(registryName: nil, statuslineTitle: nil) == nil)
+    }
+
     // MARK: - Directory loading
 
     @MainActor
@@ -161,5 +178,53 @@ final class ClaudeSessionRegistryTests {
         // No name at all is not a chosen name.
         let unnamed = ClaudeSessionRegistry.parse(Data(#"{"sessionId":"s4"}"#.utf8))
         #expect(unnamed?.nameIsChosen == false)
+    }
+
+    // MARK: - Directory lifecycle, same rules as the payload watcher
+
+    @MainActor private func makeClaudeDirectory() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-registry-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @MainActor private func writeEntry(_ id: String, pid: Int, in claudeRoot: URL) throws {
+        let sessions = claudeRoot.appendingPathComponent("sessions")
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        try #"{"sessionId":"\#(id)","pid":\#(pid),"name":"\#(id)-name"}"#.write(
+            to: sessions.appendingPathComponent("\(pid).json"),
+            atomically: true, encoding: .utf8)
+    }
+
+    /// Regression, ported from the retired second reader: the registry is
+    /// created by Claude's first session, which can start after the app, and
+    /// refresh() (driven by the store's reload tick) must pick it up.
+    @Test @MainActor func recoversWhenTheRegistryAppearsAfterInit() throws {
+        let root = try makeClaudeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registry = ClaudeSessionRegistry(claudeDirectory: root)
+        #expect(registry.entry(forSessionId: "late") == nil)
+
+        try writeEntry("late", pid: Int(ProcessInfo.processInfo.processIdentifier), in: root)
+        registry.refresh()
+        #expect(registry.entry(forSessionId: "late")?.name == "late-name")
+    }
+
+    /// Regression, same origin: deleting and recreating the directory leaves
+    /// a watcher bound to the dead inode, and refresh() must re-arm and read.
+    @Test @MainActor func survivesRegistryDeleteAndRecreate() throws {
+        let root = try makeClaudeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try writeEntry(
+            "before", pid: Int(ProcessInfo.processInfo.processIdentifier), in: root)
+        let registry = ClaudeSessionRegistry(claudeDirectory: root)
+        #expect(registry.entry(forSessionId: "before") != nil)
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("sessions"))
+        registry.refresh()
+        try writeEntry("after", pid: Int(ProcessInfo.processInfo.processIdentifier), in: root)
+        registry.refresh()
+        #expect(registry.entry(forSessionId: "after")?.name == "after-name")
     }
 }
