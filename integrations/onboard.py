@@ -291,7 +291,7 @@ def run_installer(agent, statusline=False):
 def print_outro():
     print()
     print(bold("All set; next steps:"))
-    print(f"  1. {bold('swift run AgentTracker')}; starts the menu bar app.")
+    print(f"  1. {bold('swift run AgentTracker')} (starts the menu bar app).")
     print("  2. On your first click-to-focus, macOS asks you to grant the app")
     print("     Accessibility permission.")
     print(
