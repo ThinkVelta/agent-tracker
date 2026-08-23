@@ -1,7 +1,7 @@
 # Permissions
 
-Three macOS grants. They do not group neatly, so here they are plainly — what
-each is for, and what asks for it:
+Three macOS grants. They do not group neatly, so here they are plainly, with what
+each is for and what asks for it:
 
 | Grant | Needed for | Without it |
 | --- | --- | --- |
@@ -52,7 +52,7 @@ first request can take a long time. macOS's preflight was measured taking **over
 100 seconds** for an app that is running but not yet granted, and that wait lands
 in front of whatever you were trying to do.
 
-The prompt is only ever raised at a moment you are present for — arming a
+The prompt is only ever raised at a moment you are present for; arming a
 schedule, or renaming. It is never raised while a schedule is firing: a dialog
 appearing at 04:00 would sit unanswered and block the very delivery it was meant
 to authorise.
@@ -61,7 +61,7 @@ to authorise.
 
 A session running inside `tmux` is addressed entirely differently. The pane
 reports its own id and tty, the hook records both when the session starts, and
-delivery talks to the tmux server directly — so **no Automation grant is
+delivery talks to the tmux server directly, so **no Automation grant is
 involved, and nothing is matched by window title**.
 
 That also removes the whole class of "cannot tell which window is yours"
@@ -75,12 +75,12 @@ For two things, which is worth knowing because the second can surprise you:
 - **The banner when a session flips to needing you.** **Off by default**: the menu
   bar is the passive channel this app was built to be, and a notification is the
   most intrusive thing it could do. Turn it on in Settings › Sessions.
-- **Receipts from a scheduled continue** — a send, or a failure that left text on
+- **Receipts from a scheduled continue**: a send, or a failure that left text on
   a prompt.
 
 So the permission is requested from **either** of two places: enabling the
 banners, or arming your first scheduled continue. Arming asks even if you never
-turned the banners on, deliberately — a feature that types into a terminal while
+turned the banners on, deliberately; a feature that types into a terminal while
 you are asleep should not also be silent about having done it.
 
 Declining costs you the announcement and nothing else in both cases. Deliveries

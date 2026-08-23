@@ -191,7 +191,7 @@ struct MenuContentView: View {
                 // entry does nothing — it must be removed and re-added.
                 Text(
                     "Grant it in Settings. Already listed? Remove AgentTracker "
-                        + "with − and add it again — a rebuilt app invalidates its old grant."
+                        + "with − and add it again; a rebuilt app invalidates its old grant."
                 )
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
@@ -237,7 +237,7 @@ struct MenuContentView: View {
                     (pinnedRows.count - visiblePinnedRows.count)
                     + sections.reduce(0) { $0 + $1.hiddenByBudget }
                 if hidden > 0 {
-                    Text("+\(hidden) more — narrow down with the tiles or search")
+                    Text("+\(hidden) more; narrow down with the tiles or search")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)

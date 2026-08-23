@@ -15,7 +15,7 @@ mid-click is not a thing to build.
 
 ## What it does, precisely
 
-It is **surgical rather than wholesale**: it edits your config files at the level
+It is **surgical rather than wholesale**; it edits your config files at the level
 of individual entries so that anything else in them survives.
 
 - **Removes the Agent Tracker hooks** from `~/.claude/settings.json`, at
@@ -30,10 +30,10 @@ of individual entries so that anything else in them survives.
   `~/Applications`, warning rather than failing if it cannot. Removing the bundle
   also drops its start-at-login registration, because launchd discards a login
   item whose bundle is gone.
-- **Removes your preferences** — the `com.thinkvelta.agent-tracker` defaults
+- **Removes your preferences**: the `com.thinkvelta.agent-tracker` defaults
   domain, which holds the onboarding-completed flag and every Settings choice.
 
-Each section is independent, on purpose: a config file that has become
+Each section is independent, on purpose; a config file that has become
 unparseable in one place never blocks the others from being cleaned.
 
 ## Session data is kept unless you ask
@@ -41,8 +41,8 @@ unparseable in one place never blocks the others from being cleaned.
 `~/.agent-tracker` holds the installed hook scripts and one JSON file per
 session. It survives a plain uninstall and is removed by `--purge`.
 
-Nothing in there is precious — session files are rewritten constantly and pruned
-when their process ends — but removing a directory is not this script's decision
+Nothing in there is precious (session files are rewritten constantly and pruned
+when their process ends), but removing a directory is not this script's decision
 to make silently.
 
 ## It also cleans up Codex
@@ -54,7 +54,7 @@ Codex.
 That is deliberate rather than leftover, and it applies to more people than it
 sounds: Codex support was removed on 2026-08-10, *after* v0.2.0 was released on
 2026-08-03. So **every released version so far installed those hooks**. Dropping
-the cleanup would strand them on every machine that has ever run this — pointing
+the cleanup would strand them on every machine that has ever run this, pointing
 at a script the same uninstall has just deleted.
 
 Removing what we once installed is a different question from what we install
@@ -77,7 +77,7 @@ An empty hook list, and a `statusLine` that is either your own or absent.
 ## Reinstalling later
 
 `./install.sh` puts everything back and is likewise idempotent. Note that
-**already-running Claude sessions do not pick up hooks** — they read their hook
+**already-running Claude sessions do not pick up hooks**; they read their hook
 configuration at startup, so they will not appear until they restart. That is the
 most common reason a fresh install looks like it did nothing; see
 [troubleshooting](troubleshooting.md).

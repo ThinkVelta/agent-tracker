@@ -114,7 +114,7 @@ final class TerminalFocusObserver {
             winner.state == .needsYou
         else { return }
         DebugLog.log(
-            "[auto-ack] \(DebugLog.timestamp()) dwelled on \"\(windowTitle)\" — "
+            "[auto-ack] \(DebugLog.timestamp()) dwelled on \"\(windowTitle)\"; "
                 + "acknowledging \(winner.projectName)")
         store.acknowledge(winner)
     }

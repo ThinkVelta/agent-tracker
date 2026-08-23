@@ -44,7 +44,7 @@ enum RegistryEnrichment {
         case .needsYou:
             // Claude's own phrasing, which is more specific than anything that
             // could be inferred here ("input needed", "sandbox request", …).
-            return entry.waitingFor.map { "Waiting on you — \($0)" } ?? "Needs your attention"
+            return entry.waitingFor.map { "Waiting on you, \($0)" } ?? "Needs your attention"
         case .idle:
             return "Idle at prompt"
         }

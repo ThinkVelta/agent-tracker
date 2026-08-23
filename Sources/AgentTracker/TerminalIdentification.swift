@@ -99,7 +99,7 @@ enum TerminalIdentification {
             }
             log("session reports \(bundleID), which is not running")
         case .multiplexer:
-            log("session runs under a terminal multiplexer — its host window is not derivable")
+            log("session runs under a terminal multiplexer; its host window is not derivable")
         case .unknown:
             break
         }
@@ -112,7 +112,7 @@ enum TerminalIdentification {
         if running.count > 1 {
             log(
                 "\(running.count) terminal apps are running and none is identifiable as this "
-                    + "session's — refusing to guess")
+                    + "session's; refusing to guess")
         }
         return nil
     }

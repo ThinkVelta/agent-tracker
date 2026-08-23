@@ -11,7 +11,7 @@ input. **Off by default** because it is the
 only thing this app does that acts on a session rather than reporting on one,
 so it has its own switch in Settings › General.
 
-Arming requests **up to two** macOS permissions — how many depends on where the
+Arming requests **up to two** macOS permissions; how many depends on where the
 session lives, and neither is a hard requirement:
 
 - **Automation**, to talk to Ghostty. Requested only when the session is *not* in
@@ -28,7 +28,7 @@ would sit unanswered and block the very delivery it was meant to authorise, so
 arming is the only moment either can appear.
 
 **It never wakes your Mac.** A schedule fires if the Mac is awake, or when it next
-wakes, and is abandoned after 12 hours — by then the window it was armed for is
+wakes, and is abandoned after 12 hours; by then the window it was armed for is
 long gone and the session has probably been worked in since.
 
 ## What it refuses, and why that is most of the feature
@@ -41,7 +41,7 @@ delivery refuses far more often than it fires, and always says why:
   in. If two windows share a title, both are refused. On one real machine, 2 of 9
   windows were uniquely identifiable. **Running the session inside `tmux` removes
   this problem entirely**: a pane reports its own id and tty, the hook records
-  both when the session starts, and nothing is matched by title — so every pane is
+  both when the session starts, and nothing is matched by title, so every pane is
   addressable, and no macOS permission is involved.
 - **The session isn't at a finished turn.** Return at an open permission prompt
   *approves the focused option*, so anything other than a completed turn is a hard
@@ -50,20 +50,20 @@ delivery refuses far more often than it fires, and always says why:
   change-to-end-of-line; at a `sudo` prompt it is submitted as a password. The
   agent must own the terminal (`pgid == tpgid`) before a single character is sent.
 - **The window or process changed.** The pane recorded when you armed it is
-  re-resolved before writing, and any disagreement aborts — a closed window, a
+  re-resolved before writing, and any disagreement aborts: a closed window, a
   reused one, a restarted Ghostty (surface ids are only meaningful within one run)
   or a recycled pid all refuse.
 - **Only Ghostty and tmux.** Terminal.app is excluded permanently: its entire
   scripting dictionary has one text-injecting command, `do script`, which *runs*
   what you give it.
 
-Every attempt is recorded — sent, refused or failed. The most recent outcome for a
+Every attempt is recorded, whether sent, refused or failed. The most recent outcome for a
 session shows in its scheduling panel (click the clock), and every one is written
 to `~/.agent-tracker/logs/agent-tracker.log`. A feature that acts while nobody is
 watching owes you a receipt.
 
 **Notifications** are raised when something happened: a send, or a failure that
-left a message sitting on a prompt. Refusals stay quiet — they are the normal case
+left a message sitting on a prompt. Refusals stay quiet; they are the normal case
 here, not a malfunction, and one alert per refused schedule would be noise. They
 are still in the log and the panel.
 
@@ -71,7 +71,7 @@ are still in the log and the panel.
 
 Every mode Claude Code is known to run in is allowed, **including
 `bypassPermissions`**. Auto-resume adds no capability such a session did not
-already have — typing "Continue" yourself has exactly the same effect — so the
+already have (typing "Continue" yourself has exactly the same effect), so the
 only thing that changes is that you are not at the keyboard when it starts. The
 arming panel says so plainly for those modes rather than refusing. A mode this
 version does not recognise *is* refused, because a mode nobody has seen cannot be

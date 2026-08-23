@@ -78,7 +78,7 @@ final class ClaudeUsageWatcher {
             readFrom = size - UInt64(Self.maximumDelta)
             DebugLog.log(
                 "[usage] \(DebugLog.timestamp()) \(available / 1024) KiB appended to a transcript "
-                    + "since the last look — reading the newest \(Self.maximumDelta / 1024) KiB")
+                    + "since the last look; reading the newest \(Self.maximumDelta / 1024) KiB")
         }
 
         guard (try? handle.seek(toOffset: readFrom)) != nil,

@@ -134,7 +134,7 @@ struct ContinueEditor: View {
             // A repeating schedule between firings: there is genuinely no next
             // moment until a later reset is observed, and inventing one would
             // send into a session that is still blocked.
-            return "Armed — waiting for the next reset to be reported"
+            return "Armed; waiting for the next reset to be reported"
         }
         let moment = Self.describe(resetsAt)
         return isArmed ? "Sends at \(moment)" : "Send when the limit resets at \(moment)"

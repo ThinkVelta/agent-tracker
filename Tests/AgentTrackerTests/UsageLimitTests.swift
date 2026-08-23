@@ -18,7 +18,7 @@ final class UsageLimitTests {
     private func session(
         state: SessionState = .needsYou,
         lastEvent: String? = "Stop",
-        reason: String? = "Turn complete — ready for you"
+        reason: String? = "Turn complete, ready for you"
     ) -> AgentSession {
         var session = AgentSession(
             sessionId: "s1", cwd: "/Users/dev/demo", state: state)
@@ -145,7 +145,7 @@ final class UsageLimitTests {
         // new having been observed.
         let after = UsageLimitPresentation.apply(
             limit(.weekly, resetsAt: reset), to: session(), now: reset.addingTimeInterval(1))
-        #expect(after.reason == "Turn complete — ready for you")
+        #expect(after.reason == "Turn complete, ready for you")
     }
 
     /// The critical exclusion. A `Notification` red is a permission prompt: the
@@ -166,7 +166,7 @@ final class UsageLimitTests {
         for state in [SessionState.running, .idle] {
             let untouched = UsageLimitPresentation.apply(
                 limit(.weekly, resetsAt: reset), to: session(state: state), now: now)
-            #expect(untouched.reason == "Turn complete — ready for you", "state \(state)")
+            #expect(untouched.reason == "Turn complete, ready for you", "state \(state)")
         }
         // An acknowledged row keeps its own wording too.
         let acknowledged = session(state: .idle, lastEvent: "Stop", reason: "Seen")

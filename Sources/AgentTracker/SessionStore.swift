@@ -300,7 +300,7 @@ final class SessionStore: ObservableObject {
         let tallies =
             "\(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle"
         let summary =
-            "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
+            "\(sessions.count) sessions; \(tallies): \(rows.joined(separator: ", "))"
         if summary != lastLoggedSummary {
             lastLoggedSummary = summary
             DebugLog.log("[store] \(DebugLog.timestamp()) \(summary)")
