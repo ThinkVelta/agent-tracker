@@ -14,15 +14,22 @@ enum Uninstaller {
     enum Step: Equatable {
         case unhookAgents
         case disableLoginItem
+        case forgetPreferences
         case brewUninstall
         case trashBundle
     }
 
+    /// A development build keeps its preferences: `swift run` is a workbench,
+    /// and wiping the workbench's settings on every uninstall rehearsal would
+    /// punish exactly the person testing this.
     static func plan(for source: InstallSource) -> [Step] {
         switch source {
-        case .homebrew: return [.unhookAgents, .disableLoginItem, .brewUninstall]
-        case .direct: return [.unhookAgents, .disableLoginItem, .trashBundle]
-        case .development: return [.unhookAgents]
+        case .homebrew:
+            return [.unhookAgents, .disableLoginItem, .forgetPreferences, .brewUninstall]
+        case .direct:
+            return [.unhookAgents, .disableLoginItem, .forgetPreferences, .trashBundle]
+        case .development:
+            return [.unhookAgents]
         }
     }
 
@@ -40,7 +47,10 @@ enum Uninstaller {
             return .failed(
                 "No uninstall script found; run ./integrations/uninstall.sh from the repo.")
         }
-        let unhook = await ProcessRunner.run("/bin/bash", [script.path])
+        // --hooks-only is the whole contract with the script: the full run
+        // kills this very process and removes the bundle itself, bypassing
+        // brew's ownership — everything app-shaped is this type's job.
+        let unhook = await ProcessRunner.run("/bin/bash", [script.path, "--hooks-only"])
         guard unhook.ok else {
             return .failed("Unhooking failed: \(tail(unhook.output))")
         }
@@ -53,6 +63,12 @@ enum Uninstaller {
                 // Best effort: an unregistered login item on a trashed app is
                 // inert either way, but leaving no trace is the polite exit.
                 try? LoginItem.setEnabled(false)
+            case .forgetPreferences:
+                // After the login item and before the bundle goes: nothing
+                // rewrites preferences from here on, so the domain stays gone.
+                if let bundleID = Bundle.main.bundleIdentifier {
+                    UserDefaults.standard.removePersistentDomain(forName: bundleID)
+                }
             case .brewUninstall:
                 guard let brew = await InstallSource.owningHomebrewExecutable() else {
                     return .failed("No Homebrew prefix claims this cask.")

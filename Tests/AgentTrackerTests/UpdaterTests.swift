@@ -201,10 +201,10 @@ struct UpdaterTests {
     @Test func uninstallPlansMatchTheInstallSource() {
         #expect(
             Uninstaller.plan(for: .homebrew)
-                == [.unhookAgents, .disableLoginItem, .brewUninstall])
+                == [.unhookAgents, .disableLoginItem, .forgetPreferences, .brewUninstall])
         #expect(
             Uninstaller.plan(for: .direct)
-                == [.unhookAgents, .disableLoginItem, .trashBundle])
+                == [.unhookAgents, .disableLoginItem, .forgetPreferences, .trashBundle])
         #expect(Uninstaller.plan(for: .development) == [.unhookAgents])
     }
 }

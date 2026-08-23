@@ -16,12 +16,20 @@
 set -euo pipefail
 
 PURGE=0
+HOOKS_ONLY=0
 for arg in "$@"; do
   case "$arg" in
     --purge) PURGE=1 ;;
+    # For the app's own Settings uninstall: it runs this script for the agent
+    # hookup, then removes the login item, preferences and bundle itself —
+    # a brew-managed bundle through brew, so its manifest stays true, and
+    # never by killing the very process driving the flow.
+    --hooks-only) HOOKS_ONLY=1 ;;
     -h | --help)
-      echo "Usage: uninstall.sh [--purge]"
-      echo "  --purge  also remove ~/.agent-tracker (hook script + session data)"
+      echo "Usage: uninstall.sh [--purge] [--hooks-only]"
+      echo "  --purge       also remove ~/.agent-tracker (hook script + session data)"
+      echo "  --hooks-only  unhook the agents but leave the app, its login item"
+      echo "                and its preferences alone (used by Settings)"
       exit 0
       ;;
     *)
@@ -343,9 +351,14 @@ fi
 # --- Installed app bundle ----------------------------------------------------
 # `make install` places AgentTracker.app in /Applications (or ~/Applications).
 # Removing it also disables its start-at-login registration — launchd drops a
-# login item whose bundle is gone.
+# login item whose bundle is gone. Skipped wholesale under --hooks-only: the
+# app is the caller there, and this section would kill it mid-flow.
 BUNDLE_ID="com.thinkvelta.agent-tracker"
-for APP in "/Applications/AgentTracker.app" "$HOME/Applications/AgentTracker.app"; do
+APP_CANDIDATES=("/Applications/AgentTracker.app" "$HOME/Applications/AgentTracker.app")
+if [ "$HOOKS_ONLY" -eq 1 ]; then
+  APP_CANDIDATES=()
+fi
+for APP in "${APP_CANDIDATES[@]+"${APP_CANDIDATES[@]}"}"; do
   if [ -d "$APP" ]; then
     if pgrep -x AgentTracker > /dev/null 2>&1; then
       echo "Stopping the running AgentTracker"
@@ -364,7 +377,9 @@ for APP in "/Applications/AgentTracker.app" "$HOME/Applications/AgentTracker.app
 done
 # The preferences domain (onboarding-completed flag, future settings). Guarded:
 # `defaults delete` on a missing domain exits non-zero, which is not a failure.
-if defaults read "$BUNDLE_ID" > /dev/null 2>&1; then
+# Left alone under --hooks-only: the running app owns its preferences then and
+# removes them itself, after nothing can write them back.
+if [ "$HOOKS_ONLY" -eq 0 ] && defaults read "$BUNDLE_ID" > /dev/null 2>&1; then
   defaults delete "$BUNDLE_ID"
   echo "Removed the $BUNDLE_ID preferences domain"
 fi
