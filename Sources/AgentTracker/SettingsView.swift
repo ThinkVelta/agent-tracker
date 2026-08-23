@@ -62,7 +62,7 @@ private struct GeneralSettingsTab: View {
             return "Granted. A scheduled continue can be typed into its terminal window."
         case false:
             return "Not granted yet. Without it a schedule still runs, works out when it would "
-                + "send, and then declines — check will ask macOS for permission."
+                + "send, and then declines; check will ask macOS for permission."
         case nil:
             return "Ghostty isn't running, so there is nothing to ask about yet."
         }
@@ -113,7 +113,7 @@ private struct GeneralSettingsTab: View {
                     title: "Start at login",
                     detail: LoginItem.isSupported
                         ? "Launch AgentTracker when you sign in."
-                        : "Needs the installed app — run `make install` first."
+                        : "Needs the installed app; run `make install` first."
                 ) {
                     Toggle("", isOn: loginBinding)
                         .toggleStyle(.switch)
@@ -184,7 +184,7 @@ private struct GeneralSettingsTab: View {
                 SettingsRow(
                     title: "Scheduled continues",
                     detail: "Lets a session that stopped on a usage limit be armed to resume "
-                        + "itself when the window resets — a clock appears on those rows. "
+                        + "itself when the window resets; a clock appears on those rows. "
                         + "Sending needs permission to control Ghostty, "
                         + "which macOS asks for once. Never wakes the Mac."
                 ) {
@@ -376,7 +376,7 @@ private struct SessionsSettingsTab: View {
                 return "Turned off for AgentTracker in System Settings \u{203A} Notifications, "
                     + "so nothing will appear until it is allowed there."
             case .notDetermined:
-                return "macOS has not been asked yet — switch this off and on again to raise "
+                return "macOS has not been asked yet; switch this off and on again to raise "
                     + "the prompt."
             default:
                 break
@@ -406,11 +406,11 @@ private struct SessionsSettingsTab: View {
                 SettingsRow(
                     title: "Accessibility permission",
                     detail: accessibilityGranted
-                        ? "Granted — click-to-focus works, and visiting a session's terminal "
+                        ? "Granted; click-to-focus works, and visiting a session's terminal "
                             + "clears its red state."
                         : "Not granted, so click-to-focus and auto-acknowledge below cannot "
                             + "work. Already listed? Remove AgentTracker with − and add it "
-                            + "again — a rebuilt app invalidates its old grant."
+                            + "again; a rebuilt app invalidates its old grant."
                 ) {
                     if accessibilityGranted {
                         Image(systemName: "checkmark.circle.fill")
@@ -435,7 +435,7 @@ private struct SessionsSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Background check every",
-                    detail: "Session changes appear instantly either way — this only paces "
+                    detail: "Session changes appear instantly either way; this only paces "
                         + "the cleanup pass that prunes dead sessions and refreshes "
                         + "timestamps.",
                     divided: true

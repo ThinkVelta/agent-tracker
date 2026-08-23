@@ -169,7 +169,7 @@ enum Diagnosis {
             findings.append(
                 Finding(
                     level: .warn, check: "claude",
-                    detail: "no ~/.claude — Claude Code has not run on this machine",
+                    detail: "no ~/.claude; Claude Code has not run on this machine",
                     anchor: "no-sessions-appear-at-all"))
             return findings
         }
@@ -233,7 +233,7 @@ enum Diagnosis {
                 Finding(
                     level: .unknown, check: "hooks",
                     detail:
-                        "could not parse \(broken.joined(separator: ", ")) — fix the JSON first",
+                        "could not parse \(broken.joined(separator: ", ")); fix the JSON first",
                     anchor: "no-sessions-appear-at-all")
             ]
         }
@@ -249,7 +249,7 @@ enum Diagnosis {
                     // already prints the directory both came from. An earlier
                     // version named one of them and was wrong whenever the
                     // other was the relevant one.
-                    detail: "none registered — run ./install.sh",
+                    detail: "none registered; run ./install.sh",
                     anchor: "no-sessions-appear-at-all")
             ]
         }
@@ -299,8 +299,8 @@ enum Diagnosis {
                     // Phrased so the number of events cannot make the verb
                     // wrong: "SessionEnd point at" was the first version.
                     detail:
-                        "\(describe(script.events)) -> \(script.path ?? "?") does not exist "
-                        + "— run ./install.sh",
+                        "\(describe(script.events)) -> \(script.path ?? "?") does not exist; "
+                        + "run ./install.sh",
                     anchor: "no-sessions-appear-at-all"))
         }
         for script in notExecutable {
@@ -310,8 +310,8 @@ enum Diagnosis {
                 Finding(
                     level: .fail, check: "hook script",
                     detail:
-                        "\(describe(script.events)) -> \(script.path ?? "?") is not executable "
-                        + "— chmod +x it",
+                        "\(describe(script.events)) -> \(script.path ?? "?") is not executable; "
+                        + "chmod +x it",
                     anchor: "no-sessions-appear-at-all"))
         }
         for script in unresolved {
@@ -341,7 +341,7 @@ enum Diagnosis {
                 Finding(
                     level: .warn, check: "hook script",
                     detail:
-                        "registered at \(path), which is not where this build installs — "
+                        "registered at \(path), which is not where this build installs; "
                         + "it exists, so it runs, but upgrades will not refresh it",
                     anchor: nil))
         }
@@ -359,13 +359,13 @@ enum Diagnosis {
             findings.append(
                 Finding(
                     level: .warn, check: "hook version",
-                    detail: "older than this build — launch the app, or run ./install.sh",
+                    detail: "older than this build; launch the app, or run ./install.sh",
                     anchor: nil))
         case .unknown:
             findings.append(
                 Finding(
                     level: .unknown, check: "hook version",
-                    detail: "can't compare — no readable copy on both sides", anchor: nil))
+                    detail: "can't compare; no readable copy on both sides", anchor: nil))
         }
         return findings
     }
@@ -397,7 +397,7 @@ enum Diagnosis {
         if case .unreadable(let broken) = input.settingsState {
             return Finding(
                 level: .unknown, check: "statusline",
-                detail: "can't tell what is configured — could not parse "
+                detail: "can't tell what is configured; could not parse "
                     + broken.joined(separator: ", ")
                     + (input.statuslinePayloadPresent
                         ? ". A payload is arriving, so something is running"
@@ -411,9 +411,9 @@ enum Diagnosis {
             return Finding(
                 level: .warn, check: "statusline",
                 detail: input.statuslinePayloadPresent
-                    ? "no statusLine configured, but a payload is being captured elsewhere — "
+                    ? "no statusLine configured, but a payload is being captured elsewhere; "
                         + "no usage readings"
-                    : "no statusLine configured — no usage, context or exact window titles",
+                    : "no statusLine configured; no usage, context or exact window titles",
                 anchor: "usage-numbers-5h--7d-are-missing")
         }
         _ = command
@@ -421,16 +421,16 @@ enum Diagnosis {
             return Finding(
                 level: .warn, check: "statusline",
                 detail: input.statuslinePayloadPresent
-                    ? "a statusLine is set and something is writing a payload, so context works "
-                        + "— but it is not the wrapper, so there are no usage readings"
-                    : "a statusLine is set but it is not the wrapper — no usage or context "
+                    ? "a statusLine is set and something is writing a payload, so context "
+                        + "works, but it is not the wrapper, so there are no usage readings"
+                    : "a statusLine is set but it is not the wrapper; no usage or context "
                         + "readings",
                 anchor: "usage-numbers-5h--7d-are-missing")
         }
         guard input.statuslinePayloadPresent else {
             return Finding(
                 level: .warn, check: "statusline",
-                detail: "wrapper installed but nothing captured yet — start a session",
+                detail: "wrapper installed but nothing captured yet; start a session",
                 anchor: "a-session-shows-no-context-percentage")
         }
         return Finding(
@@ -445,7 +445,7 @@ enum Diagnosis {
                 Finding(
                     level: .warn, check: "sessions",
                     detail:
-                        "none tracked — sessions running before install never report; restart them",
+                        "none tracked; sessions running before install never report; restart them",
                     anchor: "no-sessions-appear-at-all"))
         } else {
             findings.append(
@@ -458,7 +458,7 @@ enum Diagnosis {
                 Finding(
                     level: .warn, check: "stale sessions",
                     detail:
-                        "\(input.staleSessionCount) file(s) whose process is gone — the running "
+                        "\(input.staleSessionCount) file(s) whose process is gone; the running "
                         + "app prunes these, so this is expected while it is not running",
                     anchor: nil))
         }
@@ -468,7 +468,7 @@ enum Diagnosis {
                     level: .warn, check: "ambiguous rows",
                     detail:
                         "\(input.largestSameProjectGroup) live sessions share a project, so "
-                        + "click-to-focus cannot always tell them apart — /rename one. This "
+                        + "click-to-focus cannot always tell them apart; /rename one. This "
                         + "check groups by directory and cannot see names, so it keeps saying "
                         + "so afterwards",
                     anchor: "click-to-focus-opens-the-wrong-terminal"))
@@ -482,7 +482,7 @@ enum Diagnosis {
                 ? Finding(level: .ok, check: "accessibility", detail: "granted", anchor: nil)
                 : Finding(
                     level: .warn, check: "accessibility",
-                    detail: "not granted — click-to-focus will not raise windows",
+                    detail: "not granted; click-to-focus will not raise windows",
                     anchor: "click-to-focus-does-nothing-at-all")
         ]
         switch input.notifications {
@@ -493,19 +493,19 @@ enum Diagnosis {
             findings.append(
                 Finding(
                     level: .warn, check: "notifications",
-                    detail: "denied — banners and continue receipts will not appear", anchor: nil))
+                    detail: "denied; banners and continue receipts will not appear", anchor: nil))
         case .notAsked:
             // Not a warning. Banners are off by default, so never having been
             // asked is what a correct fresh install looks like.
             findings.append(
                 Finding(
                     level: .ok, check: "notifications",
-                    detail: "not asked yet — banners are off by default", anchor: nil))
+                    detail: "not asked yet; banners are off by default", anchor: nil))
         case .unavailable:
             findings.append(
                 Finding(
                     level: .unknown, check: "notifications",
-                    detail: "can't tell — not running from the installed app bundle", anchor: nil))
+                    detail: "can't tell; not running from the installed app bundle", anchor: nil))
         }
         return findings
     }

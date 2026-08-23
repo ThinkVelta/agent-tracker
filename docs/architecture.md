@@ -13,19 +13,19 @@ Claude Code pushes events through its native hook mechanism. A dependency-free
 Python script (`integrations/agent-tracker-hook.py`, installed to
 `~/.agent-tracker/bin/`) translates each event into a per-session JSON state
 file, and the app watches those directories with a `DispatchSource` file-system
-object source — one per watched directory, firing on write.
+object source, one per watched directory, firing on write.
 
-One light timer backs that up: a re-read every second by default, paced by
+One light timer backs that up, a re-read every second by default, paced by
 Settings › Sessions › *Background check every*, which prunes dead sessions and
 refreshes relative timestamps. It is a backstop rather than the mechanism: the
 watcher is what makes the app feel immediate, and the timer catches what a file
-event cannot say — that a process died without writing anything.
+event cannot say, a process that died without writing anything.
 
 Seven events are registered: `SessionStart`, `UserPromptSubmit`, `PreToolUse`,
 `PreCompact`, `Stop`, `Notification`, `SessionEnd`.
 
 **Dead sessions are pruned automatically.** Each state file records the CLI's
-pid, and the app removes files whose process is gone — a killed terminal or a
+pid, and the app removes files whose process is gone, a killed terminal or a
 crash, where no clean `SessionEnd` ever arrives.
 
 ## The two things on disk
@@ -62,8 +62,9 @@ reads it from either of two files:
 With neither, transcript task summaries (`✳ <task summary>`) and
 working-directory fragments remain as fallbacks.
 
-**This is also why renaming fixes ambiguity.** `session_name` is exactly what the
-matcher compares, and `/rename` sets it — so naming two sessions in one repo
+**This is also why renaming fixes ambiguity.** The session's name is what the
+matcher compares first (read from Claude's session registry, with the statusline
+payload as fallback), and `/rename` sets it, so naming two sessions in one repo
 differently makes both addressable, with no configuration.
 
 ## Deriving "needs you" is not just reading `Stop`
@@ -73,8 +74,8 @@ assistant's turn ends, which is not the same thing: a turn that backgrounded a
 shell resumes when that shell finishes, and one that handed off to subagents or
 teammates is not over either.
 
-Claude publishes its own status for each of those — `shell` for background work,
-`busy` for delegated work — so a red row is re-derived as running until the
+Claude publishes its own status for each of those (`shell` for background work,
+`busy` for delegated work), so a red row is re-derived as running until the
 session genuinely settles. It goes red once, at the end, rather than blinking on
 every hand-off.
 
@@ -91,9 +92,9 @@ both refuse rather than guess.
 
 Two channels exist, and the tmux one is checked first:
 
-- **tmux** — the pane reports its own id and tty, recorded by the hook at session
+- **tmux**: the pane reports its own id and tty, recorded by the hook at session
   start. Nothing is matched by title, and no macOS permission is involved.
-- **Ghostty** — surfaces are matched by title, which needs the Automation grant
+- **Ghostty**: surfaces are matched by title, which needs the Automation grant
   and can be ambiguous.
 
 tmux is tried first rather than as a fallback, specifically so a session that

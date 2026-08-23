@@ -132,7 +132,7 @@ enum SessionRename {
             // sitting there unsent rather than to be told this simply failed.
             return ContinueDeliveryResult(
                 outcome: .failed,
-                detail: "Typed \"\(command)\" but couldn't press Return — it's waiting on "
+                detail: "Typed \"\(command)\" but couldn't press Return; it's waiting on "
                     + "the prompt")
         }
         return ContinueDeliveryResult(outcome: .sent, detail: "Renaming…")
@@ -160,7 +160,7 @@ enum SessionRename {
         guard ops.pressReturn(recorded.paneId, recorded.socketPath) else {
             return ContinueDeliveryResult(
                 outcome: .failed,
-                detail: "Typed \"\(command)\" but couldn't press Return — it's waiting on "
+                detail: "Typed \"\(command)\" but couldn't press Return; it's waiting on "
                     + "the prompt")
         }
         return ContinueDeliveryResult(outcome: .sent, detail: "Renaming…")

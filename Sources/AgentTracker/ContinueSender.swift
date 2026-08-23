@@ -155,7 +155,7 @@ enum ContinueSender {
             // and the user needs to know it is there.
             return ContinueDeliveryResult(
                 outcome: .failed,
-                detail: "Typed \"\(fire.message)\" but couldn't press Return — it's waiting on "
+                detail: "Typed \"\(fire.message)\" but couldn't press Return; it's waiting on "
                     + "the prompt")
         }
         return ContinueDeliveryResult(outcome: .sent, detail: "Sent \"\(fire.message)\"")
@@ -190,7 +190,7 @@ enum ContinueSender {
         guard ops.pressReturn(recorded.paneId, recorded.socketPath) else {
             return ContinueDeliveryResult(
                 outcome: .failed,
-                detail: "Typed \"\(fire.message)\" but couldn't press Return — it's waiting on "
+                detail: "Typed \"\(fire.message)\" but couldn't press Return; it's waiting on "
                     + "the prompt")
         }
         return ContinueDeliveryResult(outcome: .sent, detail: "Sent \"\(fire.message)\"")

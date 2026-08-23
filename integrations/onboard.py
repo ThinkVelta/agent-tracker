@@ -68,7 +68,7 @@ AGENTS = [
             "copy the hook script to ~/.agent-tracker/bin/",
             "back up ~/.claude/settings.json to settings.json.agent-tracker-backup",
             (
-                "register agent-tracker hooks in settings.json — merge-only, your "
+                "register agent-tracker hooks in settings.json; merge-only, your "
                 "existing settings are untouched; the hooks always exit 0 and can "
                 "never block or modify a session"
             ),
@@ -80,7 +80,7 @@ AGENTS = [
 STATUSLINE_PLAN = [
     "copy the statusline wrapper to ~/.agent-tracker/bin/",
     (
-        "point statusLine in settings.json at it — your own statusline keeps "
+        "point statusLine in settings.json at it; your own statusline keeps "
         "running behind it, unchanged, and is recorded so uninstall puts it back"
     ),
 ]
@@ -89,7 +89,7 @@ STATUSLINE_PLAN = [
 # rather than discovered later.
 STATUSLINE_CAVEATS = [
     (
-        "Claude only reports the usage windows to a statusline script — there is "
+        "Claude only reports the usage windows to a statusline script; there is "
         "no other place to read them before a request is actually refused."
     ),
     (
@@ -106,7 +106,7 @@ STATUSLINE_CAVEATS = [
         "you have room left."
     ),
     (
-        "If you have no statusline of your own, the line stays blank — the "
+        "If you have no statusline of your own, the line stays blank; the "
         "wrapper prints nothing by itself."
     ),
 ]
@@ -168,7 +168,7 @@ def pick_agents():
             elif key in ("\r", "\n"):
                 return [a for a, c in zip(AGENTS, checked) if c]
             elif key in ("q", "\x03", "\x1b"):
-                print("\nAborted — nothing was changed.")
+                print("\nAborted; nothing was changed.")
                 raise SystemExit(130)
             draw()
     finally:
@@ -186,7 +186,7 @@ def parse_agents_flag(value):
             continue
         if key not in by_key:
             valid = ", ".join(by_key)
-            print(f"Unknown agent '{key}' — valid values: {valid}", file=sys.stderr)
+            print(f"Unknown agent '{key}'; valid values: {valid}", file=sys.stderr)
             raise SystemExit(2)
         if by_key[key] not in selected:
             selected.append(by_key[key])
@@ -276,7 +276,7 @@ def run_installer(agent, statusline=False):
     if agent["key"] == "claude" and proc.returncode == 3:
         for line in proc.stdout.strip().splitlines():
             print(f"  {green('✓')} {line}")
-        print(f"  {yellow('!')} Left your statusLine setting alone — it is set to")
+        print(f"  {yellow('!')} Left your statusLine setting alone; it is set to")
         print("    something the wrapper cannot forward. The usage windows stay")
         print("    unknown; everything else is installed.")
         for line in proc.stderr.strip().splitlines():
@@ -290,12 +290,12 @@ def run_installer(agent, statusline=False):
 
 def print_outro():
     print()
-    print(bold("All set — next steps:"))
-    print(f"  1. {bold('swift run AgentTracker')} — starts the menu bar app.")
+    print(bold("All set; next steps:"))
+    print(f"  1. {bold('swift run AgentTracker')} (starts the menu bar app).")
     print("  2. On your first click-to-focus, macOS asks you to grant the app")
     print("     Accessibility permission.")
     print(
-        "  3. Only NEW agent sessions are tracked — restart any that are "
+        "  3. Only NEW agent sessions are tracked; restart any that are "
         "already running."
     )
     print()
@@ -344,7 +344,7 @@ def main():
     else:
         print(
             dim(
-                "stdin is not a TTY — running non-interactively with the "
+                "stdin is not a TTY; running non-interactively with the "
                 "agents detected on this system."
             )
         )
@@ -354,7 +354,7 @@ def main():
         print()
 
     if not selected:
-        print("No agents selected — nothing to install.")
+        print("No agents selected; nothing to install.")
         return 0
 
     claude_selected = any(agent["key"] == "claude" for agent in selected)
@@ -375,20 +375,20 @@ def main():
     show_plan(selected, statusline=bool(statusline))
     if not args.yes:
         if not interactive:
-            print("stdin is not a TTY — re-run with --yes to proceed, e.g.:")
+            print("stdin is not a TTY; re-run with --yes to proceed, e.g.:")
             keys = ",".join(agent["key"] for agent in selected)
             extra = " --statusline" if statusline else ""
             print(f"  ./install.sh --agents {keys} --yes{extra}")
             return 1
         if not confirm():
-            print("Aborted — nothing was changed.")
+            print("Aborted; nothing was changed.")
             return 0
 
     ok = True
     for agent in selected:
         ok = run_installer(agent, statusline=bool(statusline)) and ok
     if not ok:
-        print(red("\nSome integrations failed to install — see output above."))
+        print(red("\nSome integrations failed to install; see output above."))
         return 1
     print_outro()
     return 0

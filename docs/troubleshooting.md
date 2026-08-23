@@ -6,8 +6,8 @@
 /Applications/AgentTracker.app/Contents/MacOS/AgentTracker --doctor
 ```
 
-It checks the mechanical half of this page — hooks, the hook script, the
-statusline wrapper, session files, permissions — and where a finding has a
+It checks the mechanical half of this page (hooks, the hook script, the
+statusline wrapper, session files, permissions), and where a finding has a
 section here that explains it, prints the link. Read-only: it never writes,
 installs or grants anything, and never raises a permission dialog, so it is safe
 to run on a machine that is already misbehaving.
@@ -33,7 +33,7 @@ Organised by what you are seeing, since that is what you know. Each entry says
 how to tell which cause you have rather than listing everything that could be
 wrong.
 
-If you are reading this through an agent: run `--doctor` first, then read the
+If you are reading this through an agent, run `--doctor` first, then read the
 section it names. Every fact here is stated so it can be quoted on its own, and
 the log at `~/.agent-tracker/logs/agent-tracker.log` is the single place the app
 records what it decided and why.
@@ -43,12 +43,12 @@ records what it decided and why.
 **First, the answer that is right most of the time: restart the session.** Claude
 Code reads its hook configuration when a session starts, so sessions that were
 already running when you installed Agent Tracker never report anything. They are
-not broken and they will not recover — start a new one, or restart that one.
+not broken and they will not recover; start a new one, or restart that one.
 
 If a *new* session still does not appear, work down these in order.
 
 **Are the hooks registered?** They live in `~/.claude/settings.json`, or in
-`~/.claude/settings.local.json` — either can carry them, so a check that reads
+`~/.claude/settings.local.json`; either can carry them, so a check that reads
 only the first can report a phantom problem. Ask which events are wired rather
 than grepping, since `agent-tracker` also appears in the `statusLine` entry and a
 raw count answers a different question than it looks like it does:
@@ -75,7 +75,7 @@ All seven are expected:
 ['Notification', 'PreCompact', 'PreToolUse', 'SessionEnd', 'SessionStart', 'Stop', 'UserPromptSubmit']
 ```
 
-An empty list means the installer did not run or did not finish — run
+An empty list means the installer did not run or did not finish; run
 `./install.sh` again, which is idempotent and backs up your settings first.
 
 **Is the hook writing anything?** Each session gets one JSON file:
@@ -86,7 +86,7 @@ ls -la ~/.agent-tracker/sessions/
 
 Empty, with a session running and restarted since install, means the hook is
 failing. It is designed never to break your session, which also means it fails
-silently — so run it by hand to see what it says:
+silently, so run it by hand to see what it says:
 
 ```sh
 echo '{"hook_event_name":"Stop","session_id":"probe"}' \
@@ -102,16 +102,16 @@ normally. Measured rather than assumed: this project defines two of its own hook
 events and its sessions are tracked anyway.
 
 The single `statusLine` slot is the opposite, because one command cannot merge
-with another — see [usage numbers](#usage-numbers-5h--7d-are-missing) below.
+with another; see [usage numbers](#usage-numbers-5h--7d-are-missing) below.
 
 ## A session shows no context percentage
 
 Expected, and not a fault, if that session's status line has not rendered yet or
 the statusline wrapper is not installed. The context reading is only available in
-Claude's statusline payload, so no wrapper means no reading — see
+Claude's statusline payload, so no wrapper means no reading; see
 [the statusline wrapper](statusline.md).
 
-The distinction the app is careful about: a row with **no reading** shows nothing
+The app keeps one careful distinction. A row with **no reading** shows nothing
 at all, rather than showing `0%`. "Plenty of room left" and "nothing known" must
 not look the same. So a blank means the app has not been told, never that the
 window is empty.
@@ -122,7 +122,7 @@ Check what it has actually been told:
 python3 -c "import json;d=json.load(open('$HOME/.agent-tracker/claude-statusline.json'));print(d.get('session_id'), d.get('context_window'))"
 ```
 
-That file holds **one** session's payload — whichever wrote most recently — so
+That file holds **one** session's payload, whichever wrote most recently, so
 seeing another session's id there is normal. The app accumulates them per
 session as they arrive rather than reading it as a snapshot.
 
@@ -151,9 +151,9 @@ Almost always because **two sessions are in the same repo**. They share a
 directory, so they get the same row title, and terminals report nothing that
 tells them apart.
 
-The app does better than a coin flip — rows are spread across the candidate
-windows rather than all pointing at the first, and clicking again walks the rest
-— but it cannot guarantee each row opens its own window.
+The app does better than a coin flip (rows are spread across the candidate
+windows rather than all pointing at the first, and clicking again walks the
+rest), but it cannot guarantee each row opens its own window.
 
 **The fix is to give them different names**, which makes the window titles
 different, which makes the match exact:
@@ -172,13 +172,13 @@ the app (right-click → *Rename…*), though see the note in
 Three different outcomes look like "nothing happened", and they have different
 fixes. Tell them apart by what *did* move:
 
-- **Nothing at all, and macOS asks about Accessibility** — the grant is missing.
+- **Nothing at all, and macOS asks about Accessibility**: the grant is missing.
   See [permissions](permissions.md), and note that a lost grant is fixed by
   **removing and re-adding** the entry, never by toggling it.
-- **The terminal comes forward but the wrong window is on top** — the grant is
+- **The terminal comes forward but the wrong window is on top**: the grant is
   fine and the title did not match. That is the ambiguity case above: give the
   session a name.
-- **Nothing at all, and no prompt** — no known terminal app is running. The app
+- **Nothing at all, and no prompt**: no known terminal app is running. The app
   only raises terminals it recognises.
 
 ## A rename is refused
@@ -187,7 +187,7 @@ Each refusal names its own cause. The three you are most likely to see:
 
 **"Run /rename in that terminal instead."** The app cannot tell which window
 belongs to that session. Outside tmux it identifies a window by its title, so the
-sessions it cannot reach are exactly the ones sharing a title with a sibling —
+sessions it cannot reach are exactly the ones sharing a title with a sibling,
 which is the case renaming would have fixed. Running `/rename` in the terminal
 has no such limitation, because you are already in the right window.
 
@@ -204,7 +204,7 @@ renames are immediate.
 
 ## A scheduled continue was refused
 
-Refusals are the normal case for this feature, not a malfunction — it refuses far
+Refusals are the normal case for this feature, not a malfunction; it refuses far
 more often than it fires, because typing into the wrong session cannot be undone.
 The panel (click the clock on the row) shows the most recent outcome, and every
 attempt is in the log.
@@ -232,7 +232,7 @@ tail -f ~/.agent-tracker/logs/agent-tracker.log
 Settings › Advanced › *Diagnostics* › **Show Log** reveals the same file in
 Finder. It is plain text, local only, and capped at 2 MB.
 
-The app writes what it decided and why — every delivery attempt, every refusal
+The app writes what it decided and why: every delivery attempt, every refusal
 with its reason, every permission failure. It is the same log the scheduling
 panel reads its receipts from.
 

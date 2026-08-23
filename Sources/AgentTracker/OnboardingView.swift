@@ -57,7 +57,7 @@ struct OnboardingView: View {
             .padding(.top, 28)
             Text("Welcome to AgentTracker")
                 .font(.system(size: 19, weight: .bold))
-            Text("Every agent session, one glance away — red means it needs you.")
+            Text("Every agent session, one glance away; red means it needs you.")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
@@ -71,7 +71,7 @@ struct OnboardingView: View {
             done: accessibilityGranted,
             title: "Allow window switching",
             detail: accessibilityGranted
-                ? "Granted — clicking a session will jump straight to its terminal."
+                ? "Granted; clicking a session will jump straight to its terminal."
                 : "Accessibility permission lets a click jump to the session's terminal window."
         ) {
             if !accessibilityGranted {
@@ -171,7 +171,7 @@ struct OnboardingView: View {
             title: "Start at login",
             detail: LoginItem.isSupported
                 ? "Keep the menu bar dots around without thinking about it."
-                : "Needs the installed app — run `make install`, then enable this from the app "
+                : "Needs the installed app; run `make install`, then enable this from the app "
                     + "in /Applications."
         ) {
             Toggle("", isOn: loginBinding)

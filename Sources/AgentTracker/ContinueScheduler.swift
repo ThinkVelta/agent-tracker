@@ -204,7 +204,7 @@ enum ContinueScheduler {
             case .onTime: return "on time"
             case .slept(let seconds): return "\(Int(seconds))s late, machine slept"
             case .appNotRunning(let seconds): return "\(Int(seconds))s late, app was not running"
-            case .defect(let seconds): return "\(Int(seconds))s late while awake — scheduler defect"
+            case .defect(let seconds): return "\(Int(seconds))s late while awake; scheduler defect"
             }
         }
     }
@@ -225,9 +225,9 @@ enum ContinueScheduler {
             switch outcome {
             case .fired(let message, let lateness):
                 return "fired \"\(message)\" (\(lateness.summary))"
-            case .held(let reason): return "held — \(reason)"
-            case .skipped(let reason): return "skipped — \(reason)"
-            case .cancelled(let reason): return "cancelled — \(reason)"
+            case .held(let reason): return "held; \(reason)"
+            case .skipped(let reason): return "skipped; \(reason)"
+            case .cancelled(let reason): return "cancelled; \(reason)"
             case .rearmed(let moment): return "re-armed for \(moment)"
             }
         }
@@ -390,7 +390,7 @@ enum ContinueScheduler {
                     .skipped(
                         reason: "\(Int(late / 3600))h past the "
                             + (schedule.isClockAnchored ? "scheduled time" : "reset")
-                            + " — beyond the \(Int(maximumLateness / 3600))h limit"))
+                            + "; beyond the \(Int(maximumLateness / 3600))h limit"))
                 if schedule.repeats { kept.append(schedule) }
                 continue
             }

@@ -193,7 +193,7 @@ def claude_states(payload):
         "UserPromptSubmit": ("running", "Working…"),
         "PreToolUse": ("running", f"Using {tool}" if tool else "Working…"),
         "PreCompact": ("running", "Compacting context"),
-        "Stop": ("needsYou", "Turn complete — ready for you"),
+        "Stop": ("needsYou", "Turn complete, ready for you"),
         "Notification": ("needsYou", payload.get("message") or "Needs your attention"),
     }
 

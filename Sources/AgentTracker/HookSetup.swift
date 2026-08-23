@@ -148,7 +148,7 @@ enum HookSetup {
         guard let directory = installerDirectory() else {
             return InstallOutcome(
                 succeeded: false,
-                output: "installer script not found — run ./install.sh from the repo instead")
+                output: "installer script not found; run ./install.sh from the repo instead")
         }
         let script = directory.appendingPathComponent(Onboarding.installerScript)
         return await withCheckedContinuation { continuation in

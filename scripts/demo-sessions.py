@@ -25,7 +25,7 @@ DEMO = [
     (
         "/Users/dev/acme/checkout-service",
         "needsYou",
-        "Turn complete — ready for you",
+        "Turn complete, ready for you",
         2,
     ),
     ("/Users/dev/acme/design-system", "needsYou", "Approve Bash?", 11),
