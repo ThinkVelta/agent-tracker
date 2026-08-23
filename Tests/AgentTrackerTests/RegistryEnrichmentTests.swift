@@ -202,7 +202,7 @@ final class RegistryEnrichmentTests {
                 status: .waiting, statusUpdatedAt: Date(timeIntervalSince1970: 2000),
                 waitingFor: "input needed"))
         #expect(enriched.state == .needsYou)
-        #expect(enriched.reason == "Waiting on you — input needed")
+        #expect(enriched.reason == "Waiting on you, input needed")
         // Not every dialog names itself.
         let unnamed = RegistryEnrichment.apply(
             to: session(state: .running), entry: entry(status: .waiting))

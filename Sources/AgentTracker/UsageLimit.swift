@@ -88,7 +88,7 @@ struct UsageLimit: Equatable {
         let formatter = DateFormatter()
         formatter.timeStyle = .short
         formatter.dateStyle = Calendar.current.isDateInToday(resetsAt) ? .none : .medium
-        return "Usage limit reached — resets \(formatter.string(from: resetsAt))"
+        return "Usage limit reached; resets \(formatter.string(from: resetsAt))"
     }
 }
 

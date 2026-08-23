@@ -100,7 +100,7 @@ enum TerminalFocuser {
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         guard AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary) else {
             log(
-                "no Accessibility permission — system prompt triggered. NOTE: when run "
+                "no Accessibility permission; system prompt triggered. NOTE: when run "
                     + "via `swift run` from a terminal, macOS attributes the permission to "
                     + "that terminal (the responsible process). After granting, QUIT AND "
                     + "RE-RUN AgentTracker for it to take effect."
@@ -151,7 +151,7 @@ enum TerminalFocuser {
         if let outcome = raiseAXWindow(in: app, target: target) {
             return outcome
         }
-        log("no title matched — activating \(app.localizedName ?? "the app") only")
+        log("no title matched; activating \(app.localizedName ?? "the app") only")
         app.activate()
         return .activatedAppOnly
     }
@@ -179,7 +179,7 @@ enum TerminalFocuser {
             let described = wanted.map(WindowIdentity.normalize).joined(separator: " or ")
             log(
                 "no window on this Space reports cwd \(described) "
-                    + "(\(known)/\(windows.count) window(s) reported one) — falling back to titles")
+                    + "(\(known)/\(windows.count) window(s) reported one); falling back to titles")
             return nil
         }
 
@@ -190,8 +190,8 @@ enum TerminalFocuser {
         let hits = matched.filter { !target.ownedByAnother(AXAccess.title(of: windows[$0]) ?? "") }
         guard !hits.isEmpty else {
             log(
-                "\(matched.count) window(s) here belong to other sessions by name "
-                    + "— falling back to titles, which see every Space")
+                "\(matched.count) window(s) here belong to other sessions by name; "
+                    + "falling back to titles, which see every Space")
             return nil
         }
 
@@ -204,7 +204,7 @@ enum TerminalFocuser {
         guard hits.count >= siblings else {
             log(
                 "\(hits.count) window(s) on this Space for \(siblings) sessions sharing "
-                    + "this directory — falling back to titles, which see every Space")
+                    + "this directory; falling back to titles, which see every Space")
             return nil
         }
 
@@ -231,7 +231,7 @@ enum TerminalFocuser {
             else { return nil }
             log(
                 "ambiguous: \(hits.count) window(s) share this session's directory "
-                    + "and nothing distinguishes them — taking sibling \(target.rotation.rank + 1) "
+                    + "and nothing distinguishes them; taking sibling \(target.rotation.rank + 1) "
                     + "of \(siblings)'s share")
             chosen = pick
         }
@@ -258,7 +258,7 @@ enum TerminalFocuser {
         let lookup = AXAccess.windowMenuItems(of: app)
         guard case .items(let items) = lookup else {
             log(
-                "\(lookup.describedFailure ?? "Window menu unavailable") — trying the AX window list"
+                "\(lookup.describedFailure ?? "Window menu unavailable"); trying the AX window list"
             )
             return nil
         }
@@ -271,7 +271,7 @@ enum TerminalFocuser {
         let result = AXUIElementPerformAction(hit.element, kAXPressAction as CFString)
         app.activate()
         guard result == .success else {
-            log("menu press failed (\(result.rawValue)) — falling back to AX window raise")
+            log("menu press failed (\(result.rawValue)); falling back to AX window raise")
             return nil
         }
         return .focusedWindow(title: hit.title)
@@ -285,7 +285,7 @@ enum TerminalFocuser {
     ) -> Outcome? {
         guard let windows = AXAccess.windows(of: app) else {
             log(
-                "AXWindows query failed — permission granted but not yet effective? "
+                "AXWindows query failed; permission granted but not yet effective? "
                     + "Try restarting AgentTracker."
             )
             return nil
@@ -345,8 +345,8 @@ enum TerminalFocuser {
             // `rotation + 1` could.
             let position = (ranking.tied.firstIndex(of: pick) ?? 0) + 1
             log(
-                "ambiguous: \(ranking.tied.count) window(s) tie at score \(ranking.score) "
-                    + "— raising \"\(winner.title)\" (candidate \(position) of "
+                "ambiguous: \(ranking.tied.count) window(s) tie at score \(ranking.score); "
+                    + "raising \"\(winner.title)\" (candidate \(position) of "
                     + "\(ranking.tied.count)), which may not be this session's window")
         }
         return AXMatch(

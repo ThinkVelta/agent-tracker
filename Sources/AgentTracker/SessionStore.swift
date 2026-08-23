@@ -125,7 +125,19 @@ final class SessionStore: ObservableObject {
     /// The session's live terminal window title, when known — the top-weight
     /// candidate for window matching.
     func exactWindowTitle(for session: AgentSession) -> String? {
-        statuslineDirectory.title(for: session.sessionId)
+        Self.coalescedWindowTitle(
+            registryName: claudeRegistry.entry(forSessionId: session.sessionId)?.name,
+            statuslineTitle: statuslineDirectory.title(for: session.sessionId))
+    }
+
+    /// Registry first, statusline second, and pure so the precedence stays
+    /// tested now that one reader serves both: a rename lands in the registry
+    /// immediately, while a stale statusline capture can keep replaying the
+    /// old name for as long as that session stays the file's last writer.
+    nonisolated static func coalescedWindowTitle(
+        registryName: String?, statuslineTitle: String?
+    ) -> String? {
+        registryName ?? statuslineTitle
     }
 
     init() {
@@ -300,7 +312,7 @@ final class SessionStore: ObservableObject {
         let tallies =
             "\(counts.needsYou) needsYou, \(counts.running) running, \(counts.idle) idle"
         let summary =
-            "\(sessions.count) sessions — \(tallies): \(rows.joined(separator: ", "))"
+            "\(sessions.count) sessions; \(tallies): \(rows.joined(separator: ", "))"
         if summary != lastLoggedSummary {
             lastLoggedSummary = summary
             DebugLog.log("[store] \(DebugLog.timestamp()) \(summary)")

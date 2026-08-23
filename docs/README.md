@@ -20,7 +20,7 @@ For people who have already installed it and hit something. The
 
 Checks the mechanical half of the troubleshooting page, and names the section
 explaining a finding where there is one. Read-only, never prompts, safe to run
-unasked. Run it from the project you are having trouble with — one check looks
+unasked. Run it from the project you are having trouble with; one check looks
 upward from the working directory.
 
 ## The three answers that come up most
@@ -36,7 +36,7 @@ showing zero, on purpose: "plenty of room" and "nothing known" must not look
 alike.
 
 **Two sessions in one repo look identical because they are, to everything the app
-can see.** Give one a name — `/rename billing spike` in its terminal — and it
+can see.** Give one a name (`/rename billing spike` in its terminal) and it
 becomes addressable, because the name Claude sets is exactly what window matching
 compares.
 

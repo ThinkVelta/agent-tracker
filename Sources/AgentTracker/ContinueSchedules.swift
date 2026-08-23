@@ -142,7 +142,7 @@ final class ContinueSchedules: ObservableObject {
                 // schedule overwritten with a pane resolved for the older one.
                 guard self.armingGeneration[schedule.sessionId] == generation else {
                     self.log(
-                        "\(schedule.sessionId) — re-armed while resolving; older result dropped")
+                        "\(schedule.sessionId); re-armed while resolving; older result dropped")
                     return
                 }
                 self.update(sessionId: schedule.sessionId) { record in
@@ -151,7 +151,7 @@ final class ContinueSchedules: ObservableObject {
                     record.agent = resolved.agent
                 }
                 if let refusal = resolved.refusal {
-                    self.log("\(schedule.sessionId) — armed, but \(refusal)")
+                    self.log("\(schedule.sessionId); armed, but \(refusal)")
                 }
             }
             await Notifications.requestAuthorization()
@@ -209,7 +209,7 @@ final class ContinueSchedules: ObservableObject {
                 blockingReset: blockingReset))
 
         for receipt in plan.receipts {
-            log("\(receipt.sessionId) — \(receipt.summary)")
+            log("\(receipt.sessionId); \(receipt.summary)")
         }
         if plan.schedules != schedules { persist(plan.schedules) }
         arrangeWakeUp(at: plan.nextWakeUp, now: now)
@@ -280,7 +280,7 @@ final class ContinueSchedules: ObservableObject {
         if updated.count > Self.receiptsKept { updated = Array(updated.prefix(Self.receiptsKept)) }
         receipts = updated
         persistReceipts(updated)
-        log("\(receipt.sessionId) — \(receipt.summary)")
+        log("\(receipt.sessionId); \(receipt.summary)")
         guard Self.notifies(receipt.outcome) else { return }
         Task { await ContinueNotifier.post(receipt) }
     }
@@ -363,7 +363,7 @@ final class ContinueSchedules: ObservableObject {
                     forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
                 ) { [weak self] _ in
                     Task { @MainActor in
-                        self?.log("woke — re-evaluating")
+                        self?.log("woke; re-evaluating")
                         self?.timerNeedsRebuilding()
                     }
                 }
@@ -379,7 +379,7 @@ final class ContinueSchedules: ObservableObject {
                     {
                         [weak self] _ in
                         Task { @MainActor in
-                            self?.log("clock or timezone changed — re-evaluating")
+                            self?.log("clock or timezone changed; re-evaluating")
                             self?.timerNeedsRebuilding()
                         }
                     }

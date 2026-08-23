@@ -43,7 +43,7 @@ enum ContinueDelivery {
             return .ghostty
         case "apple_terminal":
             return .unsupported(
-                reason: "Terminal.app can only run text, not type it — it has no way to put a "
+                reason: "Terminal.app can only run text, not type it; it has no way to put a "
                     + "message on the prompt without pressing Return")
         case "tmux":
             return .tmux
@@ -168,13 +168,13 @@ enum ContinueDelivery {
     ) -> Resolution {
         guard let expectedTitle, !expectedTitle.isEmpty else {
             return .refused(
-                reason: "Can't tell which window this session is in — it has no name to match")
+                reason: "Can't tell which window this session is in; it has no name to match")
         }
         let wanted = normalize(expectedTitle)
         guard !wanted.isEmpty else {
             return .refused(
                 reason:
-                    "Can't tell which window this session is in — its name is only a status mark")
+                    "Can't tell which window this session is in; its name is only a status mark")
         }
         let matches = surfaces.filter { normalize($0.title) == wanted }
         switch matches.count {
