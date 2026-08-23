@@ -8,7 +8,7 @@ import Foundation
 /// The docs renderer runs the real app against synthetic sessions, but
 /// preferences and marks live in `UserDefaults` rather than in the fixture — so
 /// a render would pick up whoever regenerated the images: their icon mode,
-/// their idle folding, their grouping, the sessions they had muted or pinned.
+/// their grouping, the sessions they had muted or pinned.
 /// The committed picture would be of their setup, and the next person's
 /// regeneration would silently change it back. An isolated suite, wiped on
 /// entry, is what makes a render reproducible by anyone.

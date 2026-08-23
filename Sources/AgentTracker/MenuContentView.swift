@@ -16,8 +16,8 @@ struct MenuContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     @State private var searchText = ""
-    /// Explicit collapse choices, which override the automatic idle folding
-    /// below. Absent means "whatever the list thinks is sensible".
+    /// Explicit per-section collapse choices, the only thing that collapses a
+    /// section at all. Absent means expanded.
     @State private var sectionOverrides: [String: Bool] = [:]
 
     private var query: String { searchText.trimmingCharacters(in: .whitespaces) }

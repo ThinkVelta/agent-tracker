@@ -43,10 +43,10 @@ enum SessionSections {
         var hiddenByBudget: Int { isCollapsed ? 0 : total - rows.count }
     }
 
-    /// While a filter or search narrows the list, the idle section must show its
-    /// matches — including when it collapsed itself. Forcing the override open
-    /// (rather than dropping it) means a manual choice returns intact once the
-    /// narrowing clears.
+    /// While a filter or search narrows the list, the idle section must show
+    /// its matches, even when the user folded it. Forcing the override open
+    /// (rather than dropping it) means the manual choice returns intact once
+    /// the narrowing clears.
     ///
     /// Only idle, because only idle collapses on its own. Every other collapsed
     /// section is a choice somebody made, and that includes every section of a
@@ -92,7 +92,6 @@ enum SessionSections {
         let title: String
         let accent: SessionState
         let members: [AgentSession]
-        /// Only the idle state section folds itself away unasked.
     }
 
     private static func candidates(
