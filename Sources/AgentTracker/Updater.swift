@@ -137,7 +137,9 @@ enum Updater {
 
             // ditto, not unzip: it preserves the signature and resource forks,
             // same reason the release packs with it.
-            guard await run("/usr/bin/ditto", ["-x", "-k", archive.path, staging.path]).ok else {
+            let unpack = await ProcessRunner.run(
+                "/usr/bin/ditto", ["-x", "-k", archive.path, staging.path])
+            guard unpack.ok else {
                 return .failed("The archive could not be unpacked.")
             }
             let newBundle = staging.appendingPathComponent("AgentTracker.app")
@@ -148,7 +150,7 @@ enum Updater {
             // Signature, then identity, then notarization — in that order,
             // and all before quarantine is touched.
             guard
-                await run(
+                await ProcessRunner.run(
                     "/usr/bin/codesign", ["--verify", "--deep", "--strict", newBundle.path]
                 ).ok
             else {
@@ -160,7 +162,7 @@ enum Updater {
                 return .failed("The downloaded app is signed by a different team.")
             }
             guard
-                await run(
+                await ProcessRunner.run(
                     "/usr/sbin/spctl", ["--assess", "--type", "execute", newBundle.path]
                 ).ok
             else {
@@ -182,7 +184,7 @@ enum Updater {
 
             // Only now: a quarantined bundle would be blocked on relaunch, but
             // stripping before verification would launder whatever failed it.
-            _ = await run(
+            _ = await ProcessRunner.run(
                 "/usr/bin/xattr", ["-dr", "com.apple.quarantine", newBundle.path])
 
             _ = try FileManager.default.replaceItemAt(bundleURL, withItemAt: newBundle)
@@ -190,6 +192,29 @@ enum Updater {
         } catch {
             return .failed(error.localizedDescription)
         }
+    }
+
+    /// The update path for a Homebrew-managed install: ask brew, which owns
+    /// the bundle and its manifest, to do what the app must not do itself.
+    /// brew replaces the bundle on disk while this process keeps running from
+    /// its old inode; the caller relaunches into the new one exactly as after
+    /// a self-swap. `HOMEBREW_NO_AUTO_UPDATE` keeps the run scoped to this
+    /// cask instead of a general brew refresh nobody asked for.
+    static func upgradeViaHomebrew() async -> Outcome {
+        guard InstallSource.current == .homebrew else {
+            return .failed("This install is not Homebrew's.")
+        }
+        guard let brew = InstallSource.homebrewExecutable() else {
+            return .failed("Homebrew's executable was not found.")
+        }
+        let result = await ProcessRunner.run(
+            brew, ["upgrade", "--cask", "agent-tracker"],
+            environment: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
+        guard result.ok else {
+            let lines = result.output.split(whereSeparator: \.isNewline).suffix(2)
+            return .failed("brew upgrade failed: \(lines.joined(separator: " "))")
+        }
+        return .installed
     }
 
     /// Restart into the swapped bundle. A detached shell waits for this
@@ -225,35 +250,8 @@ enum Updater {
 
     // MARK: - Process plumbing
 
-    private struct RunResult {
-        let ok: Bool
-        let output: String
-    }
-
-    /// Off the main actor: codesign on a full bundle takes real time.
-    private static func run(_ tool: String, _ arguments: [String]) async -> RunResult {
-        await Task.detached {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: tool)
-            task.arguments = arguments
-            let pipe = Pipe()
-            task.standardOutput = pipe
-            task.standardError = pipe
-            do {
-                try task.run()
-                let data = pipe.fileHandleForReading.readDataToEndOfFile()
-                task.waitUntilExit()
-                return RunResult(
-                    ok: task.terminationStatus == 0,
-                    output: String(bytes: data, encoding: .utf8) ?? "")
-            } catch {
-                return RunResult(ok: false, output: error.localizedDescription)
-            }
-        }.value
-    }
-
     private static func teamIdentifier(ofBundleAt url: URL) async -> String? {
-        let result = await run("/usr/bin/codesign", ["-dv", url.path])
+        let result = await ProcessRunner.run("/usr/bin/codesign", ["-dv", url.path])
         guard result.ok else { return nil }
         return teamIdentifier(fromCodesignOutput: result.output)
     }

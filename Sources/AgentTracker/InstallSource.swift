@@ -49,6 +49,28 @@ enum InstallSource: Equatable {
         return caskroomDirectories.contains(where: directoryExists) ? .homebrew : .direct
     }
 
+    /// The brew binary for whichever prefix holds this cask's Caskroom, pure
+    /// for the same testability reason as `detect`. The Caskroom sits at
+    /// `<prefix>/Caskroom/<cask>`, so the executable is two levels up in
+    /// `<prefix>/bin/brew`.
+    static func brewExecutablePath(directoryExists: (String) -> Bool) -> String? {
+        for caskroom in caskroomDirectories where directoryExists(caskroom) {
+            let prefix = (caskroom as NSString).deletingLastPathComponent
+            return (prefix as NSString).deletingLastPathComponent + "/bin/brew"
+        }
+        return nil
+    }
+
+    static func homebrewExecutable() -> String? {
+        let path = brewExecutablePath { candidate in
+            var isDirectory: ObjCBool = false
+            return FileManager.default.fileExists(atPath: candidate, isDirectory: &isDirectory)
+                && isDirectory.boolValue
+        }
+        guard let path, FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return path
+    }
+
     static var current: InstallSource {
         detect(
             isBundled: AppInfo.isBundled,

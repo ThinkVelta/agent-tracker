@@ -479,7 +479,14 @@ private struct SessionsSettingsTab: View {
 /// Troubleshooting and removal — technical, occasionally destructive, and
 /// deliberately not mixed in with the app's identity page.
 private struct AdvancedSettingsTab: View {
-    @State private var copiedUninstall = false
+    @State private var confirmingUninstall = false
+    @State private var uninstallState: UninstallState = .idle
+
+    private enum UninstallState: Equatable {
+        case idle
+        case working
+        case failed(String)
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -505,20 +512,52 @@ private struct AdvancedSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Uninstall",
-                    detail: "Removes the agent hooks, the app and its settings. From the "
-                        + "repo: ./integrations/uninstall.sh",
+                    detail: uninstallDetail,
                     divided: true
                 ) {
-                    Button(copiedUninstall ? "Copied" : "Copy command") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(
-                            "./integrations/uninstall.sh", forType: .string)
-                        copiedUninstall = true
+                    if uninstallState == .working {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button("Uninstall…") { confirmingUninstall = true }
+                            .confirmationDialog(
+                                "Uninstall AgentTracker?",
+                                isPresented: $confirmingUninstall
+                            ) {
+                                Button("Uninstall", role: .destructive) {
+                                    uninstallState = .working
+                                    Task {
+                                        switch await Uninstaller.run() {
+                                        case .done:
+                                            NSApp.terminate(nil)
+                                        case .failed(let reason):
+                                            uninstallState = .failed(reason)
+                                        }
+                                    }
+                                }
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text(
+                                    "Unhooks Claude Code, restores your statusline, removes "
+                                        + "the login item, and removes the app. Session data "
+                                        + "in ~/.agent-tracker stays.")
+                            }
                     }
                 }
             }
         }
         .padding(20)
+    }
+
+    private var uninstallDetail: String {
+        switch uninstallState {
+        case .idle:
+            return "Unhooks Claude Code, removes the login item, and removes the "
+                + "app. Session data stays; the bundled uninstall script does the work."
+        case .working:
+            return "Uninstalling…"
+        case .failed(let reason):
+            return reason
+        }
     }
 }
 
@@ -640,8 +679,8 @@ private struct AboutSettingsTab: View {
         case .done(.updateAvailable(let release)):
             switch installSource {
             case .homebrew:
-                return "\(release.tag) is available. This install is Homebrew's; "
-                    + "update with brew upgrade --cask agent-tracker"
+                return "\(release.tag) is available. Updating runs "
+                    + "brew upgrade --cask agent-tracker and relaunches."
             case .direct:
                 return release.zip == nil
                     ? "\(release.tag) is available."
@@ -668,6 +707,18 @@ private struct AboutSettingsTab: View {
                     updateState = .installing
                     Task {
                         switch await Updater.downloadAndInstall(release) {
+                        case .installed:
+                            Updater.relaunch()
+                        case .failed(let reason):
+                            updateState = .installFailed(reason)
+                        }
+                    }
+                }
+            } else if installSource == .homebrew {
+                Button("Update") {
+                    updateState = .installing
+                    Task {
+                        switch await Updater.upgradeViaHomebrew() {
                         case .installed:
                             Updater.relaunch()
                         case .failed(let reason):

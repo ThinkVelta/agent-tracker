@@ -153,4 +153,33 @@ struct UpdaterTests {
         let source = InstallSource.detect(isBundled: false, bundlePath: managed) { _ in true }
         #expect(source == .development)
     }
+
+    /// The brew binary lives two levels above the Caskroom, whichever prefix
+    /// this machine uses.
+    @Test func brewExecutableDerivesFromTheMatchingCaskroom() {
+        #expect(
+            InstallSource.brewExecutablePath {
+                $0 == "/opt/homebrew/Caskroom/agent-tracker"
+            } == "/opt/homebrew/bin/brew")
+        #expect(
+            InstallSource.brewExecutablePath {
+                $0 == "/usr/local/Caskroom/agent-tracker"
+            } == "/usr/local/bin/brew")
+        #expect(InstallSource.brewExecutablePath { _ in false } == nil)
+    }
+
+    // MARK: - Uninstall plans
+
+    /// Who removes the bundle depends on who owns it: brew's manifest must
+    /// stay true for brew installs, a direct bundle goes to the Trash, and a
+    /// development build has no bundle, so only the hooks are cleaned.
+    @Test func uninstallPlansMatchTheInstallSource() {
+        #expect(
+            Uninstaller.plan(for: .homebrew)
+                == [.unhookAgents, .disableLoginItem, .brewUninstall])
+        #expect(
+            Uninstaller.plan(for: .direct)
+                == [.unhookAgents, .disableLoginItem, .trashBundle])
+        #expect(Uninstaller.plan(for: .development) == [.unhookAgents])
+    }
 }

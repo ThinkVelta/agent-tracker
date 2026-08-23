@@ -91,8 +91,8 @@ releases API and the only unprompted network activity in the app; Settings ›
 About turns it off, houses the manual check, and offers the install. Nothing
 installs without you. Installing by hand verifies the release's own digest and
 the Developer ID signature before swapping the app; you can also opt in to
-installing automatically at launch. A Homebrew install is recognized and left
-to `brew upgrade`.
+installing automatically at launch. A Homebrew install is recognized and
+updated through `brew upgrade`, from the same button.
 
 Agent Tracker asks for up to three macOS permissions (Accessibility for
 click-to-focus, Automation for writing into a Ghostty window, Notifications

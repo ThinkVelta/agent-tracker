@@ -8,10 +8,13 @@ integrations/uninstall.sh --purge      # removes ~/.agent-tracker too
 Idempotent, so running it twice is safe, and running it when nothing is installed
 just says so.
 
-Settings › Advanced › *Uninstall* has a **Copy command** button, which puts that
-first line on your clipboard. It copies rather than runs: uninstalling deletes
-the app that would be doing the deleting, and a button that removes itself
-mid-click is not a thing to build.
+Settings › Advanced › *Uninstall* runs the same script for you, from the copy
+every app bundle carries, then removes the login item and the app itself (a
+Homebrew install is removed through `brew uninstall`, a direct one goes to the
+Trash). A running app can outlive its own bundle on disk, which is what makes
+the button safe to build; it quits as its last act. The terminal route above
+stays for anyone who prefers it, and is the fallback if the button reports a
+failure.
 
 ## What it does, precisely
 
