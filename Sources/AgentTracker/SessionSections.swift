@@ -48,9 +48,10 @@ enum SessionSections {
     /// (rather than dropping it) means the manual choice returns intact once
     /// the narrowing clears.
     ///
-    /// Only idle, because only idle collapses on its own. Every other collapsed
-    /// section is a choice somebody made, and that includes every section of a
-    /// project grouping — so this rule simply finds nothing to do there.
+    /// Only idle is force-opened, and only while narrowing. Collapses are
+    /// manual everywhere now; this rule exists because a user-folded idle must
+    /// still show its matches while the list narrows, and it returns intact
+    /// once the narrowing clears.
     static func overridesForNarrowing(
         _ overrides: [String: Bool], narrowing: Bool
     ) -> [String: Bool] {
