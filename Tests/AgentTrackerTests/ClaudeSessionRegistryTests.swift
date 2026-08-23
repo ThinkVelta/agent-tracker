@@ -192,7 +192,7 @@ final class ClaudeSessionRegistryTests {
     @MainActor private func writeEntry(_ id: String, pid: Int, in claudeRoot: URL) throws {
         let sessions = claudeRoot.appendingPathComponent("sessions")
         try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
-        try #"{"sessionId":"\#(id)","name":"\#(id)-name"}"#.write(
+        try #"{"sessionId":"\#(id)","pid":\#(pid),"name":"\#(id)-name"}"#.write(
             to: sessions.appendingPathComponent("\(pid).json"),
             atomically: true, encoding: .utf8)
     }
@@ -206,7 +206,7 @@ final class ClaudeSessionRegistryTests {
         let registry = ClaudeSessionRegistry(claudeDirectory: root)
         #expect(registry.entry(forSessionId: "late") == nil)
 
-        try writeEntry("late", pid: 0, in: root)
+        try writeEntry("late", pid: Int(ProcessInfo.processInfo.processIdentifier), in: root)
         registry.refresh()
         #expect(registry.entry(forSessionId: "late")?.name == "late-name")
     }
@@ -216,13 +216,14 @@ final class ClaudeSessionRegistryTests {
     @Test @MainActor func survivesRegistryDeleteAndRecreate() throws {
         let root = try makeClaudeDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        try writeEntry("before", pid: 0, in: root)
+        try writeEntry(
+            "before", pid: Int(ProcessInfo.processInfo.processIdentifier), in: root)
         let registry = ClaudeSessionRegistry(claudeDirectory: root)
         #expect(registry.entry(forSessionId: "before") != nil)
 
         try FileManager.default.removeItem(at: root.appendingPathComponent("sessions"))
         registry.refresh()
-        try writeEntry("after", pid: 0, in: root)
+        try writeEntry("after", pid: Int(ProcessInfo.processInfo.processIdentifier), in: root)
         registry.refresh()
         #expect(registry.entry(forSessionId: "after")?.name == "after-name")
     }
