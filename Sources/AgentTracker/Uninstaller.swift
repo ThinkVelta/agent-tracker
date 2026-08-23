@@ -36,9 +36,9 @@ enum Uninstaller {
     /// script's own default: removing a directory of the user's data is not
     /// this button's decision to make.
     static func run() async -> Outcome {
-        guard let script = bundledUninstallScript() else {
+        guard let script = uninstallScriptURL() else {
             return .failed(
-                "No bundled uninstall script; run ./integrations/uninstall.sh from the repo.")
+                "No uninstall script found; run ./integrations/uninstall.sh from the repo.")
         }
         let unhook = await ProcessRunner.run("/bin/bash", [script.path])
         guard unhook.ok else {
@@ -76,13 +76,20 @@ enum Uninstaller {
         return .done
     }
 
-    /// The script every bundle carries. nil under `swift run`, which has no
-    /// bundle and whose user has the repo in front of them.
-    static func bundledUninstallScript() -> URL? {
-        guard AppInfo.isBundled else { return nil }
-        let url = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Resources/integrations/uninstall.sh")
-        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    /// The bundled script first, then the repo's own, so `.development` is
+    /// reachable too: under `swift run` the working directory is the repo
+    /// root, which is exactly the population that plan serves. A GUI launch
+    /// never reaches the fallback, because a bundle always resolves first and
+    /// a GUI process's working directory is nowhere useful anyway.
+    static func uninstallScriptURL() -> URL? {
+        if AppInfo.isBundled {
+            let bundled = Bundle.main.bundleURL
+                .appendingPathComponent("Contents/Resources/integrations/uninstall.sh")
+            return FileManager.default.fileExists(atPath: bundled.path) ? bundled : nil
+        }
+        let repoScript = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("integrations/uninstall.sh")
+        return FileManager.default.fileExists(atPath: repoScript.path) ? repoScript : nil
     }
 
     private static func tail(_ output: String) -> String {

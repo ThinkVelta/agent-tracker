@@ -158,14 +158,34 @@ struct UpdaterTests {
     /// this machine uses.
     @Test func brewExecutableDerivesFromTheMatchingCaskroom() {
         #expect(
-            InstallSource.brewExecutablePath {
-                $0 == "/opt/homebrew/Caskroom/agent-tracker"
-            } == "/opt/homebrew/bin/brew")
+            InstallSource.brewExecutablePath(
+                directoryExists: { $0 == "/opt/homebrew/Caskroom/agent-tracker" },
+                isExecutable: { _ in true }) == "/opt/homebrew/bin/brew")
         #expect(
-            InstallSource.brewExecutablePath {
-                $0 == "/usr/local/Caskroom/agent-tracker"
-            } == "/usr/local/bin/brew")
-        #expect(InstallSource.brewExecutablePath { _ in false } == nil)
+            InstallSource.brewExecutablePath(
+                directoryExists: { $0 == "/usr/local/Caskroom/agent-tracker" },
+                isExecutable: { _ in true }) == "/usr/local/bin/brew")
+        #expect(
+            InstallSource.brewExecutablePath(
+                directoryExists: { _ in false }, isExecutable: { _ in true }) == nil)
+    }
+
+    /// A machine migrated between prefixes can hold a stale Caskroom whose
+    /// brew is gone; the scan must keep going to the prefix that works, in
+    /// either direction.
+    @Test func aStaleCaskroomDoesNotShadowAWorkingPrefix() {
+        let both: (String) -> Bool = { _ in true }
+        #expect(
+            InstallSource.brewExecutablePath(
+                directoryExists: both,
+                isExecutable: { $0 == "/usr/local/bin/brew" }) == "/usr/local/bin/brew")
+        #expect(
+            InstallSource.brewExecutablePath(
+                directoryExists: both,
+                isExecutable: { $0 == "/opt/homebrew/bin/brew" }) == "/opt/homebrew/bin/brew")
+        #expect(
+            InstallSource.brewExecutablePath(
+                directoryExists: both, isExecutable: { _ in false }) == nil)
     }
 
     // MARK: - Uninstall plans

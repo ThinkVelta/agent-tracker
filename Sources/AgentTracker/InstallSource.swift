@@ -49,26 +49,32 @@ enum InstallSource: Equatable {
         return caskroomDirectories.contains(where: directoryExists) ? .homebrew : .direct
     }
 
-    /// The brew binary for whichever prefix holds this cask's Caskroom, pure
-    /// for the same testability reason as `detect`. The Caskroom sits at
+    /// The brew binary for a prefix holding this cask's Caskroom, pure for
+    /// the same testability reason as `detect`. The Caskroom sits at
     /// `<prefix>/Caskroom/<cask>`, so the executable is two levels up in
-    /// `<prefix>/bin/brew`.
-    static func brewExecutablePath(directoryExists: (String) -> Bool) -> String? {
+    /// `<prefix>/bin/brew`. Every candidate is tried: a machine migrated
+    /// between prefixes can hold a stale Caskroom whose brew is gone, and
+    /// stopping there would fail an update the other prefix can serve.
+    static func brewExecutablePath(
+        directoryExists: (String) -> Bool,
+        isExecutable: (String) -> Bool
+    ) -> String? {
         for caskroom in caskroomDirectories where directoryExists(caskroom) {
             let prefix = (caskroom as NSString).deletingLastPathComponent
-            return (prefix as NSString).deletingLastPathComponent + "/bin/brew"
+            let brew = (prefix as NSString).deletingLastPathComponent + "/bin/brew"
+            if isExecutable(brew) { return brew }
         }
         return nil
     }
 
     static func homebrewExecutable() -> String? {
-        let path = brewExecutablePath { candidate in
-            var isDirectory: ObjCBool = false
-            return FileManager.default.fileExists(atPath: candidate, isDirectory: &isDirectory)
-                && isDirectory.boolValue
-        }
-        guard let path, FileManager.default.isExecutableFile(atPath: path) else { return nil }
-        return path
+        brewExecutablePath(
+            directoryExists: { candidate in
+                var isDirectory: ObjCBool = false
+                return FileManager.default.fileExists(
+                    atPath: candidate, isDirectory: &isDirectory) && isDirectory.boolValue
+            },
+            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) })
     }
 
     static var current: InstallSource {
