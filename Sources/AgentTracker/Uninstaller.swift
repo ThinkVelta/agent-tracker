@@ -54,8 +54,8 @@ enum Uninstaller {
                 // inert either way, but leaving no trace is the polite exit.
                 try? LoginItem.setEnabled(false)
             case .brewUninstall:
-                guard let brew = InstallSource.homebrewExecutable() else {
-                    return .failed("Homebrew's executable was not found.")
+                guard let brew = await InstallSource.owningHomebrewExecutable() else {
+                    return .failed("No Homebrew prefix claims this cask.")
                 }
                 let result = await ProcessRunner.run(
                     brew, ["uninstall", "--cask", "agent-tracker"],

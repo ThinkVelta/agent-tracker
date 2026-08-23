@@ -204,8 +204,8 @@ enum Updater {
         guard InstallSource.current == .homebrew else {
             return .failed("This install is not Homebrew's.")
         }
-        guard let brew = InstallSource.homebrewExecutable() else {
-            return .failed("Homebrew's executable was not found.")
+        guard let brew = await InstallSource.owningHomebrewExecutable() else {
+            return .failed("No Homebrew prefix claims this cask.")
         }
         let result = await ProcessRunner.run(
             brew, ["upgrade", "--cask", "agent-tracker"],

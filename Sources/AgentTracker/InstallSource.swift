@@ -49,32 +49,43 @@ enum InstallSource: Equatable {
         return caskroomDirectories.contains(where: directoryExists) ? .homebrew : .direct
     }
 
-    /// The brew binary for a prefix holding this cask's Caskroom, pure for
+    /// Every runnable brew whose prefix holds this cask's Caskroom, pure for
     /// the same testability reason as `detect`. The Caskroom sits at
     /// `<prefix>/Caskroom/<cask>`, so the executable is two levels up in
-    /// `<prefix>/bin/brew`. Every candidate is tried: a machine migrated
-    /// between prefixes can hold a stale Caskroom whose brew is gone, and
-    /// stopping there would fail an update the other prefix can serve.
-    static func brewExecutablePath(
+    /// `<prefix>/bin/brew`. All candidates, not the first: a machine migrated
+    /// between prefixes can hold a stale-but-runnable brew beside the one
+    /// that actually manages the cask, and only asking each (see
+    /// `owningHomebrewExecutable`) can tell them apart.
+    static func brewExecutableCandidates(
         directoryExists: (String) -> Bool,
         isExecutable: (String) -> Bool
-    ) -> String? {
-        for caskroom in caskroomDirectories where directoryExists(caskroom) {
+    ) -> [String] {
+        caskroomDirectories.compactMap { caskroom in
+            guard directoryExists(caskroom) else { return nil }
             let prefix = (caskroom as NSString).deletingLastPathComponent
             let brew = (prefix as NSString).deletingLastPathComponent + "/bin/brew"
-            if isExecutable(brew) { return brew }
+            return isExecutable(brew) ? brew : nil
         }
-        return nil
     }
 
-    static func homebrewExecutable() -> String? {
-        brewExecutablePath(
+    /// The brew that actually manages this cask, decided by asking each
+    /// candidate rather than trusting Caskroom presence: `list --cask`
+    /// succeeds only in the prefix whose manifest holds the install.
+    static func owningHomebrewExecutable() async -> String? {
+        let candidates = brewExecutableCandidates(
             directoryExists: { candidate in
                 var isDirectory: ObjCBool = false
                 return FileManager.default.fileExists(
                     atPath: candidate, isDirectory: &isDirectory) && isDirectory.boolValue
             },
             isExecutable: { FileManager.default.isExecutableFile(atPath: $0) })
+        for brew in candidates {
+            let probe = await ProcessRunner.run(
+                brew, ["list", "--cask", "agent-tracker"],
+                environment: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
+            if probe.ok { return brew }
+        }
+        return nil
     }
 
     static var current: InstallSource {
