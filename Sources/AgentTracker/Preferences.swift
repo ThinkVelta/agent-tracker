@@ -53,47 +53,6 @@ final class Preferences: ObservableObject {
         app.appearance = appearanceOverride.appearance
     }
 
-    // MARK: - Idle folding
-
-    /// When the popover's idle section folds itself away. Stored as one Int:
-    /// -1 never, 0 always, n > 0 folds past n sessions.
-    enum IdleFolding: Equatable, Hashable {
-        case never
-        case past(Int)
-        case always
-
-        var stored: Int {
-            switch self {
-            case .never: return -1
-            case .always: return 0
-            case .past(let threshold): return threshold
-            }
-        }
-
-        init(stored: Int) {
-            switch stored {
-            case ..<0: self = .never
-            case 0: self = .always
-            default: self = .past(stored)
-            }
-        }
-
-        var label: String {
-            switch self {
-            case .never: return "Never"
-            case .always: return "Always"
-            case .past(let threshold): return "When more than \(threshold)"
-            }
-        }
-
-        /// The choices Settings offers. `.past(3)` is the shipped default.
-        static let options: [IdleFolding] = [.never, .past(3), .past(5), .past(10), .always]
-    }
-
-    @Published var idleFolding: IdleFolding {
-        didSet { defaults.set(idleFolding.stored, forKey: Keys.idleFolding) }
-    }
-
     // MARK: - Grouping
 
     /// What the dropdown's sections divide on. State by default: the app's
@@ -202,7 +161,6 @@ final class Preferences: ObservableObject {
 
     private enum Keys {
         static let appearance = "appearanceOverride"
-        static let idleFolding = "idleFoldingThreshold"
         static let grouping = "sessionGrouping"
         static let autoAckDwell = "autoAckDwellSeconds"
         static let refreshInterval = "refreshIntervalSeconds"
@@ -236,12 +194,6 @@ final class Preferences: ObservableObject {
         // here) and then snapped to the option sets Settings offers: a value
         // with no matching picker tag renders as a BLANK picker, which is
         // worse than losing the stored value.
-        let defaultFolding = IdleFolding.past(Theme.Metrics.idleAutoCollapseThreshold)
-        let loadedFolding = (defaults.object(forKey: Keys.idleFolding) as? Int)
-            .map(IdleFolding.init(stored:))
-        idleFolding =
-            loadedFolding.flatMap { IdleFolding.options.contains($0) ? $0 : nil }
-            ?? defaultFolding
 
         let loadedDwell = defaults.object(forKey: Keys.autoAckDwell) as? Double
         autoAckDwell =

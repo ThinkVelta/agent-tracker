@@ -161,20 +161,6 @@ private struct GeneralSettingsTab: View {
                     .labelsHidden()
                     .frame(width: 180)
                 }
-                SettingsRow(
-                    title: "Fold idle sessions away",
-                    detail: "Idle sessions collapse into their header so active work stays "
-                        + "visible. Filtering or searching always expands them.",
-                    divided: true
-                ) {
-                    Picker("", selection: $preferences.idleFolding) {
-                        ForEach(Preferences.IdleFolding.options, id: \.self) {
-                            Text($0.label)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 150)
-                }
             }
             // Its own card, and off by default. Everything above changes what the
             // app shows; this is the only switch that lets it act on a session
