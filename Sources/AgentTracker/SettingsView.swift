@@ -68,7 +68,7 @@ private struct GeneralSettingsTab: View {
         case true:
             return "Granted."
         case false:
-            return "Not granted yet, so nothing can be sent. Allow asks macOS."
+            return "Not granted yet, so nothing can be sent."
         case nil:
             return "Ghostty isn't running, so there is nothing to ask about yet."
         }
@@ -573,8 +573,8 @@ private struct AboutSettingsTab: View {
                 if installSource == .direct {
                     SettingsRow(
                         title: "Install automatically",
-                        detail: "Installs what the launch check finds. Nothing restarts "
-                            + "while you work.",
+                        detail: "Installs what the launch check finds, then relaunches. "
+                            + "Updates found later only notify.",
                         divided: true
                     ) {
                         Toggle("", isOn: $preferences.updateInstallsAutomatically)
