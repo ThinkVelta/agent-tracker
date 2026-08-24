@@ -193,6 +193,45 @@ struct UpdaterTests {
             ).isEmpty)
     }
 
+    // MARK: - Homebrew upgrade outcome
+
+    /// brew exits 0 whether it installed a newer cask or found nothing to do,
+    /// so only the version now on disk can say whether a relaunch is an
+    /// update or a restart into the same build. The first Update click after
+    /// v0.8.0 shipped did the latter, against a tap brew had not refreshed.
+    @Test func aBrewUpgradeThatLeftTheSameVersionOnDiskIsNotAnInstall() {
+        #expect(
+            Updater.outcome(afterUpgradeInstalled: "0.7.1", running: "0.7.1")
+                == .failed(
+                    "Homebrew still has 0.7.1 after updating, so there was nothing "
+                        + "to install. Try again later."))
+        #expect(Updater.outcome(afterUpgradeInstalled: "0.8.0", running: "0.7.1") == .installed)
+        // An older bundle is a downgrade, never something to relaunch into.
+        if case .installed = Updater.outcome(afterUpgradeInstalled: "0.7.0", running: "0.7.1") {
+            Issue.record("a downgrade was reported as installed")
+        }
+        if case .installed = Updater.outcome(afterUpgradeInstalled: nil, running: "0.7.1") {
+            Issue.record("an unreadable bundle was reported as installed")
+        }
+    }
+
+    @Test func theVersionIsReadFromTheBundleOnDisk() throws {
+        let bundle = FileManager.default.temporaryDirectory
+            .appendingPathComponent("updater-test-\(UUID().uuidString)/AgentTracker.app")
+        defer { try? FileManager.default.removeItem(at: bundle.deletingLastPathComponent()) }
+        let contents = bundle.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        // Nothing to read yet: a bundle without an Info.plist is unreadable,
+        // not version zero.
+        #expect(Updater.installedVersion(ofBundleAt: bundle) == nil)
+
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: ["CFBundleShortVersionString": "0.8.0", "CFBundleVersion": "112"],
+            format: .xml, options: 0)
+        try plist.write(to: contents.appendingPathComponent("Info.plist"))
+        #expect(Updater.installedVersion(ofBundleAt: bundle) == "0.8.0")
+    }
+
     // MARK: - Uninstall plans
 
     /// Who removes the bundle depends on who owns it: brew's manifest must
