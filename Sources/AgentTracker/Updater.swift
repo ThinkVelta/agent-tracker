@@ -241,6 +241,13 @@ enum Updater {
     /// is already the latest, so its status cannot tell the two apart; the
     /// bundle now on disk can. Relaunching into the same version is worse
     /// than doing nothing, because it looks exactly like the update happened.
+    ///
+    /// Only the short version is compared, on purpose. The Update button that
+    /// leads here exists only when `UpdateCheck` found a tag newer than the
+    /// running short version, and a release never reuses a version, so a
+    /// bundle with the same version and a newer build is not a case this
+    /// path can meet. Comparing builds would add a branch nothing takes and
+    /// loosen the guard the direct-install path applies to the same decision.
     static func outcome(afterUpgradeInstalled installed: String?, running: String) -> Outcome {
         guard let installed else {
             return .failed("The app on disk could not be read after the upgrade.")
