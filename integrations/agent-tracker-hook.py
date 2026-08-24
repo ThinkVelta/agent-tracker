@@ -156,6 +156,15 @@ def update(session_id, event, state, reason, extra):
     pid, tty = agent_process()
     data = {**current}
     data.update({k: v for k, v in extra.items() if v})
+    # notificationType is event-local, not a stable session fact like cwd or
+    # the terminal: a Notification's type must describe THIS event only. The
+    # truthy merge above would let an old idle_prompt survive into a later
+    # permission prompt and falsely mark it promotable, so set it from this
+    # event alone and clear it when this event does not carry one.
+    if extra.get("notificationType"):
+        data["notificationType"] = extra["notificationType"]
+    else:
+        data.pop("notificationType", None)
     identity = terminal_identity(tty)
     if identity:
         data["terminal"] = identity
