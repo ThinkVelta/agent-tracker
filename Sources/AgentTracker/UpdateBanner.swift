@@ -25,8 +25,10 @@ struct UpdateBanner: View {
             }
             Spacer()
             Button("Open Settings") {
-                openSettings()
-                NSApp.activate(ignoringOtherApps: true)
+                SettingsRouter.shared.show(.about) {
+                    openSettings()
+                    NSApp.activate(ignoringOtherApps: true)
+                }
             }
             .buttonStyle(.link)
             .font(.system(size: 11))
