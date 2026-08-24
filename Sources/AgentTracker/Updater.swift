@@ -198,8 +198,21 @@ enum Updater {
     /// the bundle and its manifest, to do what the app must not do itself.
     /// brew replaces the bundle on disk while this process keeps running from
     /// its old inode; the caller relaunches into the new one exactly as after
-    /// a self-swap. `HOMEBREW_NO_AUTO_UPDATE` keeps the run scoped to this
-    /// cask instead of a general brew refresh nobody asked for.
+    /// a self-swap.
+    ///
+    /// `brew update` first, every time. brew upgrades from its local clone of
+    /// the tap, and that clone only moves when something fetches it: until
+    /// then `brew upgrade` calls the old version the latest and exits 0. Its
+    /// own auto-update does not close the gap, because it runs at most once a
+    /// day and any brew command earlier that day silences it. Measured on
+    /// v0.7.1, the first Update click after v0.8.0 shipped: brew answered
+    /// "already installed", the app relaunched, and it was still v0.7.1. The
+    /// refresh is the one thing the click cannot do without, so it is not
+    /// optional and not left to the throttle.
+    ///
+    /// Whether the upgrade delivered anything is then read from the bundle on
+    /// disk (`outcome(afterUpgradeInstalled:running:)`), never from brew's
+    /// exit status, which is 0 in both cases.
     static func upgradeViaHomebrew() async -> Outcome {
         guard InstallSource.current == .homebrew else {
             return .failed("This install is not Homebrew's.")
@@ -207,14 +220,55 @@ enum Updater {
         guard let brew = await InstallSource.owningHomebrewExecutable() else {
             return .failed("No Homebrew prefix claims this cask.")
         }
-        let result = await ProcessRunner.run(
+        let update = await ProcessRunner.run(brew, ["update", "--quiet"])
+        guard update.ok else {
+            return .failed("brew update failed: \(lastLines(of: update.output))")
+        }
+        // Just refreshed; the flag stops brew from considering it again.
+        let upgrade = await ProcessRunner.run(
             brew, ["upgrade", "--cask", "agent-tracker"],
             environment: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
-        guard result.ok else {
-            let lines = result.output.split(whereSeparator: \.isNewline).suffix(2)
-            return .failed("brew upgrade failed: \(lines.joined(separator: " "))")
+        guard upgrade.ok else {
+            return .failed("brew upgrade failed: \(lastLines(of: upgrade.output))")
+        }
+        return outcome(
+            afterUpgradeInstalled: installedVersion(ofBundleAt: Bundle.main.bundleURL),
+            running: AppInfo.version)
+    }
+
+    /// Whether a brew upgrade is worth relaunching into. brew exits 0 both
+    /// when it installed a newer cask and when it decided the installed one
+    /// is already the latest, so its status cannot tell the two apart; the
+    /// bundle now on disk can. Relaunching into the same version is worse
+    /// than doing nothing, because it looks exactly like the update happened.
+    static func outcome(afterUpgradeInstalled installed: String?, running: String) -> Outcome {
+        guard let installed else {
+            return .failed("The app on disk could not be read after the upgrade.")
+        }
+        guard UpdateCheck.isNewer(installed, than: running) else {
+            return .failed(
+                "Homebrew still has \(installed) after updating, so there was nothing "
+                    + "to install. Try again later.")
         }
         return .installed
+    }
+
+    /// The version a bundle on disk declares, read from its Info.plist
+    /// directly. `Bundle.main` is the wrong source after a swap: Foundation
+    /// caches the dictionary it read at launch, so it keeps describing the
+    /// copy that is running rather than the one now at that path.
+    static func installedVersion(ofBundleAt url: URL) -> String? {
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        guard let data = try? Data(contentsOf: plist),
+            let object = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil),
+            let info = object as? [String: Any]
+        else { return nil }
+        return info["CFBundleShortVersionString"] as? String
+    }
+
+    private static func lastLines(of output: String) -> String {
+        output.split(whereSeparator: \.isNewline).suffix(2).joined(separator: " ")
     }
 
     /// Restart into the swapped bundle. A detached shell waits for this
