@@ -33,8 +33,12 @@ final class SettingsRouter: ObservableObject {
     /// an accessory app's windows otherwise open without focus.
     static func openViaAppKit() {
         NSApp.activate(ignoringOtherApps: true)
-        let settings = Selector(("showSettingsWindow:"))
-        if NSApp.sendAction(settings, to: nil, from: nil) { return }
-        NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) { return }
+        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) { return }
+        // No third way to open Settings from AppKit. Best-effort, but say so:
+        // a future OS renaming the selector would otherwise be a dead click
+        // with nothing in the log the About tab sends people to.
+        DebugLog.log(
+            "[settings] \(DebugLog.timestamp()) could not open Settings; no known selector handled")
     }
 }
