@@ -261,11 +261,12 @@ jobs:
       # grant would break when it would not, contradicting the README and the
       # Homebrew cask.
       #
-      # `sign` means "the signing secrets are set", NOT "Developer ID": today
-      # that certificate is a self-signed one (Authority=AgentTracker Local,
-      # no TeamIdentifier), which is exactly why notarization is not possible
-      # yet. So this copy must not promise Apple's involvement — only
-      # NOTARIZED can, since Apple notarizes nothing else.
+      # `sign` means "the signing secrets are set", which since v0.3.1 is a
+      # real Developer ID certificate, so a signed build is also notarized.
+      # The copy still branches on NOTARIZED rather than SIGNED, because only
+      # Apple's notarization is what removes the first-launch block, and the
+      # workflow must stay honest if it is ever run with signing but not
+      # notary secrets.
       - name: Compose release notes
         id: notes
         env:
