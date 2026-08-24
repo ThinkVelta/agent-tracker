@@ -12,6 +12,22 @@ enum RegistryEnrichment {
     /// Nothing but this pairing links the two files.
     static let turnEndedEvent = "Stop"
 
+    /// The other promotable red. Claude's `Notification` hook fires for
+    /// several reasons and only the payload's `notification_type` tells them
+    /// apart: `idle_prompt` means the turn has sat still for a while, which a
+    /// turn parked on a background shell does exactly as much as a finished
+    /// one, so it is treated like `Stop`. Every other type, and a missing one
+    /// (hooks that predate recording it), stays a red nothing may clear.
+    static let notificationEvent = "Notification"
+    static let idlePromptNotification = "idle_prompt"
+
+    /// Whether a red row came from an event the registry may overrule.
+    static func isPromotable(_ session: AgentSession) -> Bool {
+        if session.lastEvent == turnEndedEvent { return true }
+        return session.lastEvent == notificationEvent
+            && session.notificationType == idlePromptNotification
+    }
+
     /// - Parameters:
     ///   - session: a row loaded from `~/.agent-tracker/sessions`.
     ///   - entry: the registry entry with the same `sessionId`, if any.
@@ -65,11 +81,12 @@ enum RegistryEnrichment {
     ///   hook, so a session the user escaped out of stays green until its next
     ///   event, which may never come.
     ///
-    /// Only a `Stop`-derived red may be promoted. A `Notification` red is a
-    /// permission prompt: the user genuinely is needed, and clearing it would
-    /// hide the one thing this app exists to show. An unrecognized status
-    /// expresses no opinion, and an acknowledged (idle) row is left alone so
-    /// the registry can never undo a click.
+    /// Only a `Stop`-derived red, or an idle-prompt `Notification` red, may be
+    /// promoted (see `isPromotable`). A permission-prompt red is never: the
+    /// user genuinely is needed, and clearing it would hide the one thing
+    /// this app exists to show. An unrecognized status expresses no opinion,
+    /// and an acknowledged (idle) row is left alone so the registry can never
+    /// undo a click.
     ///
     /// Nothing is written back — the display state is re-derived each reload —
     /// so when Claude does settle, the row returns to red by itself.
@@ -88,7 +105,7 @@ enum RegistryEnrichment {
             // and show a red blink at the end of every turn. Erring toward
             // "still working" costs a red that arrives ~600ms late; erring the
             // other way is the false red the whole rule is here to prevent.
-            guard session.lastEvent == turnEndedEvent, entry.status.isWorking == true
+            guard isPromotable(session), entry.status.isWorking == true
             else { return session.state }
             return .running
         case .running:

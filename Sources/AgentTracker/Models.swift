@@ -77,6 +77,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var state: SessionState
     var reason: String?
     var lastEvent: String?
+    /// Claude's `notification_type` for a `Notification` event
+    /// (`permission_prompt`, `idle_prompt`, `elicitation_dialog`, …), absent
+    /// for every other event and for hooks that predate recording it.
+    var notificationType: String?
     var updatedAt: Date?
     var stateChangedAt: Date?
     var transcriptPath: String?
@@ -116,7 +120,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var contextUsedPercent: Double?
 
     private enum CodingKeys: String, CodingKey {
-        case schema, sessionId, pid, cwd, state, reason, lastEvent
+        case schema, sessionId, pid, cwd, state, reason, lastEvent, notificationType
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
         case terminal, permissionMode
     }
