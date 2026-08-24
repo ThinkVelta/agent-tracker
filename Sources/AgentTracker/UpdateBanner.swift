@@ -8,6 +8,10 @@ import SwiftUI
 /// update.
 struct UpdateBanner: View {
     let release: UpdateCheck.Release
+    /// Closes the dropdown panel before Settings opens, or the non-activating
+    /// panel sits over the Settings window — the same hazard the footer gear
+    /// documents and handles this way.
+    let dismiss: () -> Void
     let openSettings: () -> Void
 
     var body: some View {
@@ -25,8 +29,11 @@ struct UpdateBanner: View {
             }
             Spacer()
             Button("Open Settings") {
-                openSettings()
-                NSApp.activate(ignoringOtherApps: true)
+                dismiss()
+                SettingsRouter.shared.show(.about) {
+                    NSApp.activate(ignoringOtherApps: true)
+                    openSettings()
+                }
             }
             .buttonStyle(.link)
             .font(.system(size: 11))
