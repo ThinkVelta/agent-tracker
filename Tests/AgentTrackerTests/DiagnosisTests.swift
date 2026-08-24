@@ -448,6 +448,34 @@ struct DiagnosisTests {
         #expect(finding?.detail.contains("2 live sessions") == true)
     }
 
+    /// Window matching lowercases a title and strips the status glyph a
+    /// terminal puts in front of it, so names that differ only in those
+    /// collide on the click and must collide here too.
+    @Test("names that differ only in case or a leading glyph still collide")
+    func namesAreComparedTheWayTitlesAreMatched() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "Review"),
+            live("/Users/dev/code/api-gateway", "\u{2733} review"),
+        ]
+        let finding = find(Diagnosis.findings(input), "ambiguous rows")
+        #expect(finding?.level == .warn)
+        #expect(finding?.detail.contains("2 live sessions") == true)
+    }
+
+    /// A name that is nothing but a glyph normalizes away to nothing, which
+    /// matches no window, so the row is no better off than an unnamed one.
+    @Test("a name that normalizes to nothing counts as unnamed")
+    func aGlyphOnlyNameIsNoName() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "api-gateway-02"),
+            live("/Users/dev/code/api-gateway", "\u{2733}"),
+        ]
+        let finding = find(Diagnosis.findings(input), "ambiguous rows")
+        #expect(finding?.detail.contains("1 live session shares") == true)
+    }
+
     /// Names are only confusable inside one project. Two repos that happen to
     /// run a session of the same name never compete for a window, and grouping
     /// on the name alone would warn about every machine that reuses one.

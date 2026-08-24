@@ -32,14 +32,28 @@ enum RowAmbiguity {
     static func unresolvedCount(_ sessions: [LiveSession]) -> Int {
         var count = 0
         for (_, group) in Dictionary(grouping: sessions, by: \.projectKey) where group.count > 1 {
+            let matchable = group.map { matchableName($0.name) }
             var uses: [String: Int] = [:]
-            for name in group.compactMap(\.name) { uses[name, default: 0] += 1 }
-            let collides = group.filter { session in
-                guard let name = session.name else { return true }
+            for name in matchable.compactMap({ $0 }) { uses[name, default: 0] += 1 }
+            let collides = matchable.filter { name in
+                guard let name else { return true }
                 return uses[name, default: 0] > 1
             }
             count += collides.count
         }
         return count
+    }
+
+    /// A name as window matching sees it, through the rule the click path
+    /// scores titles with. Case and the status glyphs a terminal prefixes onto
+    /// a title are not what tells two rows apart, so `Review` and `✳ review`
+    /// collide here exactly as they do on the click.
+    ///
+    /// A name that survives none of that matches no window at all, which leaves
+    /// the row where an unnamed one is.
+    private static func matchableName(_ name: String?) -> String? {
+        guard let name else { return nil }
+        let normalized = TerminalFocuser.normalize(name)
+        return normalized.isEmpty ? nil : normalized
     }
 }
