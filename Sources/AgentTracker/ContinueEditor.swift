@@ -257,11 +257,16 @@ struct ContinueEditor: View {
         clock.timeStyle = .short
         clock.dateStyle = .none
         let time = clock.string(from: moment)
-        if calendar.isDate(moment, inSameDayAs: now) { return "at \(time)" }
+        // Counted in whole calendar days rather than in elapsed hours, so two
+        // moments on one day are never written two different ways.
+        let days =
+            calendar.dateComponents(
+                [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: moment)
+            ).day ?? 0
+        if days == 0 { return "at \(time)" }
         let day = DateFormatter()
         // Six days, not seven: a weekday name a full week out names today.
-        let weekOut = calendar.date(byAdding: .day, value: 6, to: now) ?? now
-        day.setLocalizedDateFormatFromTemplate(moment < weekOut ? "EEE" : "dMMM")
+        day.setLocalizedDateFormatFromTemplate((1...6).contains(days) ? "EEE" : "dMMM")
         return "\(day.string(from: moment)) at \(time)"
     }
 }

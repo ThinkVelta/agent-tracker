@@ -109,4 +109,22 @@ struct ContinueEditorTests {
         #expect(!later.hasPrefix("at "))
         #expect(later.contains(" at "))
     }
+
+    /// The weekday-versus-date cutoff is a count of calendar days, not of
+    /// elapsed hours: comparing instants wrote one target day two ways
+    /// depending on the hour, so 20:00 six days out read as a date while 08:00
+    /// the same day read as a weekday.
+    @Test("the weekday cutoff falls between days, never inside one")
+    func weekdayCutoffCountsWholeDays() {
+        let now = day(5, hour: 12)
+        let early = dayPart(ContinueEditor.describe(day(11, hour: 11), relativeTo: now))
+        let late = dayPart(ContinueEditor.describe(day(11, hour: 13), relativeTo: now))
+        #expect(early == late)
+        #expect(dayPart(ContinueEditor.describe(day(12, hour: 12), relativeTo: now)) != early)
+    }
+
+    /// The part before the time, which is the half the cutoff decides.
+    private func dayPart(_ described: String) -> String {
+        described.components(separatedBy: " at ").first ?? described
+    }
 }
