@@ -20,7 +20,7 @@ final class SettingsRouter: ObservableObject {
     /// window-showing and any activation. Defaults to the AppKit path for
     /// callers with no SwiftUI environment (the notification handler); a
     /// SwiftUI caller passes a closure around the `openSettings` action.
-    func show(_ tab: SettingsTab, open: () -> Void = SettingsRouter.openViaAppKit) {
+    func show(_ tab: SettingsTab, open: @MainActor () -> Void = SettingsRouter.openViaAppKit) {
         selection = tab
         open()
     }

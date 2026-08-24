@@ -66,10 +66,9 @@ private struct GeneralSettingsTab: View {
     private var automationDetail: String {
         switch automationGranted {
         case true:
-            return "Granted. A scheduled continue can be typed into its terminal window."
+            return "Granted."
         case false:
-            return "Not granted yet. Without it a schedule still runs, works out when it would "
-                + "send, and then declines; check will ask macOS for permission."
+            return "Not granted yet, so nothing can be sent. Allow asks macOS."
         case nil:
             return "Ghostty isn't running, so there is nothing to ask about yet."
         }
@@ -129,8 +128,7 @@ private struct GeneralSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Confirm before quitting",
-                    detail: "The panel's power button asks first. The alert's "
-                        + "\u{201C}don't ask again\u{201D} turns this off; re-enable it here.",
+                    detail: "The panel's power button asks first.",
                     divided: true
                 ) {
                     Toggle("", isOn: $preferences.confirmQuit)
@@ -141,7 +139,7 @@ private struct GeneralSettingsTab: View {
             SettingsCard {
                 SettingsRow(
                     title: "Appearance",
-                    detail: "How the dropdown and windows draw, independent of the system."
+                    detail: "Light or dark for the dropdown and windows."
                 ) {
                     Picker("", selection: $preferences.appearanceOverride) {
                         ForEach(Preferences.AppearanceOverride.allCases, id: \.self) {
@@ -154,9 +152,8 @@ private struct GeneralSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Group sessions by",
-                    detail: "State answers \"which one needs me\". Project answers \"what is "
-                        + "going on in this repo\", which is what you want once several "
-                        + "sessions live in one codebase.",
+                    detail: "By state to see who needs you; by project to see what each "
+                        + "repo is up to.",
                     divided: true
                 ) {
                     Picker("", selection: $preferences.grouping) {
@@ -176,10 +173,8 @@ private struct GeneralSettingsTab: View {
             SettingsCard {
                 SettingsRow(
                     title: "Scheduled continues",
-                    detail: "Lets a session that stopped on a usage limit be armed to resume "
-                        + "itself when the window resets; a clock appears on those rows. "
-                        + "Sending needs permission to control Ghostty, "
-                        + "which macOS asks for once. Never wakes the Mac."
+                    detail: "Arm a session that stopped on a usage limit to resume when the "
+                        + "window resets. Needs permission to control Ghostty."
                 ) {
                     Toggle("", isOn: $preferences.scheduledContinues)
                         .toggleStyle(.switch)
@@ -293,9 +288,8 @@ private struct MenuBarSettingsTab: View {
                 .padding(.vertical, 10)
                 SettingsRow(
                     title: "Monochrome",
-                    detail: "Drop the colors and take the menu bar's tint, like a system "
-                        + "icon. Tinting erases hue, so the states read by shape instead: "
-                        + "needs-you filled, running half-filled, idle hollow.",
+                    detail: "Take the menu bar's tint like a system icon; the states then "
+                        + "read by shape.",
                     divided: true
                 ) {
                     Toggle("", isOn: $preferences.monochromeIcon)
@@ -306,9 +300,7 @@ private struct MenuBarSettingsTab: View {
             SettingsCard {
                 SettingsRow(
                     title: "Pulse when a session needs you",
-                    detail: "One brief pulse of the red dot when a session flips to "
-                        + "needs-you. Never animates continuously; disabled automatically "
-                        + "when Reduce Motion is on."
+                    detail: "One brief pulse of the red dot when a session flips to needs-you."
                 ) {
                     Toggle("", isOn: $preferences.attentionCue)
                         .toggleStyle(.switch)
@@ -360,14 +352,12 @@ private struct SessionsSettingsTab: View {
 
     private var notificationDetail: String {
         guard Notifications.isAvailable else {
-            return "This build has no bundle identifier, so macOS has nowhere to post to. "
-                + "Notifications work in the installed app."
+            return "Needs the installed app."
         }
         if preferences.notifyNeedsYou {
             switch notificationStatus {
             case .denied:
-                return "Turned off for AgentTracker in System Settings \u{203A} Notifications, "
-                    + "so nothing will appear until it is allowed there."
+                return "Turned off in System Settings \u{203A} Notifications."
             case .notDetermined:
                 return "macOS has not been asked yet; switch this off and on again to raise "
                     + "the prompt."
@@ -375,9 +365,7 @@ private struct SessionsSettingsTab: View {
                 break
             }
         }
-        return "A banner when a session flips to needs-you, naming the project and what it "
-            + "wants. Clicking it jumps to that terminal, the same as clicking the row. "
-            + "Focus and Do Not Disturb hold these back like any other app's."
+        return "A banner when a session flips to needs-you; clicking it jumps to that terminal."
     }
 
     /// Only asked while the switch is on: it is a cross-process call, it runs
@@ -399,11 +387,8 @@ private struct SessionsSettingsTab: View {
                 SettingsRow(
                     title: "Accessibility permission",
                     detail: accessibilityGranted
-                        ? "Granted; click-to-focus works, and visiting a session's terminal "
-                            + "clears its red state."
-                        : "Not granted, so click-to-focus and auto-acknowledge below cannot "
-                            + "work. Already listed? Remove AgentTracker with − and add it "
-                            + "again; a rebuilt app invalidates its old grant."
+                        ? "Granted, so click-to-focus and auto-acknowledge work."
+                        : "Not granted, so click-to-focus and auto-acknowledge cannot work."
                 ) {
                     if accessibilityGranted {
                         Image(systemName: "checkmark.circle.fill")
@@ -414,8 +399,8 @@ private struct SessionsSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Auto-acknowledge after",
-                    detail: "Visiting a session's terminal yourself clears its red state once "
-                        + "the window has been focused this long.",
+                    detail: "Visiting a session's terminal yourself clears its red state "
+                        + "after this long.",
                     divided: true
                 ) {
                     Picker("", selection: $preferences.autoAckDwell) {
@@ -428,9 +413,8 @@ private struct SessionsSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Background check every",
-                    detail: "Session changes appear instantly either way; this only paces "
-                        + "the cleanup pass that prunes dead sessions and refreshes "
-                        + "timestamps.",
+                    detail: "Sweeps for sessions that ended silently. Changes still appear "
+                        + "instantly.",
                     divided: true
                 ) {
                     Picker("", selection: $preferences.refreshInterval) {
@@ -486,8 +470,7 @@ private struct AdvancedSettingsTab: View {
             SettingsCard {
                 SettingsRow(
                     title: "Diagnostics",
-                    detail: "Click traces, focus decisions and state changes, for bug "
-                        + "reports. Plain text, local only, capped at 2 MB."
+                    detail: "A local log of what the app did, for bug reports."
                 ) {
                     Button("Show Log") {
                         let log = DebugLog.shared.fileURL
@@ -544,8 +527,7 @@ private struct AdvancedSettingsTab: View {
     private var uninstallDetail: String {
         switch uninstallState {
         case .idle:
-            return "Unhooks Claude Code, removes the login item, and removes the "
-                + "app. Session data stays; the bundled uninstall script does the work."
+            return "Removes the app and everything it set up. Session data stays."
         case .working:
             return "Uninstalling…"
         case .failed(let reason):
@@ -582,10 +564,7 @@ private struct AboutSettingsTab: View {
                 }
                 SettingsRow(
                     title: "Check automatically",
-                    detail: "Once at launch and daily, a single GitHub API request "
-                        + "each time. Finding one shows in the menu, and posts a "
-                        + "notification when banners are allowed. Nothing installs "
-                        + "by itself.",
+                    detail: "Once at launch and daily. Nothing installs by itself.",
                     divided: true
                 ) {
                     Toggle("", isOn: $preferences.updateChecksAutomatically)
@@ -594,8 +573,8 @@ private struct AboutSettingsTab: View {
                 if installSource == .direct {
                     SettingsRow(
                         title: "Install automatically",
-                        detail: "Install what the launch-time check finds, then relaunch. "
-                            + "Updates found while running still only notify.",
+                        detail: "Installs what the launch check finds. Nothing restarts "
+                            + "while you work.",
                         divided: true
                     ) {
                         Toggle("", isOn: $preferences.updateInstallsAutomatically)
@@ -672,19 +651,18 @@ private struct AboutSettingsTab: View {
         case .done(.updateAvailable(let release)):
             switch installSource {
             case .homebrew:
-                return "\(release.tag) is available. Updating runs "
-                    + "brew upgrade --cask agent-tracker and relaunches."
+                return "\(release.tag) is available. Homebrew installs it and the app relaunches."
             case .direct:
                 return release.zip == nil
                     ? "\(release.tag) is available."
-                    : "\(release.tag) is available. Installing verifies the digest and "
-                        + "signature, swaps the app, and relaunches."
+                    : "\(release.tag) is available. Installing relaunches the app."
             case .development:
                 return "\(release.tag) is available."
             }
         case .done(.noReleases): return "No releases published yet; you're ahead of them."
         case .done(.failed(let reason)): return "Check failed: \(reason)"
-        case .installing: return "Downloading and verifying…"
+        case .installing:
+            return installSource == .homebrew ? "Updating with Homebrew…" : "Downloading…"
         case .installFailed(let reason): return reason
         }
     }

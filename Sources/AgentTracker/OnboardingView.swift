@@ -118,7 +118,7 @@ struct OnboardingView: View {
             Text("Adds a hook entry to \(Onboarding.editedConfig)")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            Text("Each file is backed up first. ./integrations/uninstall.sh reverses everything.")
+            Text("Each file is backed up first.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
             HStack {

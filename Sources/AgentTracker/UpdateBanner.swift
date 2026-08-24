@@ -19,14 +19,8 @@ struct UpdateBanner: View {
             Image(systemName: "arrow.down.circle.fill")
                 .foregroundStyle(.tint)
                 .font(.system(size: 12))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("AgentTracker \(release.tag) is available")
-                    .font(.system(size: 11, weight: .medium))
-                Text("Install it from Settings › About.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text("AgentTracker \(release.tag) is available")
+                .font(.system(size: 11, weight: .medium))
             Spacer()
             Button("Open Settings") {
                 dismiss()
