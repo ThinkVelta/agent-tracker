@@ -84,6 +84,13 @@ permission prompt, sandbox request or elicitation publishes `waiting`, and the r
 turns red quoting what Claude is blocked on. Acknowledged rows are left alone, so
 clearing a row by hand always sticks.
 
+**An idle prompt is not a permission prompt.** Claude's `Notification` hook fires
+for both, and only its `notification_type` tells them apart. The hook records it,
+and a red that came from `idle_prompt` (the turn has sat still for a while) is
+re-derived like a `Stop` red: running for as long as Claude reports `shell` or
+`busy`. A permission prompt is never re-derived, and a notification whose type
+the hook did not record is treated as one.
+
 ## Writing into a terminal
 
 Two features write rather than read: scheduled continues and renaming from the

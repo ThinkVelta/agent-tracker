@@ -29,8 +29,45 @@ final class RegistryEnrichmentTests {
     private func stopped(changedAt: Date = Date(timeIntervalSince1970: 1000)) -> AgentSession {
         var stopped = session(state: .needsYou, changedAt: changedAt)
         stopped.lastEvent = "Stop"
-        stopped.reason = "Turn complete — ready for you"
+        stopped.reason = "Turn complete, ready for you"
         return stopped
+    }
+
+    private func notified(_ type: String?) -> AgentSession {
+        var notified = session(state: .needsYou)
+        notified.lastEvent = "Notification"
+        notified.notificationType = type
+        notified.reason = "Claude is waiting for your input"
+        return notified
+    }
+
+    /// The second sighting of the shell bug, caught live on 2026-08-24: the
+    /// registry said `shell` the whole time, but the red had come from
+    /// Claude's idle-prompt notification rather than from `Stop`, and the
+    /// app treated every Notification as a permission prompt. An idle prompt
+    /// fires whenever a turn sits still, background shell or not, so it is
+    /// exactly as promotable as `Stop`.
+    @Test func anIdlePromptOverABackgroundShellIsStillRunning() {
+        let enriched = RegistryEnrichment.apply(
+            to: notified("idle_prompt"), entry: entry(status: .shell))
+        #expect(enriched.state == .running)
+        #expect(enriched.reason == "Background work still running")
+    }
+
+    /// The reason the rule was strict in the first place: a permission prompt
+    /// is the one red nothing may clear, whatever the registry says.
+    @Test func aPermissionPromptIsNeverPromoted() {
+        let enriched = RegistryEnrichment.apply(
+            to: notified("permission_prompt"), entry: entry(status: .shell))
+        #expect(enriched.state == .needsYou)
+    }
+
+    /// A hook that predates recording the type says nothing about it, and
+    /// nothing must read as the safe kind: an untyped Notification stays red.
+    @Test func anUntypedNotificationStaysRed() {
+        let enriched = RegistryEnrichment.apply(
+            to: notified(nil), entry: entry(status: .shell))
+        #expect(enriched.state == .needsYou)
     }
 
     /// The reported bug: Claude backgrounds a shell, its turn ends so `Stop`
@@ -66,7 +103,7 @@ final class RegistryEnrichmentTests {
         let settled = RegistryEnrichment.apply(
             to: stopped(), entry: entry(status: .idle, statusUpdatedAt: Date()))
         #expect(settled.state == .needsYou)
-        #expect(settled.reason == "Turn complete — ready for you")
+        #expect(settled.reason == "Turn complete, ready for you")
     }
 
     /// A permission prompt is the one thing this app exists to show. It arrives
