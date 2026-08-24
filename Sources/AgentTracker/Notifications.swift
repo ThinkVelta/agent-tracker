@@ -8,6 +8,10 @@ import UserNotifications
 /// notify at all, has the user allowed it, does it still allow it now — so the
 /// answers live in one place rather than being decided twice.
 enum Notifications {
+    /// Present and true on an update notification's `userInfo`, so a click is
+    /// routed to Settings rather than treated as a session to focus.
+    static let updateField = "agentTrackerUpdate"
+
     /// `UNUserNotificationCenter.current()` **traps** in a process with no
     /// bundle identifier, and `swift run AgentTracker` is exactly that —
     /// verified: a plain SwiftPM executable reports a nil identifier. So every

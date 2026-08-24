@@ -8,18 +8,25 @@ import UserNotifications
 /// facelift established: radius 10, whisper fill, hairline-separated rows,
 /// title left / control right.
 struct SettingsView: View {
+    @ObservedObject private var router = SettingsRouter.shared
+
     var body: some View {
-        TabView {
+        TabView(selection: $router.selection) {
             GeneralSettingsTab()
                 .tabItem { Label("General", systemImage: "gearshape") }
+                .tag(SettingsTab.general)
             MenuBarSettingsTab()
                 .tabItem { Label("Menu Bar", systemImage: "menubar.rectangle") }
+                .tag(SettingsTab.menuBar)
             SessionsSettingsTab()
                 .tabItem { Label("Sessions", systemImage: "circle.grid.2x1") }
+                .tag(SettingsTab.sessions)
             AdvancedSettingsTab()
                 .tabItem { Label("Advanced", systemImage: "wrench.and.screwdriver") }
+                .tag(SettingsTab.advanced)
             AboutSettingsTab()
                 .tabItem { Label("About", systemImage: "info.circle") }
+                .tag(SettingsTab.about)
         }
         .frame(width: 440)
     }

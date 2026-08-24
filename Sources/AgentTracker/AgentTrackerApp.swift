@@ -431,19 +431,24 @@ extension AppDelegate: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound])
     }
 
-    /// Clicking the banner does what clicking the row does: jumps to that
-    /// session's terminal, and clears its red state if the window that came up
-    /// could be its own.
+    /// Clicking a needs-you banner does what clicking the row does: jumps to
+    /// that session's terminal, clearing its red if the window that came up
+    /// could be its own. Clicking an update banner opens Settings on the About
+    /// tab, where the Update button lives.
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let key =
-            response.notification.request.content.userInfo[AttentionNotifier.sessionKeyField]
-            as? String
+        let userInfo = response.notification.request.content.userInfo
+        let key = userInfo[AttentionNotifier.sessionKeyField] as? String
+        let isUpdate = userInfo[Notifications.updateField] as? Bool == true
         Task { @MainActor in
-            if let key { self.focusSession(key: key) }
+            if isUpdate {
+                SettingsRouter.shared.show(.about)
+            } else if let key {
+                self.focusSession(key: key)
+            }
             completionHandler()
         }
     }

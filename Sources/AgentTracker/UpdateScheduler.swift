@@ -73,10 +73,10 @@ final class UpdateScheduler: ObservableObject {
 
         let content = UNMutableNotificationContent()
         content.title = "AgentTracker \(release.tag) is available"
-        content.body =
-            InstallSource.current == .homebrew
-            ? "Update with: brew upgrade --cask agent-tracker"
-            : "Install it from Settings › About."
+        content.body = "Click to open Settings and update."
+        // Marks this as an update banner so a click opens Settings rather than
+        // being read as a session key and looked up as a row.
+        content.userInfo = [Notifications.updateField: true]
         let request = UNNotificationRequest(
             identifier: "update-available-\(release.tag)",
             content: content, trigger: nil)

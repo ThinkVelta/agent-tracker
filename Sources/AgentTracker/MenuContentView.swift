@@ -85,7 +85,7 @@ struct MenuContentView: View {
                 Divider()
             }
             if let release = updates.available {
-                UpdateBanner(release: release) { openSettings() }
+                UpdateBanner(release: release, dismiss: dismiss) { openSettings() }
                 Divider()
             }
             if store.sessions.isEmpty {
