@@ -111,6 +111,8 @@ enum RenderPreview {
             content = AnyView(OnboardingView())
         case "settings":
             content = AnyView(SettingsPreviewStack())
+        case "editor":
+            content = AnyView(ContinueEditorPreviewStack())
         case "icons":
             content = AnyView(Image(nsImage: IconPreview.composite(darkMode: darkMode)))
         case "architecture":
@@ -172,8 +174,8 @@ enum RenderPreview {
         default:
             FileHandle.standardError.write(
                 Data(
-                    ("[preview] --view expects popover, onboarding, settings, icons, "
-                        + "menubar or architecture\n").utf8))
+                    ("[preview] --view expects popover, onboarding, settings, editor, "
+                        + "icons, menubar or architecture\n").utf8))
             exit(2)
         }
         return content
