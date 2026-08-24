@@ -148,9 +148,10 @@ enum Diagnosis {
         /// Sessions whose recorded pid is gone. They are pruned by the running
         /// app, so a non-zero count here is normal while it is not running.
         var staleSessionCount = 0
-        /// The largest group of **live** sessions sharing a project. More than
-        /// one is the case click-to-focus cannot always resolve.
-        var largestSameProjectGroup = 0
+        /// Every **live** session, as `RowAmbiguity` needs it. Live only:
+        /// telling someone to rename two sessions reads badly one line after
+        /// saying their processes are gone.
+        var liveSessions: [RowAmbiguity.LiveSession] = []
         /// Whether any statusline source has a payload — the wrapper's capture
         /// or a user's own `statusline-last.json`.
         var statuslinePayloadPresent = false
@@ -462,15 +463,17 @@ enum Diagnosis {
                         + "app prunes these, so this is expected while it is not running",
                     anchor: nil))
         }
-        if input.largestSameProjectGroup > 1 {
+        let ambiguous = RowAmbiguity.unresolvedCount(input.liveSessions)
+        if ambiguous > 0 {
+            let rows =
+                ambiguous == 1
+                ? "1 live session shares a project with another and has no distinct name"
+                : "\(ambiguous) live sessions share a project and have no distinct name"
             findings.append(
                 Finding(
                     level: .warn, check: "ambiguous rows",
-                    detail:
-                        "\(input.largestSameProjectGroup) live sessions share a project, so "
-                        + "click-to-focus cannot always tell them apart; /rename one. This "
-                        + "check groups by directory and cannot see names, so it keeps saying "
-                        + "so afterwards",
+                    detail: "\(rows), so click-to-focus can raise the wrong window; "
+                        + "name them with /rename",
                     anchor: "click-to-focus-opens-the-wrong-terminal"))
         }
         return findings
