@@ -16,8 +16,8 @@ struct MenuContentView: View {
     @Environment(\.openSettings) private var openSettings
 
     @State private var searchText = ""
-    /// Explicit collapse choices, which override the automatic idle folding
-    /// below. Absent means "whatever the list thinks is sensible".
+    /// Explicit per-section collapse choices, the only thing that collapses a
+    /// section at all. Absent means expanded.
     @State private var sectionOverrides: [String: Bool] = [:]
 
     private var query: String { searchText.trimmingCharacters(in: .whitespaces) }
@@ -62,23 +62,14 @@ struct MenuContentView: View {
 
     private var sections: [SessionSections.Section] {
         // A filter or search always expands idle — hiding matches would lie
-        // about how many things matched — and the preference decides the rest.
-        let folding = preferences.idleFolding
+        // about how many things matched.
         let narrowing = store.selectedFilter != nil || !query.isEmpty
         return SessionSections.build(
             from: filteredSessions.filter { !$0.isPinned },
             grouping: preferences.grouping,
             overrides: SessionSections.overridesForNarrowing(
                 sectionOverrides, narrowing: narrowing),
-            autoCollapseIdle: !narrowing && folding != .never,
-            budget: max(0, Theme.Metrics.maxVisibleRows - visiblePinnedRows.count),
-            idleAutoCollapseThreshold: {
-                switch folding {
-                case .never: return Int.max
-                case .always: return 0
-                case .past(let threshold): return threshold
-                }
-            }()
+            budget: max(0, Theme.Metrics.maxVisibleRows - visiblePinnedRows.count)
         )
     }
 

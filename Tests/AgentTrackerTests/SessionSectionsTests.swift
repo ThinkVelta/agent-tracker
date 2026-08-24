@@ -20,7 +20,7 @@ final class SessionSectionsTests {
 
     @Test func sectionsFollowStateOrderAndSkipEmptyStates() {
         let built = SessionSections.build(
-            from: sessions(.idle, 1) + sessions(.needsYou, 2), autoCollapseIdle: false)
+            from: sessions(.idle, 1) + sessions(.needsYou, 2))
         #expect(built.map(\.accent) == [.needsYou, .idle])
         #expect(built.map(\.id) == ["needsYou", "idle"])
         #expect(built.map(\.total) == [2, 1])
@@ -35,7 +35,6 @@ final class SessionSectionsTests {
     @Test func rowBudgetIsSpentNeedsYouFirst() {
         let built = SessionSections.build(
             from: sessions(.needsYou, 3) + sessions(.running, 4) + sessions(.idle, 20),
-            autoCollapseIdle: false,
             budget: 5
         )
         #expect(built.map(\.rows.count) == [3, 2, 0])
@@ -50,27 +49,25 @@ final class SessionSectionsTests {
         #expect(built.first?.hiddenByBudget == 3)
     }
 
-    /// Expressed against the threshold rather than its value: the invariant is
-    /// "folds strictly past it", which must hold whatever the number is tuned to.
-    @Test func idleCollapsesItselfOnlyOnceItIsLongEnough() {
-        let threshold = Theme.Metrics.idleAutoCollapseThreshold
-        let atThreshold = SessionSections.build(from: sessions(.idle, threshold))
-        #expect(atThreshold.first?.isCollapsed == false)
-        let overThreshold = SessionSections.build(from: sessions(.idle, threshold + 1))
-        #expect(overThreshold.first?.isCollapsed == true)
-        #expect(overThreshold.first?.rows.isEmpty == true)
-        #expect(overThreshold.first?.total == threshold + 1)
+    /// Nothing collapses on its own any more: the automatic idle folding was
+    /// retired as complexity without value, so a long idle section stays
+    /// listed unless the user folded it themselves.
+    @Test func nothingCollapsesWithoutAnExplicitChoice() {
+        let built = SessionSections.build(from: sessions(.idle, 40))
+        #expect(built.first?.isCollapsed == false)
     }
 
     /// Hiding rows while the user is narrowing the list would be a lie about
-    /// how many things matched.
-    @Test func idleStaysExpandedWhileFilteringOrSearching() {
-        let built = SessionSections.build(from: sessions(.idle, 9), autoCollapseIdle: false)
+    /// how many things matched: narrowing strips even an explicit idle fold.
+    @Test func narrowingForcesAUserFoldedIdleOpen() {
+        let overrides = SessionSections.overridesForNarrowing(
+            [SessionState.idle.rawValue: true], narrowing: true)
+        let built = SessionSections.build(from: sessions(.idle, 9), overrides: overrides)
         #expect(built.first?.isCollapsed == false)
         #expect(built.first?.rows.count == 9)
     }
 
-    @Test func explicitChoiceBeatsAutomaticCollapse() {
+    @Test func explicitChoicesDecideCollapse() {
         let forcedOpen = SessionSections.build(
             from: sessions(.idle, 9), overrides: [SessionState.idle.rawValue: false])
         #expect(forcedOpen.first?.isCollapsed == false)
@@ -149,12 +146,11 @@ final class SessionSectionsTests {
         #expect(built.map(\.title) == ["alpha", "zulu"])
     }
 
-    /// Nothing folds itself away in this mode: idle is not a section here, and
-    /// a project is never collapsed unless somebody collapsed it.
+    /// A project is never collapsed unless somebody collapsed it, however
+    /// many idle rows it holds.
     @Test func nothingAutoCollapsesUnderProjectGrouping() {
         let built = SessionSections.build(
-            from: sessions(.idle, 20, project: "planner"),
-            grouping: .project, autoCollapseIdle: true, idleAutoCollapseThreshold: 1)
+            from: sessions(.idle, 20, project: "planner"), grouping: .project)
         #expect(built.first?.isCollapsed == false)
     }
 
