@@ -43,14 +43,15 @@ enum SessionSections {
         var hiddenByBudget: Int { isCollapsed ? 0 : total - rows.count }
     }
 
-    /// While a filter or search narrows the list, the idle section must show its
-    /// matches — including when it collapsed itself. Forcing the override open
-    /// (rather than dropping it) means a manual choice returns intact once the
-    /// narrowing clears.
+    /// While a filter or search narrows the list, the idle section must show
+    /// its matches, even when the user folded it. Forcing the override open
+    /// (rather than dropping it) means the manual choice returns intact once
+    /// the narrowing clears.
     ///
-    /// Only idle, because only idle collapses on its own. Every other collapsed
-    /// section is a choice somebody made, and that includes every section of a
-    /// project grouping — so this rule simply finds nothing to do there.
+    /// Only idle is force-opened, and only while narrowing. Collapses are
+    /// manual everywhere now; this rule exists because a user-folded idle must
+    /// still show its matches while the list narrows, and it returns intact
+    /// once the narrowing clears.
     static func overridesForNarrowing(
         _ overrides: [String: Bool], narrowing: Bool
     ) -> [String: Bool] {
@@ -60,27 +61,20 @@ enum SessionSections {
 
     /// - Parameters:
     ///   - grouping: what the sections divide on.
-    ///   - overrides: explicit per-section collapse choices, which always win.
-    ///   - autoCollapseIdle: whether idle *may* fold itself away. False while a
-    ///     filter or search is narrowing the list, when hiding matches would
-    ///     be a lie. Has no effect on a project grouping, which has no section
-    ///     that folds itself.
+    ///   - overrides: explicit per-section collapse choices. Nothing collapses
+    ///     without one; the automatic idle folding this once had was retired
+    ///     as complexity without value.
     ///   - budget: total rows to draw, spent in section order so a long tail
     ///     can never push a needs-you row off the list.
     static func build(
         from sessions: [AgentSession],
         grouping: Grouping = .state,
         overrides: [String: Bool] = [:],
-        autoCollapseIdle: Bool = true,
-        budget: Int = Theme.Metrics.maxVisibleRows,
-        idleAutoCollapseThreshold: Int = Theme.Metrics.idleAutoCollapseThreshold
+        budget: Int = Theme.Metrics.maxVisibleRows
     ) -> [Section] {
         var remaining = max(0, budget)
         return candidates(from: sessions, grouping: grouping).compactMap { candidate in
-            let collapsed =
-                overrides[candidate.id]
-                ?? (candidate.foldsItself && autoCollapseIdle
-                    && candidate.members.count > idleAutoCollapseThreshold)
+            let collapsed = overrides[candidate.id] ?? false
             guard !collapsed else {
                 return Section(
                     id: candidate.id, title: candidate.title, accent: candidate.accent,
@@ -99,8 +93,6 @@ enum SessionSections {
         let title: String
         let accent: SessionState
         let members: [AgentSession]
-        /// Only the idle state section folds itself away unasked.
-        let foldsItself: Bool
     }
 
     private static func candidates(
@@ -115,7 +107,7 @@ enum SessionSections {
                 guard let members = grouped[state], !members.isEmpty else { return nil }
                 return Candidate(
                     id: state.rawValue, title: state.label, accent: state,
-                    members: members, foldsItself: state == .idle)
+                    members: members)
             }
         case .project:
             // Keyed by the project's path, not its name: two repos can share a
@@ -133,7 +125,7 @@ enum SessionSections {
                         members.map(\.state).min { $0.sortRank < $1.sortRank } ?? .idle
                     return Candidate(
                         id: "project:\(key)", title: name, accent: accent,
-                        members: members, foldsItself: false)
+                        members: members)
                 }
                 .sorted { lhs, rhs in
                     if lhs.accent != rhs.accent {

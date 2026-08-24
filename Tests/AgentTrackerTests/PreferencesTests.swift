@@ -16,7 +16,6 @@ final class PreferencesTests {
     @Test func freshStoreHasTheShippedDefaults() {
         let preferences = Preferences(defaults: makeDefaults())
         #expect(preferences.appearanceOverride == .system)
-        #expect(preferences.idleFolding == .past(Theme.Metrics.idleAutoCollapseThreshold))
         #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
         // Off by default: the only switch here that lets the app act on a
         // session rather than just display it.
@@ -27,26 +26,14 @@ final class PreferencesTests {
         let defaults = makeDefaults()
         let first = Preferences(defaults: defaults)
         first.appearanceOverride = .dark
-        first.idleFolding = .always
         first.autoAckDwell = 10
         first.scheduledContinues = true
 
         // A second instance over the same suite is "relaunch the app".
         let second = Preferences(defaults: defaults)
         #expect(second.appearanceOverride == .dark)
-        #expect(second.idleFolding == .always)
         #expect(second.autoAckDwell == 10)
         #expect(second.scheduledContinues)
-    }
-
-    @Test func idleFoldingStorageCoversAllShapes() {
-        for folding in Preferences.IdleFolding.options {
-            #expect(Preferences.IdleFolding(stored: folding.stored) == folding)
-        }
-        #expect(Preferences.IdleFolding(stored: -1) == .never)
-        #expect(Preferences.IdleFolding(stored: -99) == .never)
-        #expect(Preferences.IdleFolding(stored: 0) == .always)
-        #expect(Preferences.IdleFolding(stored: 7) == .past(7))
     }
 
     /// Whatever an old build or a defaults-write experiment left behind must
@@ -65,21 +52,17 @@ final class PreferencesTests {
     }
 
     /// A wrong-TYPE stored value must fall back to the default, not coerce:
-    /// integer(forKey:) turns a stored "oops" into 0, and 0 is a real option
-    /// here (.always / Off) — silent coercion would apply a preference the
-    /// user never chose.
+    /// double(forKey:) turns a stored "later" into 0, and 0 is a real option
+    /// here (Off) — silent coercion would apply a preference the user never
+    /// chose.
     @Test func wrongTypeStoredValuesFallBackInsteadOfCoercing() {
         let defaults = makeDefaults()
-        defaults.set("oops", forKey: "idleFoldingThreshold")
         defaults.set("later", forKey: "autoAckDwellSeconds")
         let preferences = Preferences(defaults: defaults)
-        #expect(preferences.idleFolding == .past(Theme.Metrics.idleAutoCollapseThreshold))
         #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
-        // The genuine zero options still load as themselves.
-        defaults.set(0, forKey: "idleFoldingThreshold")
+        // The genuine zero option still loads as itself.
         defaults.set(0.0, forKey: "autoAckDwellSeconds")
         let zeros = Preferences(defaults: defaults)
-        #expect(zeros.idleFolding == .always)
         #expect(zeros.autoAckDwell == 0)
     }
 
@@ -87,17 +70,11 @@ final class PreferencesTests {
     /// tag renders blank, so these must snap to the default too.
     @Test func valuesOutsideTheOptionSetsSnapToDefaults() {
         let defaults = makeDefaults()
-        defaults.set(7, forKey: "idleFoldingThreshold")
         defaults.set(2.0, forKey: "autoAckDwellSeconds")
         let preferences = Preferences(defaults: defaults)
-        #expect(preferences.idleFolding == .past(Theme.Metrics.idleAutoCollapseThreshold))
         #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
 
         // Every offerable option survives the round trip unchanged.
-        for folding in Preferences.IdleFolding.options {
-            defaults.set(folding.stored, forKey: "idleFoldingThreshold")
-            #expect(Preferences(defaults: defaults).idleFolding == folding)
-        }
         for option in Preferences.dwellOptions {
             defaults.set(option.seconds, forKey: "autoAckDwellSeconds")
             #expect(Preferences(defaults: defaults).autoAckDwell == option.seconds)
