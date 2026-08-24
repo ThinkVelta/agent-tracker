@@ -156,6 +156,15 @@ def update(session_id, event, state, reason, extra):
     pid, tty = agent_process()
     data = {**current}
     data.update({k: v for k, v in extra.items() if v})
+    # notificationType is event-local, not a stable session fact like cwd or
+    # the terminal: a Notification's type must describe THIS event only. The
+    # truthy merge above would let an old idle_prompt survive into a later
+    # permission prompt and falsely mark it promotable, so set it from this
+    # event alone and clear it when this event does not carry one.
+    if extra.get("notificationType"):
+        data["notificationType"] = extra["notificationType"]
+    else:
+        data.pop("notificationType", None)
     identity = terminal_identity(tty)
     if identity:
         data["terminal"] = identity
@@ -183,9 +192,11 @@ def claude_states(payload):
     """Claude Code's lifecycle events, as states.
 
     "Stop" is a contract: the app reconsiders a red that came from it (the turn
-    ended, but background work may still be running), and never one from
-    "Notification", which is a permission prompt. Renaming either key here
-    without RegistryEnrichment.turnEndedEvent brings the false reds back.
+    ended, but background work may still be running). A "Notification" red is
+    reconsidered only when its notification_type says "idle_prompt", which
+    Claude sends after a turn has sat still for a while, background shell or
+    not; a permission prompt is never reconsidered. Renaming either key here,
+    or dropping notificationType below, brings the false reds back.
     """
     tool = payload.get("tool_name")
     return {
@@ -214,6 +225,11 @@ def handle_hook():
         # reads it, and treats "absent" as permitted, so it is worth recording
         # even though the transcript carries it too.
         "permissionMode": payload.get("permission_mode"),
+        # Which kind of Notification this was. The app promotes an idle-prompt
+        # red back to running when Claude's own status says work continues,
+        # and must never do that for a permission prompt; only this field
+        # tells the two apart, so its absence reads as the safe kind.
+        "notificationType": payload.get("notification_type"),
     }
 
     if event == "SessionEnd":
