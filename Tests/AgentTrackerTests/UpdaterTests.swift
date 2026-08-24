@@ -153,4 +153,58 @@ struct UpdaterTests {
         let source = InstallSource.detect(isBundled: false, bundlePath: managed) { _ in true }
         #expect(source == .development)
     }
+
+    /// The brew binary lives two levels above the Caskroom; every runnable
+    /// candidate surfaces, because Caskroom presence alone cannot say which
+    /// prefix actually manages the cask — the ownership probe decides that.
+    @Test func brewCandidatesDeriveFromEveryMatchingCaskroom() {
+        #expect(
+            InstallSource.brewExecutableCandidates(
+                directoryExists: { $0 == "/opt/homebrew/Caskroom/agent-tracker" },
+                isExecutable: { _ in true })
+                == ["/opt/homebrew/bin/brew"])
+        let all = InstallSource.brewExecutableCandidates(
+            directoryExists: { _ in true }, isExecutable: { _ in true })
+        #expect(all == ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"])
+        #expect(
+            InstallSource.brewExecutableCandidates(
+                directoryExists: { _ in false }, isExecutable: { _ in true }
+            ).isEmpty)
+    }
+
+    /// A machine migrated between prefixes can hold a stale Caskroom whose
+    /// brew is gone; the candidate list keeps whichever binary runs, in
+    /// either direction, and holds nothing when neither does.
+    @Test func aStaleCaskroomDoesNotShadowAWorkingPrefix() {
+        let both: (String) -> Bool = { _ in true }
+        #expect(
+            InstallSource.brewExecutableCandidates(
+                directoryExists: both,
+                isExecutable: { $0 == "/usr/local/bin/brew" })
+                == ["/usr/local/bin/brew"])
+        #expect(
+            InstallSource.brewExecutableCandidates(
+                directoryExists: both,
+                isExecutable: { $0 == "/opt/homebrew/bin/brew" })
+                == ["/opt/homebrew/bin/brew"])
+        #expect(
+            InstallSource.brewExecutableCandidates(
+                directoryExists: both, isExecutable: { _ in false }
+            ).isEmpty)
+    }
+
+    // MARK: - Uninstall plans
+
+    /// Who removes the bundle depends on who owns it: brew's manifest must
+    /// stay true for brew installs, a direct bundle goes to the Trash, and a
+    /// development build has no bundle, so only the hooks are cleaned.
+    @Test func uninstallPlansMatchTheInstallSource() {
+        #expect(
+            Uninstaller.plan(for: .homebrew)
+                == [.unhookAgents, .disableLoginItem, .forgetPreferences, .brewUninstall])
+        #expect(
+            Uninstaller.plan(for: .direct)
+                == [.unhookAgents, .disableLoginItem, .forgetPreferences, .trashBundle])
+        #expect(Uninstaller.plan(for: .development) == [.unhookAgents])
+    }
 }
