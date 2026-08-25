@@ -29,7 +29,7 @@ struct DiagnosisTests {
             projectStatusLineOverride: nil,
             sessionFileCount: 3,
             staleSessionCount: 0,
-            largestSameProjectGroup: 1,
+            liveSessions: [live("/Users/dev/code/api-gateway", "api-gateway-02")],
             statuslinePayloadPresent: true,
             accessibilityGranted: true,
             notifications: .authorized)
@@ -53,6 +53,10 @@ struct DiagnosisTests {
 
     private func find(_ findings: [Diagnosis.Finding], _ check: String) -> Diagnosis.Finding? {
         findings.first { $0.check == check }
+    }
+
+    private func live(_ projectKey: String, _ name: String?) -> RowAmbiguity.LiveSession {
+        RowAmbiguity.LiveSession(projectKey: projectKey, name: name)
     }
 
     @Test("a healthy machine fails nothing and exits 0")
@@ -382,18 +386,107 @@ struct DiagnosisTests {
         #expect(Diagnosis.exitCode(findings) == 0)
     }
 
-    @Test("sessions sharing a project are reported with the fix that works")
+    @Test("sessions sharing a project and a name are reported with the fix that works")
     func ambiguityNamesTheFix() {
         var input = healthy
-        input.largestSameProjectGroup = 3
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "api-gateway"),
+            live("/Users/dev/code/api-gateway", "api-gateway"),
+        ]
         let finding = find(Diagnosis.findings(input), "ambiguous rows")
         #expect(finding?.level == .warn)
+        #expect(finding?.detail.contains("2 live sessions") == true)
         #expect(finding?.detail.contains("/rename") == true)
     }
 
     @Test("one session per project is not ambiguity")
     func singleSessionIsNotAmbiguous() {
         #expect(!Diagnosis.findings(healthy).contains { $0.check == "ambiguous rows" })
+    }
+
+    /// The nag this check used to be. Window matching resolves a row by its
+    /// name, so two sessions in one repo called different things are told
+    /// apart — and warning about them anyway repeated the same line to
+    /// somebody who had already run the `/rename` it asked for.
+    @Test("two sessions in one project with distinct names are not ambiguous")
+    func distinctNamesInOneProjectAreResolvable() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "api-gateway-02"),
+            live("/Users/dev/code/api-gateway", "billing-spike"),
+        ]
+        #expect(!Diagnosis.findings(input).contains { $0.check == "ambiguous rows" })
+    }
+
+    /// A session nothing names has no title to match a window on, so it falls
+    /// back to the directory its sibling shares.
+    @Test("an unnamed session beside a named one still warns")
+    func unnamedSessionIsAmbiguous() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "api-gateway-02"),
+            live("/Users/dev/code/api-gateway", nil),
+        ]
+        let finding = find(Diagnosis.findings(input), "ambiguous rows")
+        #expect(finding?.level == .warn)
+        #expect(finding?.detail.contains("1 live session shares") == true)
+    }
+
+    /// The count is of rows that cannot be resolved, not of the group they sit
+    /// in: the third session here is named something of its own and clicking it
+    /// lands where it should.
+    @Test("only the rows that collide are counted")
+    func countExcludesTheDistinctlyNamedSibling() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "api-gateway"),
+            live("/Users/dev/code/api-gateway", "api-gateway"),
+            live("/Users/dev/code/api-gateway", "billing-spike"),
+        ]
+        let finding = find(Diagnosis.findings(input), "ambiguous rows")
+        #expect(finding?.level == .warn)
+        #expect(finding?.detail.contains("2 live sessions") == true)
+    }
+
+    /// Window matching lowercases a title and strips the status glyph a
+    /// terminal puts in front of it, so names that differ only in those
+    /// collide on the click and must collide here too.
+    @Test("names that differ only in case or a leading glyph still collide")
+    func namesAreComparedTheWayTitlesAreMatched() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "Review"),
+            live("/Users/dev/code/api-gateway", "\u{2733} review"),
+        ]
+        let finding = find(Diagnosis.findings(input), "ambiguous rows")
+        #expect(finding?.level == .warn)
+        #expect(finding?.detail.contains("2 live sessions") == true)
+    }
+
+    /// A name that is nothing but a glyph normalizes away to nothing, which
+    /// matches no window, so the row is no better off than an unnamed one.
+    @Test("a name that normalizes to nothing counts as unnamed")
+    func aGlyphOnlyNameIsNoName() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "api-gateway-02"),
+            live("/Users/dev/code/api-gateway", "\u{2733}"),
+        ]
+        let finding = find(Diagnosis.findings(input), "ambiguous rows")
+        #expect(finding?.detail.contains("1 live session shares") == true)
+    }
+
+    /// Names are only confusable inside one project. Two repos that happen to
+    /// run a session of the same name never compete for a window, and grouping
+    /// on the name alone would warn about every machine that reuses one.
+    @Test("the same name in two projects is not ambiguity")
+    func sameNameInDifferentProjectsIsFine() {
+        var input = healthy
+        input.liveSessions = [
+            live("/Users/dev/code/api-gateway", "review"),
+            live("/Users/dev/code/billing", "review"),
+        ]
+        #expect(!Diagnosis.findings(input).contains { $0.check == "ambiguous rows" })
     }
 
     // MARK: - Permissions
@@ -514,7 +607,12 @@ struct DiagnosisTests {
             },
             { (probe: inout Diagnosis.Input) in probe.sessionFileCount = 0 },
             { (probe: inout Diagnosis.Input) in probe.staleSessionCount = 2 },
-            { (probe: inout Diagnosis.Input) in probe.largestSameProjectGroup = 2 },
+            { (probe: inout Diagnosis.Input) in
+                probe.liveSessions = [
+                    self.live("/Users/dev/code/api-gateway", "api-gateway"),
+                    self.live("/Users/dev/code/api-gateway", "api-gateway"),
+                ]
+            },
             { (probe: inout Diagnosis.Input) in probe.accessibilityGranted = false },
             { (probe: inout Diagnosis.Input) in probe.notifications = .unavailable },
         ] {

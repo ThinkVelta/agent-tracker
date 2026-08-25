@@ -32,7 +32,9 @@ final class DoctorSafetyTests {
             .joined(separator: "\n")
     }
 
-    private var diagnosticFiles: [String] { ["Doctor.swift", "Diagnosis.swift"] }
+    private var diagnosticFiles: [String] {
+        ["Doctor.swift", "Diagnosis.swift", "RowAmbiguity.swift"]
+    }
 
     /// Every call that can put a dialog on screen. Each was located in the
     /// source rather than recalled, and each has a non-prompting counterpart

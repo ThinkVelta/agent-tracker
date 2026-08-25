@@ -106,7 +106,8 @@ enum Doctor {
             isPresent: FileManager.default.fileExists(atPath: freshnessPath))
 
         input.projectStatusLineOverride = projectStatusLineOverride(from: searchRoot)
-        input.statuslinePayloadPresent = statuslinePayloadPresent(claude: claude)
+        let statusline = statuslineEntries(claude: claude)
+        input.statuslinePayloadPresent = !statusline.isEmpty
 
         let sessions = SessionStore.loadStateFiles().map(\.session)
         input.sessionFileCount = sessions.count
@@ -117,7 +118,8 @@ enum Doctor {
         input.staleSessionCount = sessions.count - live.count
         // Live only. Telling someone to /rename two sessions is absurd one line
         // after saying their processes are gone.
-        input.largestSameProjectGroup = largestSameProjectGroup(live)
+        input.liveSessions = liveSessions(
+            live, claude: claude, statuslineTitles: statuslineTitles(statusline))
 
         input.accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
         input.notifications = notificationState()
@@ -362,14 +364,32 @@ enum Doctor {
     /// Both sources the app actually reads. Ignoring the second would warn that
     /// context is missing for someone whose own script tees the payload, which
     /// the docs describe as a supported setup.
-    private static func statuslinePayloadPresent(claude: URL) -> Bool {
+    ///
+    /// Read once and kept, because two checks want them: whether any payload
+    /// arrives at all, and the names in them, which are the fallback title for
+    /// the ambiguity check.
+    private static func statuslineEntries(claude: URL) -> [StatuslineDirectory.Entry] {
         let sources = [
             claude.appendingPathComponent("statusline-last.json"),
             SessionStore.claudeStatuslineURL,
         ]
-        return sources.contains { url in
-            (try? Data(contentsOf: url)).flatMap { StatuslineDirectory.parse($0) } != nil
+        return sources.compactMap { url in
+            (try? Data(contentsOf: url)).flatMap { StatuslineDirectory.parse($0) }
         }
+    }
+
+    /// Later sources win, the order `StatuslineDirectory` reads them in: the
+    /// wrapper's capture is current, while a leftover `statusline-last.json`
+    /// can hold a name that never updates again.
+    private static func statuslineTitles(
+        _ entries: [StatuslineDirectory.Entry]
+    ) -> [String: String] {
+        var titles: [String: String] = [:]
+        for entry in entries {
+            guard let name = entry.name else { continue }
+            titles[entry.sessionId] = name
+        }
+        return titles
     }
 
     private static func hookFreshness(at path: String, isPresent: Bool) -> Diagnosis.HookFreshness {
@@ -389,13 +409,47 @@ enum Doctor {
             ? .stale : .current
     }
 
-    /// How many live sessions share the directory that titles their row.
-    private static func largestSameProjectGroup(_ sessions: [AgentSession]) -> Int {
-        var counts: [String: Int] = [:]
-        for session in sessions {
-            counts[session.projectKey, default: 0] += 1
+    /// Live sessions reduced to their project and the name click-to-focus would
+    /// match their window by.
+    ///
+    /// The name resolves through `SessionStore.coalescedWindowTitle`, the
+    /// precedence the running app applies, so the report cannot disagree with
+    /// what clicking a row does.
+    private static func liveSessions(
+        _ sessions: [AgentSession],
+        claude: URL,
+        statuslineTitles: [String: String]
+    ) -> [RowAmbiguity.LiveSession] {
+        let names = registryNames(claude: claude)
+        return sessions.map { session in
+            RowAmbiguity.LiveSession(
+                projectKey: session.projectKey,
+                name: SessionStore.coalescedWindowTitle(
+                    registryName: names[session.sessionId],
+                    statuslineTitle: statuslineTitles[session.sessionId]))
         }
-        return counts.values.max() ?? 0
+    }
+
+    /// Claude's own name for each session, out of `~/.claude/sessions`.
+    ///
+    /// Read here as plain files rather than through `ClaudeSessionRegistry`,
+    /// whose init arms a directory watcher and belongs to a running app. One
+    /// read of each file is all a report needs, and it keeps this side of the
+    /// doctor as read-only as the rest.
+    private static func registryNames(claude: URL) -> [String: String] {
+        let directory = claude.appendingPathComponent("sessions")
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil)) ?? []
+        var names: [String: String] = [:]
+        for file in files where file.pathExtension == "json" {
+            guard let data = try? Data(contentsOf: file),
+                let entry = ClaudeSessionRegistry.parse(data),
+                let name = entry.name
+            else { continue }
+            names[entry.sessionId] = name
+        }
+        return names
     }
 
     /// Bounded, because this file's whole argument for skipping the Automation
