@@ -153,6 +153,32 @@ final class TerminalFocuserTests {
                 == 40)
     }
 
+    @Test func aParentDirectoryShellDoesNotMatchAChildDirectorySession() {
+        // Regression from a live click: the Window menu abbreviates a plain
+        // shell's title to "…/Documents/Work/Planner", a substring of a child
+        // session's full path, so the shell was raised for a session whose
+        // own window sat on another Space.
+        let child = [
+            TerminalFocuser.TitleCandidate(
+                "/Users/dev/Documents/Work/Planner/planner-api", weight: 60),
+            TerminalFocuser.TitleCandidate("Planner/planner-api", weight: 50),
+            TerminalFocuser.TitleCandidate("planner-api", weight: 40),
+        ]
+        #expect(
+            TerminalFocuser.matchScore(windowTitle: "…/Documents/Work/Planner", candidates: child)
+                == 0)
+        // The same kind of abbreviation still finds the directory it names.
+        #expect(
+            TerminalFocuser.matchScore(
+                windowTitle: "…/Work/Planner/planner-api", candidates: child) == 60)
+        let parent = [
+            TerminalFocuser.TitleCandidate("/Users/dev/Documents/Work/Planner", weight: 60)
+        ]
+        #expect(
+            TerminalFocuser.matchScore(windowTitle: "…/Documents/Work/Planner", candidates: parent)
+                == 60)
+    }
+
     // MARK: - Auto-acknowledge matching (exact tier, unambiguous winner only)
 
     @Test func exactScoreIgnoresSubstringHits() {

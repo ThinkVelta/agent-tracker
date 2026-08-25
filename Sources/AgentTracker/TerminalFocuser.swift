@@ -434,11 +434,23 @@ enum TerminalFocuser {
             guard !text.isEmpty else { continue }
             if title == text {
                 score = max(score, candidate.weight * 2)
-            } else if !candidate.exactOnly, title.contains(text) || text.contains(title) {
+            } else if !candidate.exactOnly, title.contains(text) || abbreviates(title, text) {
                 score = max(score, candidate.weight)
             }
         }
         return score
+    }
+
+    /// A window title shorter than the candidate matches only as an
+    /// abbreviation of it: a leading ellipsis dropped the front, so the title
+    /// must end the candidate; a trailing cut dropped the back, so it must
+    /// begin it. A fragment from the middle is a different string that shares
+    /// words. Measured on a live click: a plain shell titled
+    /// "…/Documents/ProjectsVelta/Planner" was raised for a session in
+    /// Planner/planner-backend, because the shell's abbreviated parent path is
+    /// a substring of the child's full one.
+    private static func abbreviates(_ title: String, _ text: String) -> Bool {
+        text.hasPrefix(title) || text.hasSuffix(title)
     }
 
     /// Internal, not private: the ownership predicates in SessionOwnership
