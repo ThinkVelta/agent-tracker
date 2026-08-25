@@ -86,6 +86,81 @@ final class RegistryEnrichmentTests {
         #expect(enriched.reason == "Background work still running")
     }
 
+    private func withShell(
+        _ session: AgentSession, ageSeconds: TimeInterval, description: String? = nil,
+        seen: [String]? = nil
+    ) -> AgentSession {
+        var session = session
+        session.backgroundTasks = [
+            BackgroundTask(
+                id: "b1", type: "shell", description: description, command: "sleep 15",
+                firstSeenAt: Date().addingTimeInterval(-ageSeconds))
+        ]
+        session.seenBackgroundTaskIds = seen
+        return session
+    }
+
+    /// The row says what the shell was started for, in Claude's own words,
+    /// now that the hook records them.
+    @Test func aBackgroundShellIsNamedWhileItIsYoung() {
+        let enriched = RegistryEnrichment.apply(
+            to: withShell(stopped(), ageSeconds: 60, description: "Wait for CI"),
+            entry: entry(status: .shell), staleAfter: 1800)
+        #expect(enriched.state == .running)
+        #expect(enriched.reason == "Background: Wait for CI")
+        #expect(enriched.staleBackgroundTask == nil)
+    }
+
+    /// The third sighting of the shell problem, 2026-08-25: a polling loop
+    /// whose exit test could never pass kept `shell` true for three hours,
+    /// and the row read "running" for a session sitting at its prompt. The
+    /// harness never woke it, which is the one signal a stuck shell gives.
+    @Test func aShellPastTheThresholdTurnsTheRowRedForTheShell() {
+        let enriched = RegistryEnrichment.apply(
+            to: withShell(stopped(), ageSeconds: 3 * 3600 + 22 * 60 + 5),
+            entry: entry(status: .shell), staleAfter: 1800)
+        #expect(enriched.state == .needsYou)
+        #expect(enriched.reason == "Background shell running for 3h 22m")
+        #expect(enriched.staleBackgroundTask?.id == "b1")
+    }
+
+    @Test func theStaleCheckCanBeTurnedOff() {
+        let enriched = RegistryEnrichment.apply(
+            to: withShell(stopped(), ageSeconds: 9000),
+            entry: entry(status: .shell), staleAfter: 0)
+        #expect(enriched.state == .running)
+    }
+
+    /// Seen once is seen for good: a dev server that has run for hours goes
+    /// back to reading as background work after the click that cleared it.
+    @Test func aShellMarkedSeenIsPromotedAgain() {
+        let enriched = RegistryEnrichment.apply(
+            to: withShell(stopped(), ageSeconds: 9000, seen: ["b1"]),
+            entry: entry(status: .shell), staleAfter: 1800)
+        #expect(enriched.state == .running)
+        #expect(enriched.reason == "Background work still running")
+    }
+
+    /// `busy` is the model or its delegates at work, however old a shell
+    /// beside them is; only `shell` is ever doubted.
+    @Test func anOldShellBesideDelegatedWorkIsNotStale() {
+        let enriched = RegistryEnrichment.apply(
+            to: withShell(stopped(), ageSeconds: 9000),
+            entry: entry(status: .busy), staleAfter: 1800)
+        #expect(enriched.state == .running)
+        #expect(enriched.staleBackgroundTask == nil)
+    }
+
+    /// A permission prompt with an old shell behind it is still the prompt.
+    @Test func aPermissionPromptKeepsItsOwnWording() {
+        let enriched = RegistryEnrichment.apply(
+            to: withShell(notified("permission_prompt"), ageSeconds: 9000),
+            entry: entry(status: .shell), staleAfter: 1800)
+        #expect(enriched.state == .needsYou)
+        #expect(enriched.reason == "Claude is waiting for your input")
+        #expect(enriched.staleBackgroundTask == nil)
+    }
+
     /// Delegated work counts the same way. Claude derives `busy` as
     /// `isLoading || delegatedActive`, so a lead session whose subagents or
     /// teammates are doing the work reports busy even though its own main
