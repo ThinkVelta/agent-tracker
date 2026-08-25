@@ -412,6 +412,21 @@ private struct SessionsSettingsTab: View {
                     .frame(width: 130)
                 }
                 SettingsRow(
+                    title: "Flag a background shell after",
+                    detail: "A turn that ended with a shell still running shows as running "
+                        + "until it finishes. After this long the row turns red instead, so a "
+                        + "stuck shell can be stopped.",
+                    divided: true
+                ) {
+                    Picker("", selection: $preferences.staleShellAfter) {
+                        ForEach(Preferences.staleShellOptions, id: \.seconds) { option in
+                            Text(option.label)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+                SettingsRow(
                     title: "Background check every",
                     detail: "Sweeps for sessions that ended silently. Changes still appear "
                         + "instantly.",
