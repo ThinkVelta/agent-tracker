@@ -100,6 +100,10 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// Shells the user marked seen while the row was red for them. A dev
     /// server that legitimately runs for hours is flagged once, not every turn.
     var seenBackgroundTaskIds: [String]?
+    /// The `claude` process this session runs under, when a session's own tool
+    /// started it (a `claude -p` from a script run by Bash). Its work belongs
+    /// to that session's row; while that process lives this one is not listed.
+    var spawnedByPid: Int?
 
     // Set by the store when loading; not part of the on-disk schema.
     var fileURL: URL?
@@ -131,7 +135,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schema, sessionId, pid, cwd, state, reason, lastEvent, notificationType
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
-        case terminal, permissionMode, backgroundTasks, seenBackgroundTaskIds
+        case terminal, permissionMode, backgroundTasks, seenBackgroundTaskIds, spawnedByPid
     }
 
     var id: String { sessionId }

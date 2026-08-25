@@ -237,7 +237,15 @@ final class SessionStore: ObservableObject {
         // the row timestamps need republishing — and reading the clock separately
         // for each let them disagree about what "now" is.
         let now = Date()
-        var merged = fileSessions.map { session -> AgentSession in
+        // A run another session's tool started is that session's work: its
+        // parent row already reads "Using Bash", and it has no terminal of its
+        // own to jump to. Left out while the parent lives, kept on disk so
+        // nothing is lost if the parent link is wrong.
+        let listed = fileSessions.filter { session in
+            guard let parent = session.spawnedByPid, parent > 0 else { return true }
+            return !Self.isProcessAlive(parent)
+        }
+        var merged = listed.map { session -> AgentSession in
             var enriched = RegistryEnrichment.apply(
                 to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId),
                 staleAfter: staleShellAfter, now: now)
