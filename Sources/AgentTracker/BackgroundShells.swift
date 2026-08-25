@@ -35,19 +35,20 @@ enum BackgroundShells {
 
     /// Whether a child's argument string is the wrapper running `command`.
     /// The wrapper quotes the command with single quotes, escaping any inside
-    /// it the shell way, so that is the form to look for. A prefix is enough:
-    /// the hook keeps only an excerpt of long commands.
-    static func runs(_ command: String, arguments: String) -> Bool {
+    /// it the shell way, so that is the form to look for. A whole command must
+    /// be closed by the wrapper's own quote, or `sleep 27` would also claim
+    /// `sleep 2700`; only an excerpt the hook cut short may match as a prefix.
+    static func runs(_ command: String, arguments: String, truncated: Bool = false) -> Bool {
         guard !command.isEmpty else { return false }
-        let quoted = command.replacingOccurrences(of: "'", with: #"'\''"#)
-        return arguments.contains("eval '" + quoted)
+        let quoted = "eval '" + command.replacingOccurrences(of: "'", with: #"'\''"#)
+        return arguments.contains(truncated ? quoted : quoted + "'")
     }
 
     /// Off the main actor: it walks the process table.
     static func stop(_ task: BackgroundTask, ownerPid: Int) -> Outcome {
         guard let command = task.command else { return .notFound }
         let matches = children(of: pid_t(ownerPid)).filter {
-            runs(command, arguments: $0.arguments)
+            runs(command, arguments: $0.arguments, truncated: task.commandTruncated == true)
         }
         guard let shell = matches.first else { return .notFound }
         guard matches.count == 1 else { return .ambiguous(matches.count) }

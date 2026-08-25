@@ -67,7 +67,20 @@ struct HookScriptTests {
         #expect(session.state == .needsYou)
         #expect(session.backgroundTasks?.map(\.id) == ["b1"])
         #expect(session.backgroundTasks?.first?.description == "Wait for CI")
+        #expect(session.backgroundTasks?.first?.commandTruncated == nil)
         #expect(session.backgroundTasks?.first?.firstSeenAt != nil)
+    }
+
+    /// A command longer than the excerpt is cut, and marked so the app knows
+    /// it is only looking at the head of one.
+    @Test func aLongCommandIsCutAndMarkedTruncated() throws {
+        let directory = try scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let long = String(repeating: "x", count: 301)
+        try run(stop(tasks: [["id": "b1", "type": "shell", "command": long]]), in: directory)
+        let shell = try load(directory).backgroundTasks?.first
+        #expect(shell?.command?.count == 300)
+        #expect(shell?.commandTruncated == true)
     }
 
     /// The age of a shell is the age of its first sighting. A later Stop that

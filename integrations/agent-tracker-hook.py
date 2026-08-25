@@ -225,6 +225,10 @@ def in_flight_shells(payload):
             value = task.get(key)
             if isinstance(value, str) and value:
                 shell[key] = value[:COMMAND_EXCERPT]
+        # Says whether the excerpt is the whole command: a whole one must match
+        # its shell exactly, or "sleep 27" would also claim "sleep 2700".
+        if len(task.get("command") or "") > COMMAND_EXCERPT:
+            shell["commandTruncated"] = True
         shells.append(shell)
     return shells
 

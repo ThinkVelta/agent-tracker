@@ -69,10 +69,20 @@ struct BackgroundShellTests {
 
     @Test func theCommandIsRecognisedInsideTheWrapper() {
         #expect(BackgroundShells.runs("until [ -f done ]; do sleep 15; done", arguments: wrapper))
-        // The hook keeps an excerpt of long commands; a prefix must still match.
-        #expect(BackgroundShells.runs("until [ -f done ]", arguments: wrapper))
         #expect(!BackgroundShells.runs("sleep 15", arguments: wrapper))
         #expect(!BackgroundShells.runs("", arguments: wrapper))
+    }
+
+    /// The reviewer's case on #128: with prefix matching for every command,
+    /// `sleep 27` would have claimed a shell running `sleep 2700` and, as the
+    /// only match, had it killed. A whole command must end where the wrapper
+    /// closes its quote; only an excerpt the hook cut short is a prefix.
+    @Test func aWholeCommandNeverMatchesALongerOne() {
+        let longer = "/bin/zsh -c eval 'sleep 2700' < /dev/null"
+        #expect(!BackgroundShells.runs("sleep 27", arguments: longer))
+        #expect(BackgroundShells.runs("sleep 27", arguments: longer, truncated: true))
+        #expect(!BackgroundShells.runs("until [ -f done ]", arguments: wrapper))
+        #expect(BackgroundShells.runs("until [ -f done ]", arguments: wrapper, truncated: true))
     }
 
     @Test func aQuoteInTheCommandMatchesItsEscapedForm() {

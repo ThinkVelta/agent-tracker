@@ -7,6 +7,8 @@ struct BackgroundTask: Codable, Equatable {
     var type: String?
     var description: String?
     var command: String?
+    /// Whether `command` is only the head of a longer one. Absent means whole.
+    var commandTruncated: Bool?
     /// The first `Stop` that listed it. Claude reports no start time, so this
     /// is the oldest age the row can honestly claim.
     var firstSeenAt: Date?
