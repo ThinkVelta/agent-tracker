@@ -215,6 +215,15 @@ struct UpdaterTests {
         }
     }
 
+    /// A cask upgrade quits the app it replaces, and the app is brew's parent
+    /// here, so without this flag brew dies mid-upgrade and nothing comes
+    /// back. Measured on v0.8.1 → v0.9.0.
+    @Test func theBrewUpgradeAsksNotToQuitItsOwnParent() {
+        #expect(
+            Updater.homebrewUpgradeArguments
+                == ["upgrade", "--cask", "agent-tracker", "--no-quit"])
+    }
+
     @Test func theVersionIsReadFromTheBundleOnDisk() throws {
         let bundle = FileManager.default.temporaryDirectory
             .appendingPathComponent("updater-test-\(UUID().uuidString)/AgentTracker.app")

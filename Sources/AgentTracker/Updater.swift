@@ -224,9 +224,9 @@ enum Updater {
         guard update.ok else {
             return .failed("brew update failed: \(lastLines(of: update.output))")
         }
-        // Just refreshed; the flag stops brew from considering it again.
+        // Just refreshed; the environment stops brew from considering it again.
         let upgrade = await ProcessRunner.run(
-            brew, ["upgrade", "--cask", "agent-tracker"],
+            brew, homebrewUpgradeArguments,
             environment: ["HOMEBREW_NO_AUTO_UPDATE": "1"])
         guard upgrade.ok else {
             return .failed("brew upgrade failed: \(lastLines(of: upgrade.output))")
@@ -235,6 +235,21 @@ enum Updater {
             afterUpgradeInstalled: installedVersion(ofBundleAt: Bundle.main.bundleURL),
             running: AppInfo.version)
     }
+
+    /// `--no-quit` is load-bearing, not tidiness. A cask upgrade quits the
+    /// app it is replacing, and here that app is brew's own parent: brew's
+    /// stdout is a pipe into it, so the next line brew prints after the quit
+    /// hits a closed pipe and brew dies before it has moved the new bundle
+    /// into place. Measured on v0.8.1 upgrading to v0.9.0: the tap moved, the
+    /// zip was fetched, the Caskroom never gained the new version, and the
+    /// app did not come back. With the flag, brew swaps the bundle under the
+    /// running app and `relaunch()` restarts into it, as designed.
+    ///
+    /// No fallback for a brew too old to know the flag: `brew update` runs
+    /// first and moves Homebrew itself to its current release, so a brew that
+    /// old never reaches this step. Retrying without the flag would be the
+    /// failure above on any brew that quits apps but predates the opt-out.
+    static let homebrewUpgradeArguments = ["upgrade", "--cask", "agent-tracker", "--no-quit"]
 
     /// Whether a brew upgrade is worth relaunching into. brew exits 0 both
     /// when it installed a newer cask and when it decided the installed one
