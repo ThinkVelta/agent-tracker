@@ -112,8 +112,17 @@ enum WindowIdentity {
     /// of the name while idle and a spinner frame while working, and never
     /// leaves the glyph off. Read from the raw title; `normalize` strips it.
     static func isAgentTitled(_ title: String) -> Bool {
-        guard let first = title.unicodeScalars.first(where: { $0 != " " }) else { return false }
-        return first.value == 0x2733 || TerminalFocuser.showsBusySpinner(String(first))
+        guard let first = TerminalFocuser.leadingScalar(of: title) else { return false }
+        return first.value == 0x2733 || TerminalFocuser.showsBusySpinner(title)
+    }
+
+    /// Whether any of these windows is titled by an agent at all. With title
+    /// updates off, every window is titled by the shell, the session's
+    /// included, and nothing may be excluded then. Callers judge this over the
+    /// widest window list they have: the session's own window is exactly the
+    /// one that may sit on another Space.
+    static func agentTitlesInUse(_ titles: [String]) -> Bool {
+        titles.contains(where: isAgentTitled)
     }
 
     /// Whether a title is a directory: what Ghostty shows for a shell with
@@ -129,11 +138,9 @@ enum WindowIdentity {
     /// click: an empty terminal sitting in Planner was raised for the Planner
     /// session whose own window was on another Space.
     ///
-    /// Judged only when agent titles are in use at all. With title updates
-    /// off, every window is titled by the shell, the session's included, and
-    /// excluding them would exclude the session.
-    static func plainShellIndices(titles: [String]) -> Set<Int> {
-        guard titles.contains(where: isAgentTitled) else { return [] }
+    /// Empty unless `agentTitlesInUse` (see `agentTitlesInUse(_:)`).
+    static func plainShellIndices(titles: [String], agentTitlesInUse: Bool) -> Set<Int> {
+        guard agentTitlesInUse else { return [] }
         return Set(
             titles.indices.filter { !isAgentTitled(titles[$0]) && isPathTitle(titles[$0]) })
     }

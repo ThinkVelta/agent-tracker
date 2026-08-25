@@ -337,6 +337,10 @@ final class TerminalFocuserTests {
         // Claude Code's "✳" prefix is permanent, not an activity indicator.
         #expect(!TerminalFocuser.showsBusySpinner("✳ Port planner tooling"))
         #expect(!TerminalFocuser.showsBusySpinner(""))
+        // The frame leads; a glyph inside the name is just the name.
+        #expect(!TerminalFocuser.showsBusySpinner("Phase ◐ of the moon"))
+        #expect(!TerminalFocuser.showsBusySpinner("✳ Planner ⠋"))
+        #expect(TerminalFocuser.showsBusySpinner("  ◒ Planner"))
     }
 
     /// Claude Code spins too — verified against a live window titled

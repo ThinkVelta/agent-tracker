@@ -190,7 +190,11 @@ enum TerminalFocuser {
         // merely sits in the directory is nobody's: as the only hit it used to
         // be raised unchecked, which sent a click to an empty terminal.
         let allTitles = windows.map { AXAccess.title(of: $0) ?? "" }
-        let shells = WindowIdentity.plainShellIndices(titles: allTitles)
+        // Whether agent titles are in use is judged across every Space: the
+        // session's own window is exactly the one that may be elsewhere, and
+        // a Space holding nothing but the shell would otherwise clear it.
+        let shells = WindowIdentity.plainShellIndices(
+            titles: allTitles, agentTitlesInUse: agentTitlesInUse(in: app, or: allTitles))
         let hits = matched.filter {
             !shells.contains($0) && !target.ownedByAnother(allTitles[$0])
         }
@@ -250,6 +254,14 @@ enum TerminalFocuser {
         return .focusedWindow(title: windowTitle)
     }
 
+    private static func agentTitlesInUse(in app: NSRunningApplication, or titles: [String])
+        -> Bool
+    {
+        if WindowIdentity.agentTitlesInUse(titles) { return true }
+        guard case .items(let items) = AXAccess.windowMenuItems(of: app) else { return false }
+        return WindowIdentity.agentTitlesInUse(items.compactMap { AXAccess.title(of: $0) })
+    }
+
     /// Primary: the app's Window menu. Unlike the AX window list (current Space
     /// only), it enumerates every window AND tab across all Spaces, and
     /// pressing an entry performs the exact jump the user would.
@@ -272,7 +284,8 @@ enum TerminalFocuser {
         log("\(items.count) Window-menu item(s)\(exactOnly ? " (session name only)" : ""):")
         guard
             let hit = bestTitleMatch(
-                in: items, candidates: candidates, target: target, logZeroScores: false)
+                in: items, candidates: candidates, target: target, app: app,
+                logZeroScores: false)
         else { return nil }
         log("pressing Window-menu item \"\(hit.title)\" (score \(hit.score))")
         let result = AXUIElementPerformAction(hit.element, kAXPressAction as CFString)
@@ -300,7 +313,8 @@ enum TerminalFocuser {
         log("\(windows.count) window(s) visible via Accessibility (current Space only):")
         guard
             let best = bestTitleMatch(
-                in: windows, candidates: target.candidates, target: target, logZeroScores: true)
+                in: windows, candidates: target.candidates, target: target, app: app,
+                logZeroScores: true)
         else { return nil }
         log("raising window \"\(best.title)\" (score \(best.score))")
         AXAccess.raise(best.element)
@@ -314,6 +328,7 @@ enum TerminalFocuser {
         in elements: [AXUIElement],
         candidates: [TitleCandidate],
         target: Target,
+        app: NSRunningApplication,
         logZeroScores: Bool
     ) -> AXMatch? {
         let state = target.session.state
@@ -328,7 +343,9 @@ enum TerminalFocuser {
         // A path fragment scores a plain shell titled with its directory as
         // readily as a session's window, and with the session's own window on
         // another Space that shell was the best title on offer.
-        let shells = WindowIdentity.plainShellIndices(titles: named.map(\.title))
+        let titles = named.map(\.title)
+        let shells = WindowIdentity.plainShellIndices(
+            titles: titles, agentTitlesInUse: agentTitlesInUse(in: app, or: titles))
         if !shells.isEmpty {
             log("\(shells.count) plain shell(s) titled with a directory skipped")
         }
@@ -421,9 +438,14 @@ enum TerminalFocuser {
     /// strips them before scoring, so the signal has to be read from the raw
     /// title.
     static func showsBusySpinner(_ windowTitle: String) -> Bool {
-        windowTitle.unicodeScalars.contains {
-            (0x2800...0x28FF).contains($0.value) || (0x25D0...0x25D3).contains($0.value)
-        }
+        // The frame is painted in front of the name; a glyph further in is
+        // part of the name and says nothing.
+        guard let first = leadingScalar(of: windowTitle) else { return false }
+        return (0x2800...0x28FF).contains(first.value) || (0x25D0...0x25D3).contains(first.value)
+    }
+
+    static func leadingScalar(of title: String) -> Unicode.Scalar? {
+        title.unicodeScalars.first { !$0.properties.isWhitespace }
     }
 
     /// Whether the window's live busy indicator agrees with the session's
