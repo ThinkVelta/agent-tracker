@@ -450,7 +450,12 @@ enum TerminalFocuser {
     /// Planner/planner-backend, because the shell's abbreviated parent path is
     /// a substring of the child's full one.
     private static func abbreviates(_ title: String, _ text: String) -> Bool {
-        text.hasPrefix(title) || text.hasSuffix(title)
+        // `normalize` already stripped a leading ellipsis; a trailing one
+        // marks the cut at the other end and is not part of the name.
+        var cut = Substring(title)
+        while cut.hasSuffix("…") || cut.hasSuffix(".") { cut = cut.dropLast() }
+        guard !cut.isEmpty else { return false }
+        return text.hasPrefix(cut) || text.hasSuffix(cut)
     }
 
     /// Internal, not private: the ownership predicates in SessionOwnership

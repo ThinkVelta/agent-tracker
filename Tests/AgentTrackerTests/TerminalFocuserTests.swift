@@ -167,10 +167,17 @@ final class TerminalFocuserTests {
         #expect(
             TerminalFocuser.matchScore(windowTitle: "…/Documents/Work/Planner", candidates: child)
                 == 0)
-        // The same kind of abbreviation still finds the directory it names.
+        // The same kind of abbreviation still finds the directory it names,
+        // whichever end the terminal cut.
         #expect(
             TerminalFocuser.matchScore(
                 windowTitle: "…/Work/Planner/planner-api", candidates: child) == 60)
+        #expect(
+            TerminalFocuser.matchScore(
+                windowTitle: "/Users/dev/Documents/Work/Planner/plan…", candidates: child) == 60)
+        #expect(
+            TerminalFocuser.matchScore(
+                windowTitle: "/Users/dev/Documents/Work/Planner/plan...", candidates: child) == 60)
         let parent = [
             TerminalFocuser.TitleCandidate("/Users/dev/Documents/Work/Planner", weight: 60)
         ]
