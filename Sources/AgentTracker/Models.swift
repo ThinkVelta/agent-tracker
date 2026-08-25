@@ -102,7 +102,8 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var seenBackgroundTaskIds: [String]?
     /// The `claude` process this session runs under, when a session's own tool
     /// started it (a `claude -p` from a script run by Bash). Its work belongs
-    /// to that session's row; while that process lives this one is not listed.
+    /// to that session's row; while that process is a session on the list, this
+    /// one is not.
     var spawnedByPid: Int?
 
     // Set by the store when loading; not part of the on-disk schema.

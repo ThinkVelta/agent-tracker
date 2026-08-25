@@ -43,7 +43,8 @@ touching real data.
 launched by a script from a session's Bash tool has its own session id and fires
 the same hooks, so it gets a state file too. The hook records the enclosing
 `claude` process as `spawnedByPid`, and the app leaves such a row out of the
-list and the counts while that process lives: its work is the parent row's, and
+list and the counts while that process is itself a session on the list: its work
+is the parent row's, and
 it has no terminal to jump to. The file stays, so nothing is lost if the link
 is wrong.
 
