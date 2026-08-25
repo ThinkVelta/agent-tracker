@@ -95,3 +95,26 @@ struct BackgroundShellPanel: View {
         }
     }
 }
+
+/// Both shapes of the panel in one column for `--render-preview --view shell`:
+/// a shell the app can end, and a task it can only describe.
+struct BackgroundShellPanelPreviewStack: View {
+    private let firstSeen = Date().addingTimeInterval(-(3 * 3600 + 22 * 60))
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            BackgroundShellPanel(
+                task: BackgroundTask(
+                    id: "b1", type: "shell", description: "Wait for workflow completion",
+                    command: "until [ \"$(grep -c completed journal.jsonl)\" -ge 6 ]; "
+                        + "do sleep 15; done",
+                    firstSeenAt: firstSeen),
+                ownerPid: 1, onDismiss: {})
+            BackgroundShellPanel(
+                task: BackgroundTask(id: "b2", type: "monitor", firstSeenAt: firstSeen),
+                ownerPid: 1, onDismiss: {})
+        }
+        .padding(4)
+        .frame(width: Theme.Metrics.popoverWidth)
+    }
+}
