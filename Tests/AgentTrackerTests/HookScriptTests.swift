@@ -89,6 +89,19 @@ struct HookScriptTests {
         #expect(walks?[2] == ["None", "None", "None"])
     }
 
+    /// The link is written from each event alone. Under the test runner no
+    /// agent encloses the hook, so a value left by an earlier event must go.
+    @Test func aSpawnedByPidNoLongerReportedIsCleared() throws {
+        let directory = try scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let earlier: [String: Any] = ["sessionId": "s1", "state": "running", "spawnedByPid": 4242]
+        try JSONSerialization.data(withJSONObject: earlier).write(to: stateFile(in: directory))
+        try run(
+            ["hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash"],
+            in: directory)
+        #expect(try load(directory).spawnedByPid == nil)
+    }
+
     @Test func aStopRecordsTheShellsStillRunning() throws {
         let directory = try scratch()
         defer { try? FileManager.default.removeItem(at: directory) }

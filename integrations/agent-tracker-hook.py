@@ -191,8 +191,12 @@ def update(session_id, event, state, reason, extra, background_tasks=None):
     current = load_state(path)
     pid, tty, spawned_by = agent_process()
     data = {**current}
+    # Written from this event alone, like notificationType below: a value that
+    # outlived the process it named could hide a session once the pid is reused.
     if spawned_by:
         data["spawnedByPid"] = spawned_by
+    else:
+        data.pop("spawnedByPid", None)
     data.update({k: v for k, v in extra.items() if v})
     if background_tasks is not None:
         data["backgroundTasks"] = merge_background_tasks(

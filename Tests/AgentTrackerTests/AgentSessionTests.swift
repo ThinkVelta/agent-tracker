@@ -3,6 +3,32 @@ import Testing
 
 @testable import AgentTracker
 
+struct NestedRunTests {
+    private func session(_ id: String, pid: Int, spawnedBy: Int? = nil) -> AgentSession {
+        var session = AgentSession(sessionId: id, pid: pid, state: .running)
+        session.spawnedByPid = spawnedBy
+        return session
+    }
+
+    /// The reported row: a `claude -p` a script ran from another session's
+    /// Bash tool. Its parent is on the list, so it is not.
+    @Test func aRunUnderATrackedSessionIsNotListed() {
+        let listed = SessionStore.listed([
+            session("parent", pid: 100), session("nested", pid: 200, spawnedBy: 100),
+        ])
+        #expect(listed.map(\.sessionId) == ["parent"])
+    }
+
+    /// The pid alone is not enough: reused by an unrelated process, or
+    /// belonging to a claude this app never saw, it hides nothing.
+    @Test func aParentThatIsNotASessionOnTheListHidesNothing() {
+        let listed = SessionStore.listed([
+            session("parent", pid: 100), session("orphan", pid: 200, spawnedBy: 999),
+        ])
+        #expect(listed.map(\.sessionId) == ["parent", "orphan"])
+    }
+}
+
 final class AgentSessionTests {
     private func session(cwd: String?) -> AgentSession {
         AgentSession(sessionId: "s", cwd: cwd, state: .idle)
