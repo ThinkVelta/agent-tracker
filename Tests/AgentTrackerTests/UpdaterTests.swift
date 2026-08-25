@@ -220,17 +220,8 @@ struct UpdaterTests {
     /// back. Measured on v0.8.1 → v0.9.0.
     @Test func theBrewUpgradeAsksNotToQuitItsOwnParent() {
         #expect(
-            Updater.homebrewUpgradeArguments(noQuit: true)
+            Updater.homebrewUpgradeArguments
                 == ["upgrade", "--cask", "agent-tracker", "--no-quit"])
-        #expect(
-            Updater.homebrewUpgradeArguments(noQuit: false)
-                == ["upgrade", "--cask", "agent-tracker"])
-    }
-
-    @Test func onlyAnUnknownOptionEarnsARetryWithoutIt() {
-        #expect(Updater.brewRejectedAnOption("Error: invalid option: --no-quit"))
-        #expect(!Updater.brewRejectedAnOption("Error: Cask 'agent-tracker' is not installed."))
-        #expect(!Updater.brewRejectedAnOption(""))
     }
 
     @Test func theVersionIsReadFromTheBundleOnDisk() throws {
