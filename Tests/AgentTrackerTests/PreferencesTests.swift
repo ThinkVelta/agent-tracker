@@ -17,6 +17,7 @@ final class PreferencesTests {
         let preferences = Preferences(defaults: makeDefaults())
         #expect(preferences.appearanceOverride == .system)
         #expect(preferences.autoAckDwell == TerminalFocusObserver.defaultDwell)
+        #expect(preferences.staleShellAfter == Preferences.defaultStaleShellAfter)
         // Off by default: the only switch here that lets the app act on a
         // session rather than just display it.
         #expect(preferences.scheduledContinues == false)
@@ -27,12 +28,14 @@ final class PreferencesTests {
         let first = Preferences(defaults: defaults)
         first.appearanceOverride = .dark
         first.autoAckDwell = 10
+        first.staleShellAfter = 3600
         first.scheduledContinues = true
 
         // A second instance over the same suite is "relaunch the app".
         let second = Preferences(defaults: defaults)
         #expect(second.appearanceOverride == .dark)
         #expect(second.autoAckDwell == 10)
+        #expect(second.staleShellAfter == 3600)
         #expect(second.scheduledContinues)
     }
 
