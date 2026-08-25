@@ -108,6 +108,36 @@ enum WindowIdentity {
             .map(\.offset)
     }
 
+    /// Whether a title is one an agent painted: Claude Code puts "✳" in front
+    /// of the name while idle and a spinner frame while working, and never
+    /// leaves the glyph off. Read from the raw title; `normalize` strips it.
+    static func isAgentTitled(_ title: String) -> Bool {
+        guard let first = title.unicodeScalars.first(where: { $0 != " " }) else { return false }
+        return first.value == 0x2733 || TerminalFocuser.showsBusySpinner(String(first))
+    }
+
+    /// Whether a title is a directory: what Ghostty shows for a shell with
+    /// nothing running in it, abbreviated ("…/Documents/ProjectsVelta/Planner")
+    /// or not.
+    static func isPathTitle(_ title: String) -> Bool {
+        let normalized = TerminalFocuser.normalize(title)
+        return normalized.hasPrefix("/") || normalized.hasPrefix("~")
+    }
+
+    /// The windows that are plain shells titled with their directory, which
+    /// no session owns however well the directory agrees. Measured on a live
+    /// click: an empty terminal sitting in Planner was raised for the Planner
+    /// session whose own window was on another Space.
+    ///
+    /// Judged only when agent titles are in use at all. With title updates
+    /// off, every window is titled by the shell, the session's included, and
+    /// excluding them would exclude the session.
+    static func plainShellIndices(titles: [String]) -> Set<Int> {
+        guard titles.contains(where: isAgentTitled) else { return [] }
+        return Set(
+            titles.indices.filter { !isAgentTitled(titles[$0]) && isPathTitle(titles[$0]) })
+    }
+
     /// Whether this window is demonstrably a *different* session's.
     ///
     /// Sharing a directory is not owning a window: six terminals sat in one

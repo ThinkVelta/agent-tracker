@@ -186,12 +186,19 @@ enum TerminalFocuser {
         // A shared directory is the weakest kind of agreement: several
         // sessions routinely sit in one repo. Windows that exactly name another
         // live session are hers, not this session's — dropping them is what
-        // stops one row raising another session's window.
-        let hits = matched.filter { !target.ownedByAnother(AXAccess.title(of: windows[$0]) ?? "") }
+        // stops one row raising another session's window. A plain shell that
+        // merely sits in the directory is nobody's: as the only hit it used to
+        // be raised unchecked, which sent a click to an empty terminal.
+        let allTitles = windows.map { AXAccess.title(of: $0) ?? "" }
+        let shells = WindowIdentity.plainShellIndices(titles: allTitles)
+        let hits = matched.filter {
+            !shells.contains($0) && !target.ownedByAnother(allTitles[$0])
+        }
         guard !hits.isEmpty else {
             log(
-                "\(matched.count) window(s) here belong to other sessions by name; "
-                    + "falling back to titles, which see every Space")
+                "\(matched.count) window(s) here belong to other sessions by name or are "
+                    + "plain shells titled with the directory; falling back to titles, "
+                    + "which see every Space")
             return nil
         }
 
@@ -210,7 +217,7 @@ enum TerminalFocuser {
 
         // Several windows in one directory: sibling sessions in the same repo.
         // Their titles and activity are all that is left to separate them.
-        let titles = hits.map { AXAccess.title(of: windows[$0]) ?? "" }
+        let titles = hits.map { allTitles[$0] }
         let chosen: Int
         if hits.count == 1 {
             chosen = hits[0]
@@ -314,11 +321,20 @@ enum TerminalFocuser {
         // live session is never this one's, however well its path fragments
         // score. Without this a bare "Planner" candidate can outrank nothing
         // and still win a menu full of other sessions' windows.
-        let titled = elements.compactMap { element -> (element: AXUIElement, title: String)? in
+        let named = elements.compactMap { element -> (element: AXUIElement, title: String)? in
             guard let title = AXAccess.title(of: element), !title.isEmpty else { return nil }
-            guard !target.ownedByAnother(title) else { return nil }
             return (element, title)
         }
+        // A path fragment scores a plain shell titled with its directory as
+        // readily as a session's window, and with the session's own window on
+        // another Space that shell was the best title on offer.
+        let shells = WindowIdentity.plainShellIndices(titles: named.map(\.title))
+        if !shells.isEmpty {
+            log("\(shells.count) plain shell(s) titled with a directory skipped")
+        }
+        let titled = named.enumerated()
+            .filter { !shells.contains($0.offset) && !target.ownedByAnother($0.element.title) }
+            .map(\.element)
         for entry in titled {
             let score = matchScore(windowTitle: entry.title, candidates: candidates)
             guard score > 0 || logZeroScores else { continue }
@@ -396,14 +412,18 @@ enum TerminalFocuser {
         return candidates
     }
 
-    /// True when the title carries a braille spinner frame (U+2800–U+28FF) —
-    /// the animation agent TUIs paint into the title while a turn is in
-    /// flight. Deliberately narrow: braille frames mean "working right now" in
-    /// every CLI we track, whereas Claude Code's constant "✳" prefix says
-    /// nothing about activity. `normalize` strips these before scoring, so the
-    /// signal has to be read from the raw title.
+    /// True when the title carries a spinner frame — the animation agent TUIs
+    /// paint into the title while a turn is in flight: braille (U+2800–U+28FF)
+    /// on older Claude Code, and the quarter circles ◐◑◒◓ (U+25D0–U+25D3) on
+    /// current ones, read off live windows ("◐ PLN-546", "◑ New session").
+    /// Deliberately narrow: these mean "working right now", whereas Claude
+    /// Code's constant "✳" prefix says nothing about activity. `normalize`
+    /// strips them before scoring, so the signal has to be read from the raw
+    /// title.
     static func showsBusySpinner(_ windowTitle: String) -> Bool {
-        windowTitle.unicodeScalars.contains { (0x2800...0x28FF).contains($0.value) }
+        windowTitle.unicodeScalars.contains {
+            (0x2800...0x28FF).contains($0.value) || (0x25D0...0x25D3).contains($0.value)
+        }
     }
 
     /// Whether the window's live busy indicator agrees with the session's

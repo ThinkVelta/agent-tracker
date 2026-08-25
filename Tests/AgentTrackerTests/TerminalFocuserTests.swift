@@ -325,9 +325,14 @@ final class TerminalFocuserTests {
 
     // MARK: - Activity tie-break
 
-    @Test func braillleSpinnersAreTheOnlyBusySignal() {
+    @Test func spinnerFramesAreTheOnlyBusySignal() {
         #expect(TerminalFocuser.showsBusySpinner("⠋ Planner"))
         #expect(TerminalFocuser.showsBusySpinner("⠸ Planner"))
+        // Current Claude Code paints quarter circles instead of braille; both
+        // read off live windows on 2026-08-25 ("◐ PLN-546", "◑ New session").
+        #expect(TerminalFocuser.showsBusySpinner("◐ PLN-546"))
+        #expect(TerminalFocuser.showsBusySpinner("◑ New session"))
+        #expect(TerminalFocuser.activityAgrees(windowTitle: "◐ PLN-546", state: .running))
         #expect(!TerminalFocuser.showsBusySpinner("Planner"))
         // Claude Code's "✳" prefix is permanent, not an activity indicator.
         #expect(!TerminalFocuser.showsBusySpinner("✳ Port planner tooling"))

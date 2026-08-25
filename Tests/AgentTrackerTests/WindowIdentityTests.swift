@@ -228,6 +228,31 @@ final class WindowIdentityTests {
     /// visibility in Google search results" — a Claude Code session's window
     /// that merely shared the directory. Ownership by name has to beat a
     /// directory tie.
+    /// The click behind this rule: the session's window was on another Space,
+    /// an empty terminal sat in the session's directory, and as the only
+    /// directory hit it was raised. A directory is what Ghostty titles a shell
+    /// with; a session's window always carries Claude's glyph.
+    @Test func aPlainShellTitledWithItsDirectoryIsNobodysWindow() {
+        let titles = [
+            "…/Documents/ProjectsVelta/Planner", "✳ PLN-713", "◐ Teammate availability",
+            "/Users/dev/oss/api", "✳ /Users/dev/oss/api", "vim",
+        ]
+        #expect(WindowIdentity.plainShellIndices(titles: titles) == [0, 3])
+        #expect(WindowIdentity.isAgentTitled("✳ PLN-713"))
+        #expect(WindowIdentity.isAgentTitled("◑ New session"))
+        #expect(!WindowIdentity.isAgentTitled("PLN-713"))
+        #expect(WindowIdentity.isPathTitle("~/work/api"))
+        #expect(!WindowIdentity.isPathTitle("Planner"))
+    }
+
+    /// With terminal title updates off, every window is titled by the shell,
+    /// the session's included; nothing may be excluded then.
+    @Test func plainShellsAreOnlyJudgedWhenAgentTitlesAreInUse() {
+        let untitled = ["…/Documents/ProjectsVelta/Planner", "/Users/dev/oss/api", "zsh"]
+        #expect(WindowIdentity.plainShellIndices(titles: untitled).isEmpty)
+        #expect(WindowIdentity.plainShellIndices(titles: []).isEmpty)
+    }
+
     @Test func aWindowNamingAnotherSessionIsNotOurs() {
         let codex = AgentSession(
             sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
