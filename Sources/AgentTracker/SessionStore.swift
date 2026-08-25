@@ -153,6 +153,10 @@ final class SessionStore: ObservableObject {
         // A pass always comes from here, never from the scheduler itself, so
         // there is exactly one place that reads the clock for both.
         continueSchedules.requestPass = { [weak self] in self?.reload() }
+        // Read now rather than waiting for the sink below: that delivers on a
+        // later turn of the main actor, and the first pass must already know
+        // the threshold or a one-shot render never sees a stale row.
+        staleShellAfter = Preferences.shared.staleShellAfter
         reload()
         watcher = DirectoryWatcher(url: Self.sessionsDirectory) { [weak self] in
             self?.reload()
@@ -173,7 +177,20 @@ final class SessionStore: ObservableObject {
             .sink { [weak self] interval in
                 Task { @MainActor in self?.scheduleRefreshTimer(interval: interval) }
             }
+        staleShellSubscription = Preferences.shared.$staleShellAfter
+            .removeDuplicates()
+            .sink { [weak self] threshold in
+                Task { @MainActor in
+                    self?.staleShellAfter = threshold
+                    self?.rebuild()
+                }
+            }
     }
+
+    /// Mirrors `Preferences.staleShellAfter`, so a rebuild reads a stored value
+    /// rather than the preferences object mid-publish.
+    private var staleShellAfter: TimeInterval = 0
+    private var staleShellSubscription: AnyCancellable?
 
     private func scheduleRefreshTimer(interval: TimeInterval) {
         refreshTimer?.invalidate()
@@ -222,7 +239,8 @@ final class SessionStore: ObservableObject {
         let now = Date()
         var merged = fileSessions.map { session -> AgentSession in
             var enriched = RegistryEnrichment.apply(
-                to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId))
+                to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId),
+                staleAfter: staleShellAfter, now: now)
             enriched.contextUsedPercent = statuslineDirectory.contextUsedPercent(
                 for: session.sessionId)
             return enriched
@@ -411,6 +429,14 @@ final class SessionStore: ObservableObject {
             object["state"] = SessionState.idle.rawValue
             object["reason"] = "Seen"
             object["stateChangedAt"] = ISO8601DateFormatter().string(from: Date())
+            if let stale = session.staleBackgroundTask {
+                // Seen once is seen for good: the shell will still be there at
+                // the next turn end, and the row must not go red for it again.
+                let seen = object["seenBackgroundTaskIds"] as? [String] ?? []
+                if !seen.contains(stale.id) {
+                    object["seenBackgroundTaskIds"] = seen + [stale.id]
+                }
+            }
             if let updated = try? JSONSerialization.data(
                 withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
             {

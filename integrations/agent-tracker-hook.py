@@ -150,12 +150,16 @@ def write_state(path, data):
     os.replace(tmp, path)
 
 
-def update(session_id, event, state, reason, extra):
+def update(session_id, event, state, reason, extra, background_tasks=None):
     path = state_path(session_id)
     current = load_state(path)
     pid, tty = agent_process()
     data = {**current}
     data.update({k: v for k, v in extra.items() if v})
+    if background_tasks is not None:
+        data["backgroundTasks"] = merge_background_tasks(
+            background_tasks, current.get("backgroundTasks")
+        )
     # notificationType is event-local, not a stable session fact like cwd or
     # the terminal: a Notification's type must describe THIS event only. The
     # truthy merge above would let an old idle_prompt survive into a later
@@ -186,6 +190,64 @@ def update(session_id, event, state, reason, extra):
     data.setdefault("state", "idle")
     data.setdefault("stateChangedAt", now())
     write_state(path, data)
+
+
+# How much of a background command the state file keeps. Enough for the app
+# to recognise the shell process it belongs to and to show what it was doing;
+# a multi-page script would otherwise be copied into the file on every turn.
+COMMAND_EXCERPT = 300
+
+# Task types that keep Claude's status at "shell" after a turn ends. Subagents,
+# workflows and teammates report "busy" instead and are not recorded.
+SHELL_TASK_TYPES = ("shell", "monitor")
+
+
+def in_flight_shells(payload):
+    """The background shells a Stop payload says are still running, or None.
+
+    Claude Code (2.1.145+) lists in-flight background work on `Stop` so hooks
+    can tell "the session is done" from "the session is parked on a shell".
+    None when the payload has no such field, which is how an older Claude
+    must read: unknown, not empty.
+    """
+    tasks = payload.get("background_tasks")
+    if not isinstance(tasks, list):
+        return None
+    shells = []
+    for task in tasks:
+        if not isinstance(task, dict) or task.get("type") not in SHELL_TASK_TYPES:
+            continue
+        task_id = task.get("id")
+        if not isinstance(task_id, str) or not task_id:
+            continue
+        shell = {"id": task_id, "type": task["type"]}
+        for key in ("description", "command"):
+            value = task.get(key)
+            if isinstance(value, str) and value:
+                shell[key] = value[:COMMAND_EXCERPT]
+        # Says whether the excerpt is the whole command: a whole one must match
+        # its shell exactly, or "sleep 27" would also claim "sleep 2700".
+        if len(task.get("command") or "") > COMMAND_EXCERPT:
+            shell["commandTruncated"] = True
+        shells.append(shell)
+    return shells
+
+
+def merge_background_tasks(shells, previous):
+    """Carry each shell's first sighting forward across turns.
+
+    The payload says what is running now, never since when, so the age of a
+    shell is the age of its first appearance in a Stop. A shell that has left
+    the list is gone with its timestamp.
+    """
+    seen_at = {}
+    for task in previous or []:
+        if isinstance(task, dict) and task.get("id") and task.get("firstSeenAt"):
+            seen_at[task["id"]] = task["firstSeenAt"]
+    stamp = now()
+    return [
+        {**shell, "firstSeenAt": seen_at.get(shell["id"], stamp)} for shell in shells
+    ]
 
 
 def claude_states(payload):
@@ -240,7 +302,10 @@ def handle_hook():
         return
 
     state, reason = claude_states(payload).get(event, (None, None))
-    update(session_id, event or "unknown", state, reason, extra)
+    shells = in_flight_shells(payload) if event == "Stop" else None
+    update(
+        session_id, event or "unknown", state, reason, extra, background_tasks=shells
+    )
 
 
 def main():

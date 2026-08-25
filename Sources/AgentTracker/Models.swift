@@ -94,9 +94,18 @@ struct AgentSession: Codable, Identifiable, Equatable {
     /// field is optional: it depends on the terminal, and a session the
     /// scanner discovers never had a hook run at all.
     var terminal: TerminalIdentity?
+    /// Background shells still running when the turn ended, from Claude's
+    /// `Stop` payload. Absent for hooks and Claude versions that predate it.
+    var backgroundTasks: [BackgroundTask]?
+    /// Shells the user marked seen while the row was red for them. A dev
+    /// server that legitimately runs for hours is flagged once, not every turn.
+    var seenBackgroundTaskIds: [String]?
 
     // Set by the store when loading; not part of the on-disk schema.
     var fileURL: URL?
+    /// The shell this row is red for, when enrichment found one that has run
+    /// past the stale threshold. The row's stop control hangs off it.
+    var staleBackgroundTask: BackgroundTask?
     /// Claude Code's own name for this session ("api-gateway-02") — the name the
     /// user sees in their own terminal. Joined in from the session registry.
     var registryName: String?
@@ -122,7 +131,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schema, sessionId, pid, cwd, state, reason, lastEvent, notificationType
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
-        case terminal, permissionMode
+        case terminal, permissionMode, backgroundTasks, seenBackgroundTaskIds
     }
 
     var id: String { sessionId }

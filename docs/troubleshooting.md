@@ -223,6 +223,27 @@ app**. Click **Done**, never *Move to Trash*, then approve it in System Settings
 This is because the build is not yet notarized, which is blocked on an Apple
 Developer Program enrolment rather than on anything technical.
 
+## A session shows as running while Claude sits at the prompt
+
+The row reads *Background: …* or *Background work still running*, but the
+terminal shows Claude waiting for you. Claude reports `shell` for as long as a
+background shell it started is still running, and the app takes that at its
+word: a turn parked on a shell is resumed by the harness when the shell ends.
+A shell that never ends, typically a wait loop whose condition can never be
+met, keeps the row green indefinitely.
+
+After Settings › Sessions › *Flag a background shell after* (30 minutes by
+default) the row turns red for the shell, with how long it has run in place of
+the time since the turn ended. The stop control at the end of the row opens a
+panel showing the command; *Stop shell* ends it, and Claude wakes with the
+output so far. Clicking the row, or visiting its terminal, marks the shell seen
+instead and leaves it running. Nothing is stopped without that second click.
+
+If the row never turns red, check that the hook is current (`AgentTracker
+--doctor`) and that Claude Code is 2.1.145 or later, which is when `Stop` started
+listing background tasks. The state file's `backgroundTasks` field shows what
+the hook recorded.
+
 ## Where to look when none of this fits
 
 ```sh

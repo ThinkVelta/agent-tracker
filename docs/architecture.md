@@ -79,6 +79,20 @@ Claude publishes its own status for each of those (`shell` for background work,
 session genuinely settles. It goes red once, at the end, rather than blinking on
 every hand-off.
 
+**A background shell that never finishes is "needs you" after all.** A shell
+that stays `shell` for hours is usually a polling loop whose exit condition can
+never come true; from outside, the one thing that distinguishes it from a long
+build is that the harness never wakes the session. The `Stop` payload lists the
+shells still running (Claude Code 2.1.145 and later), the hook records each one
+with the moment it was first seen, and once the oldest has outlived Settings ›
+Sessions › *Flag a background shell after* (30 minutes by default) the row stops
+being re-derived and goes red for the shell instead, showing what it was started
+for and how long it has run. Its trailing control opens a panel that can end
+the shell, which is what actually resolves the situation: Claude sees the task
+exit and is woken with whatever it printed. Marking the row seen instead
+remembers that shell, so a dev server that legitimately runs all day is flagged
+once and not on every turn.
+
 **A dialog is "needs you" whatever the hooks said.** A session showing a
 permission prompt, sandbox request or elicitation publishes `waiting`, and the row
 turns red quoting what Claude is blocked on. Acknowledged rows are left alone, so

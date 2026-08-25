@@ -112,6 +112,12 @@ working directory and title, via the Accessibility API.
 needs you. Clicking it again closes it. The chips at the top of the dropdown do
 the same thing.
 
+**A stuck background shell is called out.** A turn that ended with a shell
+still running shows as running, because Claude resumes it when the shell ends.
+One that has run for half an hour without waking the session goes red for the
+shell instead, and its row can end it, which wakes Claude with the output so
+far. The threshold is in Settings › Sessions.
+
 **A menu bar that stays out of the way.** Four icon modes, from counts on every
 dot down to a single dot that appears only when something needs you, each of
 them available in monochrome, which takes the menu bar's tint like a system
