@@ -39,9 +39,8 @@ final class SessionStore: ObservableObject {
     /// than re-derived. Entries expire on their own reset time.
     private(set) var accountLimits = AccountLimits()
     private let usageWatcher = ClaudeUsageWatcher()
-    /// The shared instance, for the same reason the schedules use theirs: the
-    /// dropdown observes it directly, and a second one here would mute rows the
-    /// menu never sees.
+    /// The shared instance: the dropdown observes it directly, and a second
+    /// one here would mute rows the menu never sees.
     private let muted = SessionKeySet.muted
     private let pinned = SessionKeySet.pinned
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
@@ -428,10 +427,10 @@ final class SessionStore: ObservableObject {
 
     /// Reads one session's state file straight from disk, off any actor.
     ///
-    /// Delivery needs the session as it is *now*, not as the pass that scheduled
-    /// it saw it: fires in one fan-out are twenty seconds apart, so by the third
-    /// one "the turn had finished" is a claim about the past. Reading the file
-    /// rather than the published array is also what keeps this callable from the
+    /// A rename needs the session as it is *now*, not as the panel last saw it:
+    /// resolving a pane can take over a minute, so by the time it returns "the
+    /// turn had finished" is a claim about the past. Reading the file rather
+    /// than the published array is also what keeps this callable from the
     /// detached delivery task without hopping to the main actor.
     nonisolated static func loadSessionFromDisk(sessionId: String) -> AgentSession? {
         let decoder = JSONDecoder()

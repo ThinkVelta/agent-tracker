@@ -10,7 +10,6 @@ enum SessionTarget {
     struct Resolved: Sendable {
         var target: TerminalDelivery.Target?
         var tmuxTarget: TerminalDelivery.TmuxTarget?
-        var agent: ProcessIdentity?
         var refusal: String?
 
         /// Whether anything can be written to this session at all.
@@ -29,7 +28,6 @@ enum SessionTarget {
     ) async -> Resolved {
         await Task.detached { () -> Resolved in
             let session = SessionStore.loadSessionFromDisk(sessionId: sessionId)
-            let agent = session?.pid.map { ProcessIdentity.read(pid: Int32($0)) } ?? nil
 
             // A session inside tmux knows exactly where it is: the hook recorded
             // its pane id and tty from the session's own environment. Nothing to
@@ -42,21 +40,19 @@ enum SessionTarget {
                 return Resolved(
                     tmuxTarget: TerminalDelivery.TmuxTarget(
                         paneId: paneId, tty: tty,
-                        socketPath: TmuxScripting.socketPath(fromTmuxVariable: terminal.tmux)),
-                    agent: agent)
+                        socketPath: TmuxScripting.socketPath(fromTmuxVariable: terminal.tmux)))
             }
 
             guard let terminalPid = GhosttyScripting.runningApplication()?.processIdentifier else {
-                return Resolved(agent: agent, refusal: GhosttyScripting.Failure.notRunning.reason)
+                return Resolved(refusal: GhosttyScripting.Failure.notRunning.reason)
             }
             switch GhosttyScripting.surfaces(pid: terminalPid, promptIfNeeded: promptIfNeeded) {
             case .failure(let failure):
-                return Resolved(agent: agent, refusal: failure.reason)
+                return Resolved(refusal: failure.reason)
             case .success(let surfaces):
                 let resolution = TerminalDelivery.resolve(
                     expectedTitle: expectedTitle, among: surfaces, terminalPid: terminalPid)
-                return Resolved(
-                    target: resolution.target, agent: agent, refusal: resolution.refusal)
+                return Resolved(target: resolution.target, refusal: resolution.refusal)
             }
         }.value
     }

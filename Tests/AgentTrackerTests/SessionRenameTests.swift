@@ -141,24 +141,6 @@ struct SessionRenameTests {
         #expect(recorder.calls.isEmpty)
     }
 
-    /// Regression: the process identity must come from the fresh read, not from
-    /// the copy `SessionTarget.resolve` sampled at its start. Resolution runs an
-    /// Automation preflight measured at over 100 seconds, so that copy can
-    /// describe a process that has since exited. Here `resolved` carries a
-    /// perfectly good agent and the live read says it is gone — the refusal
-    /// proves which one is consulted.
-    @Test("the agent that is checked is the freshly read one")
-    func staleAgentIsNotTrusted() {
-        let recorder = Recorder()
-        var stale = ghosttyResolved()
-        stale.agent = agent()
-        let result = SessionRename.deliver(
-            command: "/rename api", resolved: stale, lastEvent: "Stop",
-            liveAgent: nil, ops: ops(recorder), tmux: tmuxOps(recorder))
-        #expect(result.outcome == .refused)
-        #expect(recorder.calls.isEmpty)
-    }
-
     /// A session whose terminal is busy with something else is not at a prompt,
     /// whatever its last hook event said.
     @Test("a foreground process that is not the agent is refused")

@@ -47,7 +47,7 @@ struct ProcessIdentity: Equatable, Codable, Sendable {
     /// invite someone to act on the difference. Measured: a process owned by
     /// another user returns 0 bytes with EPERM (pid 1 does), while this process
     /// and its parent return all 136 — a boundary that costs this feature nothing,
-    /// since the agents it schedules are always the user's own.
+    /// since the agents it probes are always the user's own.
     static func read(pid: Int32) -> ProcessIdentity? {
         guard pid > 0 else { return nil }
         var info = proc_bsdinfo()

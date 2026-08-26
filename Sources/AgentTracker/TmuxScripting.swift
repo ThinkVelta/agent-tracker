@@ -74,8 +74,8 @@ enum TmuxScripting {
 
     static func panes(socketPath: String?) -> Result<[Pane], Failure> {
         guard let tool = toolPath() else { return .failure(.notInstalled) }
-        // -a: every pane on the server, not just the attached session's. A
-        // schedule fires while nothing is attached at all.
+        // -a: every pane on the server, not just the attached session's — the
+        // pane being written to need not be the one the user is looking at.
         guard
             let output = ProcessProbe.run(
                 tool, arguments(socketPath: socketPath, ["list-panes", "-a", "-F", paneFormat]),
