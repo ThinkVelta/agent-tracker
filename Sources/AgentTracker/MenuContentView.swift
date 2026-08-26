@@ -630,6 +630,12 @@ struct SessionRow: View {
             .onHover { self.hovering = $0 }
             if editing { editorPanel }
             if renaming { renamePanel }
+            // Bound to the stale shell itself: once it ends, or the row is
+            // marked seen, the panel has nothing to describe and goes with it.
+            if stopping, let stale = session.staleBackgroundTask {
+                BackgroundShellPanel(
+                    task: stale, ownerPid: session.pid, onDismiss: { stopping = false })
+            }
         }
         .contextMenu {
             if session.state == .needsYou {
@@ -674,6 +680,7 @@ struct SessionRow: View {
     @State private var editing = false
     @State private var draft = ContinueDraft()
     @State private var renaming = false
+    @State private var stopping = false
     /// Read from the transcript when the editor opens, never in a view body —
     /// it is a bounded file read and the body runs on the main actor.
     @State private var unattendedWarning: String?
@@ -692,7 +699,11 @@ struct SessionRow: View {
     /// says how to turn it on.
     private var trailingAffordance: some View {
         Group {
-            if armedSchedule != nil {
+            if session.staleBackgroundTask != nil {
+                // The row is red for a shell, so the slot offers the shell.
+                // Opens the panel; nothing is stopped until the button there.
+                stopButton
+            } else if armedSchedule != nil {
                 armingButton(icon: "clock.fill", tint: .accentColor, alwaysVisible: true)
             } else {
                 // Always visible, not hover-revealed: an affordance the user
@@ -701,6 +712,19 @@ struct SessionRow: View {
             }
         }
         .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
+    }
+
+    private var stopButton: some View {
+        Button {
+            stopping.toggle()
+        } label: {
+            Image(systemName: "stop.circle")
+                .font(.system(size: 11))
+                .frame(width: Theme.Metrics.rowTrailingControl)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(SessionState.needsYou.color)
+        .accessibilityLabel("Stop the background shell")
     }
 
     private func armingButton(icon: String, tint: Color, alwaysVisible: Bool) -> some View {
@@ -951,7 +975,10 @@ struct SessionRow: View {
     }
 
     private var relativeTime: String {
-        guard let since = session.stateChangedAt else { return "" }
+        // A row red for a shell shows how long the shell has run: that is the
+        // number the red is about, where the turn-end time would understate it.
+        guard let since = session.staleBackgroundTask?.firstSeenAt ?? session.stateChangedAt
+        else { return "" }
         let seconds = max(0, Int(Date().timeIntervalSince(since)))
         if seconds < 60 { return "now" }
         if seconds < 3600 { return "\(seconds / 60)m" }

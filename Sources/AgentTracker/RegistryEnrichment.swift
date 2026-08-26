@@ -31,9 +31,13 @@ enum RegistryEnrichment {
     /// - Parameters:
     ///   - session: a row loaded from `~/.agent-tracker/sessions`.
     ///   - entry: the registry entry with the same `sessionId`, if any.
+    ///   - staleAfter: how long a background shell may hold a promotable red
+    ///     at "running" before the row goes red for the shell itself. 0 never.
     static func apply(
         to session: AgentSession,
-        entry: ClaudeSessionRegistry.Entry?
+        entry: ClaudeSessionRegistry.Entry?,
+        staleAfter: TimeInterval = 0,
+        now: Date = Date()
     ) -> AgentSession {
         // Provider-scoped: the registry only knows about Claude Code.
         guard let entry else { return session }
@@ -41,22 +45,54 @@ enum RegistryEnrichment {
         enriched.registryName = entry.name
         enriched.registryNameIsChosen = entry.nameIsChosen
         enriched.registryCwd = entry.cwd
+        if let stale = staleShell(for: session, entry: entry, staleAfter: staleAfter, now: now) {
+            // The one case where `shell` does not promote: the harness has not
+            // woken the session in all this time, which is what a stuck loop
+            // looks like from outside. The red is the hook's own; only the
+            // wording changes, so a click clears it like any other red.
+            enriched.staleBackgroundTask = stale
+            enriched.reason =
+                "Background shell running for "
+                + DurationText.describe(stale.age(at: now) ?? 0)
+            return enriched
+        }
         enriched.state = resolvedState(for: session, entry: entry)
         if enriched.state != session.state {
-            enriched.reason = reason(for: enriched.state, entry: entry)
+            enriched.reason = reason(for: enriched.state, entry: entry, session: session)
         }
         return enriched
+    }
+
+    /// A shell old enough to stop believing in, on a row the registry would
+    /// otherwise promote for it. Only a `shell` status is questioned: `busy`
+    /// means the model or its delegates are working, whatever else is running.
+    private static func staleShell(
+        for session: AgentSession,
+        entry: ClaudeSessionRegistry.Entry,
+        staleAfter: TimeInterval,
+        now: Date
+    ) -> BackgroundTask? {
+        guard session.state == .needsYou, isPromotable(session), entry.status == .shell
+        else { return nil }
+        return session.staleBackgroundTask(after: staleAfter, now: now)
     }
 
     /// Why the row disagrees with its hook event. A corrected row that kept the
     /// hook's wording would read "Turn complete" while showing green.
     private static func reason(
         for state: SessionState,
-        entry: ClaudeSessionRegistry.Entry
+        entry: ClaudeSessionRegistry.Entry,
+        session: AgentSession
     ) -> String {
         switch state {
         case .running:
-            return entry.status == .shell ? "Background work still running" : "Working…"
+            guard entry.status == .shell else { return "Working…" }
+            // What the shell was started for, in Claude's words, when the hook
+            // recorded one; the bare fact otherwise.
+            if let description = session.oldestBackgroundTask?.description {
+                return "Background: \(description)"
+            }
+            return "Background work still running"
         case .needsYou:
             // Claude's own phrasing, which is more specific than anything that
             // could be inferred here ("input needed", "sandbox request", …).

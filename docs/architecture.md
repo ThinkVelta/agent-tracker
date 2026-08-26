@@ -39,6 +39,15 @@ Both are plain JSON and readable. `AGENT_TRACKER_DIR` overrides the base
 directory for the app and the hook alike, which is how the test suite avoids
 touching real data.
 
+**A run one session's tool started is not a session of its own.** A `claude -p`
+launched by a script from a session's Bash tool has its own session id and fires
+the same hooks, so it gets a state file too. The hook records the enclosing
+`claude` process as `spawnedByPid`, and the app leaves such a row out of the
+list and the counts while that process is itself a session on the list: its work
+is the parent row's, and
+it has no terminal to jump to. The file stays, so nothing is lost if the link
+is wrong.
+
 The statusline file being **last-writer-wins across sessions** is a property the
 app is built around rather than a limitation it works around: readings are
 accumulated per session id as they arrive, and the file is never treated as a
@@ -60,7 +69,12 @@ reads it from either of two files:
 - the copy the [statusline wrapper](statusline.md) saves
 
 With neither, transcript task summaries (`✳ <task summary>`) and
-working-directory fragments remain as fallbacks.
+working-directory fragments remain as fallbacks. One window is never a fallback:
+a plain shell titled with its directory, which is what Ghostty shows for a
+terminal with nothing running in it. Claude always titles its window behind a
+glyph (`✳` idle, a spinner while working), so as long as any window carries one,
+a bare path is an empty terminal rather than a session, however well its
+directory agrees.
 
 **This is also why renaming fixes ambiguity.** The session's name is what the
 matcher compares first (read from Claude's session registry, with the statusline
@@ -78,6 +92,20 @@ Claude publishes its own status for each of those (`shell` for background work,
 `busy` for delegated work), so a red row is re-derived as running until the
 session genuinely settles. It goes red once, at the end, rather than blinking on
 every hand-off.
+
+**A background shell that never finishes is "needs you" after all.** A shell
+that stays `shell` for hours is usually a polling loop whose exit condition can
+never come true; from outside, the one thing that distinguishes it from a long
+build is that the harness never wakes the session. The `Stop` payload lists the
+shells still running (Claude Code 2.1.145 and later), the hook records each one
+with the moment it was first seen, and once the oldest has outlived Settings ›
+Sessions › *Flag a background shell after* (30 minutes by default) the row stops
+being re-derived and goes red for the shell instead, showing what it was started
+for and how long it has run. Its trailing control opens a panel that can end
+the shell, which is what actually resolves the situation: Claude sees the task
+exit and is woken with whatever it printed. Marking the row seen instead
+remembers that shell, so a dev server that legitimately runs all day is flagged
+once and not on every turn.
 
 **A dialog is "needs you" whatever the hooks said.** A session showing a
 permission prompt, sandbox request or elicitation publishes `waiting`, and the row

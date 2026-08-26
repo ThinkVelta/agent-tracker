@@ -21,12 +21,16 @@ import time
 SCHEMA_VERSION = 1
 
 
-# Wall-clock budget for the whole process-tree walk, across every `ps` it runs.
+# Wall-clock budget for the one `ps` the process-tree walk runs.
 #
 # Load-bearing rather than tidiness: hooks run in the session's own path, so one
 # that overruns is not a missed state update — it is an agent left waiting on
 # us. The happy path takes ~40ms; this only bites when `ps` itself is wedged.
 PROCESS_WALK_BUDGET = 2.0
+
+# How far up the tree to look. Login → shell → wrapper → agent needs four; an
+# agent's own Bash tool → script → nested agent needs a few more above that.
+PROCESS_WALK_DEPTH = 12
 
 # Process names that identify a long-lived agent CLI when walking up the tree.
 AGENT_PROCESS_HINTS = ("claude", "node", "bun")
@@ -61,51 +65,83 @@ def now():
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
+def process_table():
+    """Every process as {pid: (ppid, tty, comm)}, from one `ps`; {} on failure."""
+    try:
+        out = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,tty=,comm="],
+            capture_output=True,
+            text=True,
+            timeout=PROCESS_WALK_BUDGET,
+            check=False,
+        ).stdout
+    except Exception:  # noqa: BLE001 — the hook must never break a session
+        return {}
+    table = {}
+    for line in out.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) < 4:
+            continue
+        try:
+            table[int(parts[0])] = (int(parts[1]), parts[2], parts[3].strip())
+        except ValueError:
+            continue
+    return table
+
+
+def is_agent(comm):
+    name = os.path.basename(comm).lower()
+    return any(hint in name for hint in AGENT_PROCESS_HINTS)
+
+
+def agent_lineage(table, start):
+    """(agent pid, its tty, the enclosing agent's pid) walking up from `start`.
+
+    The first agent process above the hook is the session's own. An agent
+    above THAT is the one whose tool started this session: a `claude -p` run
+    by a script from a session's Bash tool has its own session id and fires
+    the same hooks, but it is that session's work, not a session of its own.
+    Pure so the walk is testable without a process tree.
+    """
+    pid = start
+    agent = None
+    tty = None
+    for _ in range(PROCESS_WALK_DEPTH):
+        entry = table.get(pid)
+        if entry is None:
+            break
+        ppid, raw_tty, comm = entry
+        if is_agent(comm):
+            if agent is None:
+                agent, tty = pid, raw_tty
+            else:
+                return agent, tty, pid
+        if ppid <= 1:
+            break
+        pid = ppid
+    return agent, tty, None
+
+
 @functools.lru_cache(maxsize=1)
 def agent_process():
-    """Walk up the process tree to find the agent CLI's pid and its tty.
+    """The agent CLI's pid and tty, plus the pid of an agent it runs under.
 
     The hook may be spawned via an intermediate shell, so the direct parent is
     not guaranteed to be the agent process. The app uses this pid to prune
     sessions whose agent died without a clean SessionEnd.
 
-    The tty comes from the same `ps` call rather than this process: the hook is
-    handed its payload on stdin, so its own fd 0 is a pipe and names no
-    terminal. The agent's tty is what identifies the pane it runs in.
+    The tty comes from `ps` rather than this process: the hook is handed its
+    payload on stdin, so its own fd 0 is a pipe and names no terminal. The
+    agent's tty is what identifies the pane it runs in.
 
     Cached because one hook invocation resolves one process, and the callers
     would otherwise repeat the whole walk.
     """
-    pid = os.getppid()
-    fallback = (pid, None)
-    deadline = time.monotonic() + PROCESS_WALK_BUDGET
-    for _ in range(5):
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            break
-        try:
-            out = subprocess.run(
-                ["ps", "-o", "ppid=,tty=,comm=", "-p", str(pid)],
-                capture_output=True,
-                text=True,
-                timeout=remaining,
-                check=False,
-            ).stdout.strip()
-            if not out:
-                break
-            parts = out.split(None, 2)
-            if len(parts) < 3:
-                break
-            comm = os.path.basename(parts[2].strip()).lower()
-            if any(hint in comm for hint in AGENT_PROCESS_HINTS):
-                return pid, device_path(parts[1])
-            parent = int(parts[0])
-            if parent <= 1:
-                break
-            pid = parent
-        except Exception:  # noqa: BLE001 — the hook must never break a session
-            break
-    return fallback
+    start = os.getppid()
+    agent, tty, spawned_by = agent_lineage(process_table(), start)
+    if agent is None:
+        return start, None, None
+    return agent, device_path(tty), spawned_by
 
 
 def device_path(tty):
@@ -150,12 +186,22 @@ def write_state(path, data):
     os.replace(tmp, path)
 
 
-def update(session_id, event, state, reason, extra):
+def update(session_id, event, state, reason, extra, background_tasks=None):
     path = state_path(session_id)
     current = load_state(path)
-    pid, tty = agent_process()
+    pid, tty, spawned_by = agent_process()
     data = {**current}
+    # Written from this event alone, like notificationType below: a value that
+    # outlived the process it named could hide a session once the pid is reused.
+    if spawned_by:
+        data["spawnedByPid"] = spawned_by
+    else:
+        data.pop("spawnedByPid", None)
     data.update({k: v for k, v in extra.items() if v})
+    if background_tasks is not None:
+        data["backgroundTasks"] = merge_background_tasks(
+            background_tasks, current.get("backgroundTasks")
+        )
     # notificationType is event-local, not a stable session fact like cwd or
     # the terminal: a Notification's type must describe THIS event only. The
     # truthy merge above would let an old idle_prompt survive into a later
@@ -186,6 +232,64 @@ def update(session_id, event, state, reason, extra):
     data.setdefault("state", "idle")
     data.setdefault("stateChangedAt", now())
     write_state(path, data)
+
+
+# How much of a background command the state file keeps. Enough for the app
+# to recognise the shell process it belongs to and to show what it was doing;
+# a multi-page script would otherwise be copied into the file on every turn.
+COMMAND_EXCERPT = 300
+
+# Task types that keep Claude's status at "shell" after a turn ends. Subagents,
+# workflows and teammates report "busy" instead and are not recorded.
+SHELL_TASK_TYPES = ("shell", "monitor")
+
+
+def in_flight_shells(payload):
+    """The background shells a Stop payload says are still running, or None.
+
+    Claude Code (2.1.145+) lists in-flight background work on `Stop` so hooks
+    can tell "the session is done" from "the session is parked on a shell".
+    None when the payload has no such field, which is how an older Claude
+    must read: unknown, not empty.
+    """
+    tasks = payload.get("background_tasks")
+    if not isinstance(tasks, list):
+        return None
+    shells = []
+    for task in tasks:
+        if not isinstance(task, dict) or task.get("type") not in SHELL_TASK_TYPES:
+            continue
+        task_id = task.get("id")
+        if not isinstance(task_id, str) or not task_id:
+            continue
+        shell = {"id": task_id, "type": task["type"]}
+        for key in ("description", "command"):
+            value = task.get(key)
+            if isinstance(value, str) and value:
+                shell[key] = value[:COMMAND_EXCERPT]
+        # Says whether the excerpt is the whole command: a whole one must match
+        # its shell exactly, or "sleep 27" would also claim "sleep 2700".
+        if len(task.get("command") or "") > COMMAND_EXCERPT:
+            shell["commandTruncated"] = True
+        shells.append(shell)
+    return shells
+
+
+def merge_background_tasks(shells, previous):
+    """Carry each shell's first sighting forward across turns.
+
+    The payload says what is running now, never since when, so the age of a
+    shell is the age of its first appearance in a Stop. A shell that has left
+    the list is gone with its timestamp.
+    """
+    seen_at = {}
+    for task in previous or []:
+        if isinstance(task, dict) and task.get("id") and task.get("firstSeenAt"):
+            seen_at[task["id"]] = task["firstSeenAt"]
+    stamp = now()
+    return [
+        {**shell, "firstSeenAt": seen_at.get(shell["id"], stamp)} for shell in shells
+    ]
 
 
 def claude_states(payload):
@@ -240,7 +344,10 @@ def handle_hook():
         return
 
     state, reason = claude_states(payload).get(event, (None, None))
-    update(session_id, event or "unknown", state, reason, extra)
+    shells = in_flight_shells(payload) if event == "Stop" else None
+    update(
+        session_id, event or "unknown", state, reason, extra, background_tasks=shells
+    )
 
 
 def main():

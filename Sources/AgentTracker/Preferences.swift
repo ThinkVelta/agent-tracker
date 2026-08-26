@@ -88,6 +88,23 @@ final class Preferences: ObservableObject {
         ("Off", 0), ("1 second", 1), ("3 seconds", 3), ("10 seconds", 10),
     ]
 
+    // MARK: - Stale background shells
+
+    /// How long a turn that ended with a background shell still running may
+    /// show as running before the row goes red for the shell. A stuck shell
+    /// never wakes the session, and this is the only thing that says so.
+    /// 0 disables the check.
+    @Published var staleShellAfter: TimeInterval {
+        didSet { defaults.set(staleShellAfter, forKey: Keys.staleShellAfter) }
+    }
+
+    static let staleShellOptions: [(label: String, seconds: TimeInterval)] = [
+        ("Off", 0), ("10 minutes", 600), ("30 minutes", 1800), ("1 hour", 3600),
+    ]
+
+    /// Long enough for a build, a test suite or a CI poll to finish on its own.
+    static let defaultStaleShellAfter: TimeInterval = 1800
+
     // MARK: - Menu bar icon
 
     /// What the menu bar icon draws (see `StatusIconRenderer.Mode`).
@@ -163,6 +180,7 @@ final class Preferences: ObservableObject {
         static let appearance = "appearanceOverride"
         static let grouping = "sessionGrouping"
         static let autoAckDwell = "autoAckDwellSeconds"
+        static let staleShellAfter = "staleShellAfterSeconds"
         static let refreshInterval = "refreshIntervalSeconds"
         static let confirmQuit = "confirmQuit"
         static let iconMode = "iconMode"
@@ -200,6 +218,12 @@ final class Preferences: ObservableObject {
             loadedDwell.flatMap { dwell in
                 Self.dwellOptions.contains { $0.seconds == dwell } ? dwell : nil
             } ?? TerminalFocusObserver.defaultDwell
+
+        let loadedStale = defaults.object(forKey: Keys.staleShellAfter) as? Double
+        staleShellAfter =
+            loadedStale.flatMap { stale in
+                Self.staleShellOptions.contains { $0.seconds == stale } ? stale : nil
+            } ?? Self.defaultStaleShellAfter
 
         let loadedInterval = defaults.object(forKey: Keys.refreshInterval) as? Double
         refreshInterval =
