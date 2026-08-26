@@ -108,6 +108,43 @@ enum WindowIdentity {
             .map(\.offset)
     }
 
+    /// Whether a title is one an agent painted: Claude Code puts "✳" in front
+    /// of the name while idle and a spinner frame while working, and never
+    /// leaves the glyph off. Read from the raw title; `normalize` strips it.
+    static func isAgentTitled(_ title: String) -> Bool {
+        guard let first = TerminalFocuser.leadingScalar(of: title) else { return false }
+        return first.value == 0x2733 || TerminalFocuser.showsBusySpinner(title)
+    }
+
+    /// Whether any of these windows is titled by an agent at all. With title
+    /// updates off, every window is titled by the shell, the session's
+    /// included, and nothing may be excluded then. Callers judge this over the
+    /// widest window list they have: the session's own window is exactly the
+    /// one that may sit on another Space.
+    static func agentTitlesInUse(_ titles: [String]) -> Bool {
+        titles.contains(where: isAgentTitled)
+    }
+
+    /// Whether a title is a directory: what Ghostty shows for a shell with
+    /// nothing running in it, abbreviated ("…/Documents/ProjectsVelta/Planner")
+    /// or not.
+    static func isPathTitle(_ title: String) -> Bool {
+        let normalized = TerminalFocuser.normalize(title)
+        return normalized.hasPrefix("/") || normalized.hasPrefix("~")
+    }
+
+    /// The windows that are plain shells titled with their directory, which
+    /// no session owns however well the directory agrees. Measured on a live
+    /// click: an empty terminal sitting in Planner was raised for the Planner
+    /// session whose own window was on another Space.
+    ///
+    /// Empty unless `agentTitlesInUse` (see `agentTitlesInUse(_:)`).
+    static func plainShellIndices(titles: [String], agentTitlesInUse: Bool) -> Set<Int> {
+        guard agentTitlesInUse else { return [] }
+        return Set(
+            titles.indices.filter { !isAgentTitled(titles[$0]) && isPathTitle(titles[$0]) })
+    }
+
     /// Whether this window is demonstrably a *different* session's.
     ///
     /// Sharing a directory is not owning a window: six terminals sat in one

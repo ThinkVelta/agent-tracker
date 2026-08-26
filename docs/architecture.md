@@ -60,7 +60,12 @@ reads it from either of two files:
 - the copy the [statusline wrapper](statusline.md) saves
 
 With neither, transcript task summaries (`✳ <task summary>`) and
-working-directory fragments remain as fallbacks.
+working-directory fragments remain as fallbacks. One window is never a fallback:
+a plain shell titled with its directory, which is what Ghostty shows for a
+terminal with nothing running in it. Claude always titles its window behind a
+glyph (`✳` idle, a spinner while working), so as long as any window carries one,
+a bare path is an empty terminal rather than a session, however well its
+directory agrees.
 
 **This is also why renaming fixes ambiguity.** The session's name is what the
 matcher compares first (read from Claude's session registry, with the statusline

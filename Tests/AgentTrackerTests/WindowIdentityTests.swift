@@ -228,6 +228,37 @@ final class WindowIdentityTests {
     /// visibility in Google search results" — a Claude Code session's window
     /// that merely shared the directory. Ownership by name has to beat a
     /// directory tie.
+    /// The click behind this rule: the session's window was on another Space,
+    /// an empty terminal sat in the session's directory, and as the only
+    /// directory hit it was raised. A directory is what Ghostty titles a shell
+    /// with; a session's window always carries Claude's glyph.
+    @Test func aPlainShellTitledWithItsDirectoryIsNobodysWindow() {
+        let titles = [
+            "…/Documents/ProjectsVelta/Planner", "✳ PLN-713", "◐ Teammate availability",
+            "/Users/dev/oss/api", "✳ /Users/dev/oss/api", "vim",
+        ]
+        #expect(WindowIdentity.agentTitlesInUse(titles))
+        #expect(WindowIdentity.plainShellIndices(titles: titles, agentTitlesInUse: true) == [0, 3])
+        #expect(WindowIdentity.isAgentTitled("✳ PLN-713"))
+        #expect(WindowIdentity.isAgentTitled("◑ New session"))
+        #expect(!WindowIdentity.isAgentTitled("PLN-713"))
+        #expect(WindowIdentity.isPathTitle("~/work/api"))
+        #expect(!WindowIdentity.isPathTitle("Planner"))
+    }
+
+    /// With terminal title updates off, every window is titled by the shell,
+    /// the session's included; nothing may be excluded then. The judgement is
+    /// the caller's, made over every Space: a Space holding only the shell
+    /// must not clear it while the session's window sits on another.
+    @Test func plainShellsAreOnlyJudgedWhenAgentTitlesAreInUse() {
+        let untitled = ["…/Documents/ProjectsVelta/Planner", "/Users/dev/oss/api", "zsh"]
+        #expect(!WindowIdentity.agentTitlesInUse(untitled))
+        #expect(WindowIdentity.plainShellIndices(titles: untitled, agentTitlesInUse: false).isEmpty)
+        #expect(
+            WindowIdentity.plainShellIndices(titles: untitled, agentTitlesInUse: true) == [0, 1])
+        #expect(WindowIdentity.plainShellIndices(titles: [], agentTitlesInUse: true).isEmpty)
+    }
+
     @Test func aWindowNamingAnotherSessionIsNotOurs() {
         let codex = AgentSession(
             sessionId: "c1", cwd: "/Users/dev/Planner", state: .needsYou)
