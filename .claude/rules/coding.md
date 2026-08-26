@@ -58,8 +58,8 @@ For multi-step tasks, state a brief plan with a verify check per step.
 ## 5. Swift conventions
 
 - **Concurrency:** UI-facing state lives in `@MainActor final class … : ObservableObject` stores
-  (`SessionStore`, `ContinueSchedules`). Heavy/background work goes off the main actor via
-  `Task.detached` (see `ContinueSchedules.resolvePane`, kept off it because the Automation
+  (`SessionStore`, `Preferences`). Heavy/background work goes off the main actor via
+  `Task.detached` (see `SessionTarget.resolve`, kept off it because the Automation
   preflight was measured taking over 100 seconds), publishing back with
   `Task { @MainActor in … }`. Don't introduce new concurrency patterns beside these.
 - **SwiftUI:** the menu bar is a raw `NSStatusItem` + `NSPopover` owned by the `AppDelegate`
@@ -73,8 +73,7 @@ For multi-step tasks, state a brief plan with a verify check per step.
 - **Organization:** flat `Sources/AgentTracker/`, one concern per file. Stateless helpers are
   caseless `enum` namespaces with static methods (`StatusIconRenderer`, `TerminalFocuser`).
   Keep pure parsing/derivation logic I/O-free and separate from watchers
-  (`ClaudeStatusline.swift` vs `StatuslineDirectory.swift`, `ContinueScheduler.swift` vs
-  `ContinueSchedules.swift`) so it stays unit-testable.
+  (`ClaudeStatusline.swift` vs `StatuslineDirectory.swift`) so it stays unit-testable.
 - **Dependencies:** none. Swift stdlib + Apple frameworks only; `Package.swift` declares no
   external packages and must stay that way.
 - **Formatting:** `swift format` with the repo's `.swift-format` — 4-space indent, 100 columns.

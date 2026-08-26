@@ -135,20 +135,6 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(notifyNeedsYou, forKey: Keys.notifyNeedsYou) }
     }
 
-    // MARK: - Scheduled continues
-
-    /// Whether a session may be armed to resume itself when its usage window
-    /// resets. Off by default and deliberately its own switch: everything else
-    /// here changes what the app *shows*, and this is the only one that lets it
-    /// act on a session while nobody is watching.
-    ///
-    /// Only the gate lives here. The armed schedules do not: `objectWillChange`
-    /// on this object re-renders the menu bar icon, so an editable message would
-    /// redraw it on every keystroke. They live in `ContinueSchedules`.
-    @Published var scheduledContinues: Bool {
-        didSet { defaults.set(scheduledContinues, forKey: Keys.scheduledContinues) }
-    }
-
     // MARK: - Updates
 
     /// One GitHub API request at launch and daily. On by default because the
@@ -187,7 +173,6 @@ final class Preferences: ObservableObject {
         static let monochromeIcon = "monochromeIcon"
         static let attentionCue = "attentionCue"
         static let notifyNeedsYou = "notifyNeedsYou"
-        static let scheduledContinues = "scheduledContinues"
         static let updateChecks = "updateChecksAutomatically"
         static let updateInstalls = "updateInstallsAutomatically"
     }
@@ -257,7 +242,6 @@ final class Preferences: ObservableObject {
 
         attentionCue = defaults.object(forKey: Keys.attentionCue) as? Bool ?? true
         notifyNeedsYou = defaults.object(forKey: Keys.notifyNeedsYou) as? Bool ?? false
-        scheduledContinues = defaults.object(forKey: Keys.scheduledContinues) as? Bool ?? false
         updateChecksAutomatically =
             defaults.object(forKey: Keys.updateChecks) as? Bool ?? true
         updateInstallsAutomatically =

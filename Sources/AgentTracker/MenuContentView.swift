@@ -283,9 +283,6 @@ struct MenuContentView: View {
             session: session,
             clockTick: store.clockTick,
             onAcknowledge: { store.acknowledge(session) },
-            arming: ContinueScheduler.availability(
-                for: session, armableResetBySession: store.armableResetBySession,
-                enabled: preferences.scheduledContinues),
             windowTitle: store.exactWindowTitle(for: session),
             title: rowTitles[session.sessionId],
             onSelect: {
@@ -589,9 +586,6 @@ struct SessionRow: View {
     var clockTick = 0
     /// Clears a needs-you row without jumping to its terminal.
     var onAcknowledge: () -> Void = {}
-    /// Whether this row can be armed to resume itself, or why it cannot.
-    /// Defaulted so the row keeps its single-argument construction sites.
-    var arming: ContinueScheduler.Availability = .unavailable(reason: "")
     /// The session's live terminal window title, which is how a Ghostty surface
     /// is identified at all. Supplied by the parent, which owns the store.
     var windowTitle: String?
@@ -608,8 +602,8 @@ struct SessionRow: View {
     /// label. #28 (`99608db`) removed exactly such a nested control with the
     /// reason written down: a button within a button is unreliable in SwiftUI,
     /// and a click landing on the row action would focus the terminal and
-    /// dismiss the panel — which for an arming control would mean arming
-    /// something and being thrown out of the list.
+    /// dismiss the panel — throwing the user out of the list instead of doing
+    /// what the control said.
     ///
     /// One `contextMenu` with conditional items rather than two branches. The
     /// previous shape attached it only to needs-you rows, and adding a second
@@ -628,7 +622,6 @@ struct SessionRow: View {
             // re-hovered the row. Hover drove hit-testing and hit-testing drove
             // hover, and the pair oscillated at screen refresh rate.
             .onHover { self.hovering = $0 }
-            if editing { editorPanel }
             if renaming { renamePanel }
             // Bound to the stale shell itself: once it ends, or the row is
             // marked seen, the panel has nothing to describe and goes with it.
@@ -651,64 +644,32 @@ struct SessionRow: View {
                 // The fallback for rows the app cannot type into: no tmux pane
                 // reported and no window title known means delivery has nothing
                 // to aim at, and reviving the conversation elsewhere is the one
-                // path left. Everywhere else the scheduler covers it and this
-                // is noise.
+                // path left. Everywhere else this is noise.
                 Button("Copy resume command") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.setString(session.resumeCommand, forType: .string)
                 }
             }
             Button("Rename…") { renaming = true }
-            if armedSchedule != nil {
-                Button("Cancel scheduled continue") {
-                    continues.disarm(sessionId: session.sessionId)
-                }
-            }
         }
     }
 
-    // MARK: - Scheduled continues
-
-    /// The shared store, observed directly rather than passed in: `SessionRow`'s
-    /// parent has two construction sites and a new required parameter would break
-    /// `RenderPreview`.
-    @ObservedObject private var continues = ContinueSchedules.shared
-    @ObservedObject private var preferences = Preferences.shared
     @ObservedObject private var muted = SessionKeySet.muted
     @ObservedObject private var pinned = SessionKeySet.pinned
 
-    @State private var editing = false
-    @State private var draft = ContinueDraft()
     @State private var renaming = false
     @State private var stopping = false
-    /// Read from the transcript when the editor opens, never in a view body —
-    /// it is a bounded file read and the body runs on the main actor.
-    @State private var unattendedWarning: String?
 
-    private var armedSchedule: ScheduledContinue? {
-        continues.schedule(for: session.sessionId)
-    }
-
-    /// Always the clock, on every row. The jump arrow that used to fill the
-    /// idle slot duplicated the row click and did nothing else; a control that
-    /// looks like a button and is not one is worse than the button. Scheduling
-    /// is available for any session — the anchor just differs (a usage-limit
-    /// reset when this row is the blocked one, a picked time otherwise) — so
-    /// the affordance is the same everywhere and clicking it always opens the
-    /// editor, including when the feature is off, which is where the editor
-    /// says how to turn it on.
+    /// The trailing slot holds a control only when the row is red for a
+    /// background shell. The jump arrow that used to fill the idle slot
+    /// duplicated the row click and did nothing else; a control that looks
+    /// like a button and is not one is worse than the button.
     private var trailingAffordance: some View {
         Group {
             if session.staleBackgroundTask != nil {
                 // The row is red for a shell, so the slot offers the shell.
                 // Opens the panel; nothing is stopped until the button there.
                 stopButton
-            } else if armedSchedule != nil {
-                armingButton(icon: "clock.fill", tint: .accentColor, alwaysVisible: true)
-            } else {
-                // Always visible, not hover-revealed: an affordance the user
-                // has to discover by mousing around is one most never find.
-                armingButton(icon: "clock", tint: .secondary, alwaysVisible: true)
             }
         }
         .padding(.trailing, Theme.Metrics.rowHorizontalPadding)
@@ -727,150 +688,20 @@ struct SessionRow: View {
         .accessibilityLabel("Stop the background shell")
     }
 
-    private func armingButton(icon: String, tint: Color, alwaysVisible: Bool) -> some View {
-        Button {
-            draft = ContinueDraft(schedule: armedSchedule)
-            editing.toggle()
-            // Read when the panel opens, not in the body: it is a bounded file
-            // read, and a mode that acts without asking is worth saying out loud
-            // before the user arms it.
-            if editing { readPermissionMode() }
-        } label: {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .frame(width: Theme.Metrics.rowTrailingControl)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(tint)
-        .opacity(alwaysVisible || hovering ? 1 : 0)
-        // Live exactly when visible, which is the same expression as the opacity
-        // above on purpose. An invisible live control would carve a hole out of
-        // the row's own hit area — the other half of what #28 got wrong — and a
-        // visible dead one is the defect this rule replaced.
-        .allowsHitTesting(alwaysVisible || hovering)
-        .accessibilityLabel(accessibilityLabel)
-    }
-
-    private var accessibilityLabel: String {
-        if armedSchedule != nil { return "Edit scheduled continue" }
-        // A reason only exists when the feature is off; every other row is
-        // schedulable now, reset anchor or not.
-        if arming.reason != nil { return "Why this session cannot be scheduled" }
-        return "Schedule a continue"
-    }
-
-    /// Off the main actor: reading a transcript tail is I/O, and a mode that
-    /// acts without asking is worth saying out loud before the user arms it.
-    private func readPermissionMode() {
-        let sessionId = session.sessionId
-        Task {
-            let mode = await Task.detached { () -> String? in
-                guard
-                    let row = SessionStore.loadSessionFromDisk(sessionId: sessionId)
-                else {
-                    return nil
-                }
-                // Same order as the delivery gate reads it, so the panel cannot
-                // promise one thing and the send decide another.
-                return row.transcriptPath.flatMap {
-                    ContinueSender.permissionMode(inTranscriptAt: $0)
-                } ?? row.permissionMode
-            }.value
-            unattendedWarning = ContinueDelivery.unattendedWarning(for: mode)
-        }
-    }
-
     private var renamePanel: some View {
         RenameEditor(
             sessionId: session.sessionId,
             current: session.registryName,
-            // The same fallback arming uses, for the same reason — see the
-            // comment on the arming call site. Being stricter here would give
-            // rename less reach than a scheduled continue while asking the
-            // identical question.
+            // The window title is how a Ghostty surface is identified at all,
+            // and this is the app's best copy of it. Deliberately NOT the row's
+            // display title: that can be the registry name on an ambiguous row,
+            // and the registry name is measurably not what the window is called
+            // — the registry says "agent-tracker-3c" where the window says
+            // "Continue tool development with menu interaction". Using it here
+            // would turn a fallback that can match into one that provably
+            // cannot.
             expectedTitle: windowTitle ?? session.displayName,
             onDismiss: { renaming = false })
-    }
-
-    /// Whether the schedule being edited or created anchors to a usage-limit
-    /// reset. An armed schedule keeps its own anchor, whichever way the limit
-    /// state has moved since: a reset schedule is not converted because the
-    /// limit expired, and a clock schedule is not converted because a limit
-    /// appeared. Only a new schedule derives its anchor from the row.
-    private var anchorsToReset: Bool {
-        if let armedSchedule { return !armedSchedule.isClockAnchored }
-        return arming.resetsAt != nil
-    }
-
-    private var editorPanel: some View {
-        ContinueEditor(
-            draft: $draft,
-            // `pendingMoment`, not `armedForResetAt`: a settled repeating schedule
-            // still holds the moment it last fired for, and the editor would
-            // present that past time as a promise. Nil is what makes it say it is
-            // waiting for the next reset to be reported. Gated on the anchor,
-            // so a clock edit on a row that has since hit a limit shows the
-            // picker and clock copy, never reset copy.
-            resetsAt: anchorsToReset ? (arming.resetsAt ?? armedSchedule?.pendingMoment) : nil,
-            usesReset: anchorsToReset,
-            isArmed: armedSchedule != nil,
-            // Only when there is nothing armed. An armed schedule knows its own
-            // moment, so an armed row whose limit has since expired must still
-            // say when it sends rather than "available once this session is
-            // waiting on a usage limit".
-            unavailableReason: armedSchedule == nil ? arming.reason : nil,
-            unattended: unattendedWarning,
-            lastReceipt: continues.receipts.first { $0.sessionId == session.sessionId },
-            onArm: {
-                // `armedForResetAt` here, deliberately not `pendingMoment` as the
-                // display above uses. Committing an edit to a settled repeating
-                // schedule must keep the record's own moment — `settledThrough`
-                // travels with it, so it stays settled and does not fire — where
-                // `pendingMoment` would be nil and the edit would be dropped.
-                // A clock anchor takes the picker's moment instead, on every
-                // edit: that moment is the user's and the draft is where they
-                // just expressed it.
-                let moment: Date
-                if anchorsToReset {
-                    guard let kept = arming.resetsAt ?? armedSchedule?.armedForResetAt else {
-                        return
-                    }
-                    moment = kept
-                } else {
-                    moment = draft.fireAt
-                }
-                continues.armResolvingPane(
-                    ScheduledContinue(
-                        sessionId: session.sessionId,
-                        message: draft.message,
-                        armedForResetAt: moment,
-                        repeats: anchorsToReset && draft.repeats,
-                        sendsOnWake: draft.sendsOnWake,
-                        anchor: anchorsToReset ? .reset : .clock,
-                        // Preserved, so editing the text of a schedule that has
-                        // already fired cannot make it owe that moment again.
-                        settledThrough: armedSchedule?.settledThrough,
-                        target: armedSchedule?.target,
-                        tmuxTarget: armedSchedule?.tmuxTarget,
-                        agent: armedSchedule?.agent),
-                    // The window title is how a Ghostty surface is identified
-                    // at all, and this is the app's best copy of it.
-                    //
-                    // Deliberately NOT the row's display title. That can be the
-                    // registry name on an ambiguous row, and the registry name
-                    // is measurably not what the window is called — the
-                    // registry says "agent-tracker-3c" where the window says
-                    // "Continue tool development with menu interaction". Using
-                    // it here would turn a fallback that can match into one
-                    // that provably cannot.
-                    expectedTitle: windowTitle ?? session.displayName)
-                editing = false
-            },
-            onCancel: {
-                continues.disarm(sessionId: session.sessionId)
-                editing = false
-            },
-            onDismiss: { editing = false })
     }
 
     private var rowButton: some View {

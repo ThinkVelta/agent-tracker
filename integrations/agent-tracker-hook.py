@@ -325,10 +325,6 @@ def handle_hook():
         "cwd": payload.get("cwd"),
         "transcriptPath": payload.get("transcript_path"),
         "termProgram": os.environ.get("TERM_PROGRAM"),
-        # Whether this session acts without asking. The scheduled-continue gate
-        # reads it, and treats "absent" as permitted, so it is worth recording
-        # even though the transcript carries it too.
-        "permissionMode": payload.get("permission_mode"),
         # Which kind of Notification this was. The app promotes an idle-prompt
         # red back to running when Claude's own status says work continues,
         # and must never do that for a permission prompt; only this field

@@ -35,7 +35,7 @@ watches that directory and renders state. See README for the full picture.
   opt-in: it occupies Claude's single `statusLine` slot to capture the usage
   windows, then `exec`s whatever command it displaced
 - `docs/` — user-facing documentation: troubleshooting, the statusline wrapper,
-  permissions, scheduled continues, uninstalling, and how it works. **A different
+  permissions, uninstalling, and how it works. **A different
   audience from this file** — `docs/` is for people and agents *using* the app,
   `CLAUDE.md` is for working *on* it. Reference material belongs there and the
   README links to it; the README is the tour, not the manual

@@ -59,7 +59,7 @@ enum TmuxScripting {
     /// `-S` reaches the default server instead — which is a different machine
     /// entirely as far as `%3` is concerned. It cannot mis-deliver, because the
     /// tty pinned alongside the id is unique system-wide, but it would refuse
-    /// every schedule armed on a named socket and never say why.
+    /// every write into a pane on a named socket and never say why.
     static func socketPath(fromTmuxVariable value: String?) -> String? {
         guard let value else { return nil }
         let path = value.split(separator: ",", maxSplits: 1).first.map(String.init) ?? ""

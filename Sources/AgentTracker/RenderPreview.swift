@@ -111,8 +111,6 @@ enum RenderPreview {
             content = AnyView(OnboardingView())
         case "settings":
             content = AnyView(SettingsPreviewStack())
-        case "editor":
-            content = AnyView(ContinueEditorPreviewStack())
         case "shell":
             content = AnyView(BackgroundShellPanelPreviewStack())
         case "icons":

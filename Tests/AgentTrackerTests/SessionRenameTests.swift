@@ -72,13 +72,13 @@ struct SessionRenameTests {
 
     private func ghosttyResolved() -> SessionTarget.Resolved {
         SessionTarget.Resolved(
-            target: ContinueDelivery.Target(
+            target: TerminalDelivery.Target(
                 surfaceId: surfaceId, title: "✳ demo", terminalPid: ghosttyPid))
     }
 
     private func tmuxResolved() -> SessionTarget.Resolved {
         SessionTarget.Resolved(
-            tmuxTarget: ContinueDelivery.TmuxTarget(
+            tmuxTarget: TerminalDelivery.TmuxTarget(
                 paneId: "%3", tty: "/dev/ttys007", socketPath: nil))
     }
 

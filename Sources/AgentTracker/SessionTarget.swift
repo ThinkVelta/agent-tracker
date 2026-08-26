@@ -1,18 +1,15 @@
 import Foundation
 
-/// Where a session's terminal is, resolved live.
+/// Where a session's terminal is, resolved live when the user renames.
 ///
-/// Two features need this and they need it identically: a scheduled continue
-/// resolves it when the user arms, a rename resolves it when the user renames.
-/// The ordering below is the subtle part and the reason this is shared rather
-/// than written twice — tmux is checked *before* Ghostty rather than as a
-/// fallback after it, because a tmux pane needs no macOS permission and nothing
-/// matched by title, so trying Ghostty first would raise an Automation prompt
-/// for a session that never needed one.
+/// The ordering below is the subtle part — tmux is checked *before* Ghostty
+/// rather than as a fallback after it, because a tmux pane needs no macOS
+/// permission and nothing matched by title, so trying Ghostty first would raise
+/// an Automation prompt for a session that never needed one.
 enum SessionTarget {
     struct Resolved: Sendable {
-        var target: ContinueDelivery.Target?
-        var tmuxTarget: ContinueDelivery.TmuxTarget?
+        var target: TerminalDelivery.Target?
+        var tmuxTarget: TerminalDelivery.TmuxTarget?
         var agent: ProcessIdentity?
         var refusal: String?
 
@@ -43,7 +40,7 @@ enum SessionTarget {
                 let tty = terminal.tty
             {
                 return Resolved(
-                    tmuxTarget: ContinueDelivery.TmuxTarget(
+                    tmuxTarget: TerminalDelivery.TmuxTarget(
                         paneId: paneId, tty: tty,
                         socketPath: TmuxScripting.socketPath(fromTmuxVariable: terminal.tmux)),
                     agent: agent)
@@ -56,7 +53,7 @@ enum SessionTarget {
             case .failure(let failure):
                 return Resolved(agent: agent, refusal: failure.reason)
             case .success(let surfaces):
-                let resolution = ContinueDelivery.resolve(
+                let resolution = TerminalDelivery.resolve(
                     expectedTitle: expectedTitle, among: surfaces, terminalPid: terminalPid)
                 return Resolved(
                     target: resolution.target, agent: agent, refusal: resolution.refusal)

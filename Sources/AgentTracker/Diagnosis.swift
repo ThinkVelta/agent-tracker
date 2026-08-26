@@ -496,7 +496,7 @@ enum Diagnosis {
             findings.append(
                 Finding(
                     level: .warn, check: "notifications",
-                    detail: "denied; banners and continue receipts will not appear", anchor: nil))
+                    detail: "denied; banners will not appear", anchor: nil))
         case .notAsked:
             // Not a warning. Banners are off by default, so never having been
             // asked is what a correct fresh install looks like.

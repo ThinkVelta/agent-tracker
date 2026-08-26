@@ -172,14 +172,7 @@ enum UsageLimitPresentation {
 
     /// Whether this limit is what a row should say — i.e. the session stopped on
     /// a finished turn and the account is out of quota.
-    ///
-    /// Lifted out of `apply` so one predicate answers two questions that must
-    /// never diverge: what the row says, and whether the row can be armed to
-    /// resume itself. `AccountLimits` is not published, so the only thing that
-    /// redraws a row when a limit appears or expires is `sessions` republishing —
-    /// tying the arming affordance to this predicate makes the armable row and
-    /// the redrawn row the same row.
-    static func explains(_ session: AgentSession, limit: UsageLimit?, now: Date) -> Bool {
+    private static func explains(_ session: AgentSession, limit: UsageLimit?, now: Date) -> Bool {
         guard let limit, limit.isBlocking(now: now),
             session.state == .needsYou,
             let event = session.lastEvent, turnEndedEvents.contains(event)
