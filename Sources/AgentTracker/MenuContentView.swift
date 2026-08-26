@@ -756,8 +756,12 @@ struct SessionRow: View {
                 // of the HStack. #28's bug was reserving it before the arrow
                 // while the control was trailing-aligned, so the control painted
                 // on top of the glyph instead of into the gap left for it.
-                Color.clear
-                    .frame(width: Theme.Metrics.rowTrailingControl, height: 12)
+                // Reserved only when a control actually renders there — on every
+                // other row the timestamp owns the right edge.
+                if session.staleBackgroundTask != nil {
+                    Color.clear
+                        .frame(width: Theme.Metrics.rowTrailingControl, height: 12)
+                }
             }
             .padding(.horizontal, Theme.Metrics.rowHorizontalPadding)
             .padding(.vertical, Theme.Metrics.rowVerticalPadding)
