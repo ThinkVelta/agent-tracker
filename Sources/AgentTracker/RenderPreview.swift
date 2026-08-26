@@ -183,7 +183,7 @@ enum RenderPreview {
         default:
             FileHandle.standardError.write(
                 Data(
-                    ("[preview] --view expects popover, onboarding, settings, editor, "
+                    ("[preview] --view expects popover, onboarding, settings, "
                         + "shell, icons, menubar or architecture\n").utf8))
             exit(2)
         }
