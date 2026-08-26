@@ -24,6 +24,7 @@ not.
 
 import json
 import os
+import shlex
 import sys
 import tempfile
 
@@ -71,19 +72,40 @@ def capture(payload):
             pass
 
 
-def wrapped_command():
-    """The statusline command agent-tracker displaced, or None if there was none."""
+def read_record():
+    """The install-time record: what was displaced, and which display to show."""
     path = os.path.join(base_dir(), WRAPPED_NAME)
     try:
         with open(path) as f:
             record = json.load(f)
     except Exception:  # noqa: BLE001 — a corrupt record must not break a session
-        return None
-    wrapped = record.get("wrapped") if isinstance(record, dict) else None
+        return {}
+    return record if isinstance(record, dict) else {}
+
+
+def wrapped_command(record):
+    """The statusline command agent-tracker displaced, or None if there was none."""
+    wrapped = record.get("wrapped")
     command = wrapped.get("command") if isinstance(wrapped, dict) else None
     if isinstance(command, str) and command.strip():
         return command
     return None
+
+
+def builtin_renderer(record):
+    """The built-in statusline's path, when the user picked it and it exists.
+
+    Resolved beside this file rather than through `base_dir()`: the installer
+    copies both scripts into the same directory, and a wrapper someone runs
+    straight out of the repo should find the repo's renderer, not an installed
+    one from another version.
+    """
+    if record.get("display") != "builtin":
+        return None
+    path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "agent-tracker-statusline-render.py"
+    )
+    return path if os.path.exists(path) else None
 
 
 def become(command, payload):
@@ -119,14 +141,21 @@ def become(command, payload):
 def main():
     payload = sys.stdin.buffer.read()
     # The invariant, stated where the ordering lives: whatever capturing does,
-    # the statusline this wrapper displaced still gets to run. Swallowed rather
+    # the statusline the user chose still gets to run. Swallowed rather
     # than logged because anything this script writes lands on Claude's status
     # line, so silence is the only safe report.
     try:
         capture(payload)
     except Exception:  # noqa: BLE001, S110 — never at the cost of the statusline
         pass
-    command = wrapped_command()
+    record = read_record()
+    # The built-in display, when chosen. A missing renderer (a partial or
+    # older install) falls through to the displaced command rather than to a
+    # blank line, so a bad copy step degrades instead of erasing the display.
+    renderer = builtin_renderer(record)
+    if renderer:
+        become(f"exec {shlex.quote(sys.executable)} {shlex.quote(renderer)}", payload)
+    command = wrapped_command(record)
     if command:
         become(command, payload)
     return 0

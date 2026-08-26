@@ -11,6 +11,9 @@ struct OnboardingView: View {
     @State private var accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
     @State private var hookInstalled = HookSetup.claudeHookInstalled()
     @State private var hookPhase: HookPhase = .idle
+    /// On by default: the usage strip and per-row context readings only exist
+    /// with the capture, and whatever the slot held is kept and restorable.
+    @State private var captureUsage = true
     @State private var launchAtLogin = LoginItem.isEnabled
 
     private enum HookPhase: Equatable {
@@ -115,12 +118,35 @@ struct OnboardingView: View {
     /// the backups, and only act on a second click.
     private var hookConfirmation: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Adds a hook entry to \(Onboarding.editedConfig)")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            Text(
+                captureUsage
+                    ? "Adds a hook entry to \(Onboarding.editedConfig) and points its "
+                        + "statusLine at the capture wrapper"
+                    : "Adds a hook entry to \(Onboarding.editedConfig)"
+            )
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
             Text("Each file is backed up first.")
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
+            Toggle(isOn: $captureUsage) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Also show your 5h/7d usage")
+                        .font(.system(size: 11))
+                    // The consequence differs by what the slot holds, so say
+                    // the one that applies rather than both.
+                    Text(
+                        StatuslineSetup.hasOwnStatusline()
+                            ? "Your own statusline keeps rendering behind the capture."
+                            : "Your statusline slot is empty, so Agent Tracker's shows: "
+                                + "model, context, usage, git branch."
+                    )
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                }
+            }
+            .toggleStyle(.checkbox)
+            .controlSize(.small)
             HStack {
                 Button("Install hook") { Task { await runInstaller() } }
                     .buttonStyle(.borderedProminent)
@@ -160,7 +186,16 @@ struct OnboardingView: View {
 
     private func runInstaller() async {
         hookPhase = .running
-        let outcome = await HookSetup.runInstaller()
+        // The flag follows what the slot holds: an occupied slot is captured
+        // behind, an empty one gets the built-in display — the same default
+        // ./install.sh applies interactively.
+        var arguments: [String] = []
+        if captureUsage {
+            arguments = [
+                StatuslineSetup.hasOwnStatusline() ? "--statusline" : "--statusline-builtin"
+            ]
+        }
+        let outcome = await HookSetup.runInstaller(arguments: arguments)
         hookInstalled = HookSetup.claudeHookInstalled()
         hookPhase = outcome.succeeded ? .idle : .failed(outcome.output)
     }

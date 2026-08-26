@@ -144,7 +144,7 @@ enum HookSetup {
 
     /// Runs the idempotent installer off the main thread. It backs up the
     /// config before editing and exits non-zero on refusal.
-    static func runInstaller() async -> InstallOutcome {
+    static func runInstaller(arguments: [String] = []) async -> InstallOutcome {
         guard let directory = installerDirectory() else {
             return InstallOutcome(
                 succeeded: false,
@@ -155,7 +155,7 @@ enum HookSetup {
             DispatchQueue.global(qos: .userInitiated).async {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/bash")
-                process.arguments = [script.path]
+                process.arguments = [script.path] + arguments
                 let pipe = Pipe()
                 process.standardOutput = pipe
                 process.standardError = pipe

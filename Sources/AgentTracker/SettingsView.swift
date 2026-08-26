@@ -117,10 +117,94 @@ private struct GeneralSettingsTab: View {
                     .frame(width: 180)
                 }
             }
+            // Its own card: everything above changes what the app shows, and
+            // this is the one control that edits Claude's own configuration.
+            SettingsCard {
+                SettingsRow(
+                    title: "Claude statusline",
+                    detail: "Claude has a single statusline slot; occupying it is how the "
+                        + "app reads the 5h/7d usage shown in the dropdown. Keep your own "
+                        + "statusline rendering behind the capture, or show Agent "
+                        + "Tracker's. Turning it off puts back what was there."
+                ) {
+                    Picker("", selection: statuslineBinding) {
+                        ForEach(StatuslineSetup.Mode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(statuslineBusy)
+                }
+                if let note = statuslineNote {
+                    SettingsRow(title: "Not applied", detail: note, divided: true) {
+                        EmptyView()
+                    }
+                }
+            }
         }
         .padding(20)
-        .onReceive(statusTick) { _ in launchAtLogin = LoginItem.isEnabled }
-        .onAppear { launchAtLogin = LoginItem.isEnabled }
+        .onReceive(statusTick) { _ in
+            launchAtLogin = LoginItem.isEnabled
+            if !statuslineBusy { statuslineMode = StatuslineSetup.currentMode() }
+        }
+        .onAppear {
+            launchAtLogin = LoginItem.isEnabled
+            statuslineMode = StatuslineSetup.currentMode()
+        }
+    }
+
+    @State private var statuslineMode: StatuslineSetup.Mode = .off
+    @State private var statuslineBusy = false
+    @State private var statuslineNote: String?
+
+    /// The picker reports the mode on disk, never the intent: selection kicks
+    /// off the change, and the control only moves when a re-read says it took.
+    private var statuslineBinding: Binding<StatuslineSetup.Mode> {
+        Binding(
+            get: { statuslineMode },
+            set: { applyStatusline($0) })
+    }
+
+    /// To off, and to builtin, go through the bundled installer: restore backs
+    /// up settings.json and refuses rather than guesses, and builtin re-copies
+    /// the wrapper and renderer before flipping the display — an install from
+    /// before the display existed has a wrapper that ignores the key and no
+    /// renderer at all, so a record-only switch would look applied while
+    /// changing nothing. Only builtin → keep-mine edits the record directly:
+    /// a wrapper that was just showing the built-in display provably honours
+    /// the key it is about to lose.
+    private func applyStatusline(_ target: StatuslineSetup.Mode) {
+        let current = StatuslineSetup.currentMode()
+        guard target != current, !statuslineBusy else { return }
+        statuslineBusy = true
+        statuslineNote = nil
+        Task {
+            var failure: String?
+            switch target {
+            case .off:
+                let outcome = await HookSetup.runInstaller(arguments: ["--statusline-restore"])
+                if !outcome.succeeded { failure = outcome.output }
+            case .builtin:
+                let outcome = await HookSetup.runInstaller(arguments: ["--statusline-builtin"])
+                if !outcome.succeeded { failure = outcome.output }
+            case .keepOwn:
+                if current == .off {
+                    let outcome = await HookSetup.runInstaller(arguments: ["--statusline"])
+                    if !outcome.succeeded { failure = outcome.output }
+                } else if !StatuslineSetup.setDisplay(builtin: false) {
+                    failure =
+                        "The wrapper's record file is missing or unreadable; "
+                        + "re-run ./install.sh to repair it."
+                }
+            }
+            statuslineMode = StatuslineSetup.currentMode()
+            statuslineNote = failure.map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            statuslineBusy = false
+        }
     }
 
     private var loginBinding: Binding<Bool> {
