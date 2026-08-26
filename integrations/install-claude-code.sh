@@ -233,8 +233,8 @@ def set_display_builtin():
     try:
         with open(record_path) as f:
             record = json.load(f)
-        if not isinstance(record, dict):
-            raise ValueError("not an object")
+        if not isinstance(record, dict) or "wrapped" not in record:
+            raise ValueError("untrustworthy record")
     except (OSError, ValueError, json.JSONDecodeError):
         # No trustworthy record to edit. Never invent one: a record without a
         # real `wrapped` value is what uninstall refuses to restore from.
@@ -242,12 +242,13 @@ def set_display_builtin():
             f"cannot update {record_path}; the display choice was not applied",
             file=sys.stderr,
         )
-        return
+        return False
     record["display"] = "builtin"
     with open(record_path, "w") as f:
         json.dump(record, f, indent=2)
         f.write("\n")
     print("statusline display set to agent-tracker's own")
+    return True
 
 
 # Written with open(), never a rename over the path: settings.json may be a
@@ -263,9 +264,11 @@ if isinstance(command, str) and "agent-tracker-statusline" in command:
     # Re-recording now would store the wrapper as its own inner command, and
     # the wrapper would exec itself forever. The display choice still applies:
     # re-running with --statusline-builtin is how a keep-mine install switches.
+    # An explicitly requested display that cannot be applied is a failure, not
+    # a warning — exiting 0 here would tell automation the switch happened.
     print("statusline wrapper already registered — nothing to do")
-    if display == "builtin":
-        set_display_builtin()
+    if display == "builtin" and not set_display_builtin():
+        sys.exit(1)
     sys.exit(0)
 
 if current is not None and not (

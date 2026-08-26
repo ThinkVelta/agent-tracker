@@ -167,9 +167,14 @@ private struct GeneralSettingsTab: View {
             set: { applyStatusline($0) })
     }
 
-    /// Between the two installed states only the app's own record changes, so
-    /// that is done directly. To and from off go through the bundled installer,
-    /// which backs up settings.json and refuses rather than guesses.
+    /// To off, and to builtin, go through the bundled installer: restore backs
+    /// up settings.json and refuses rather than guesses, and builtin re-copies
+    /// the wrapper and renderer before flipping the display — an install from
+    /// before the display existed has a wrapper that ignores the key and no
+    /// renderer at all, so a record-only switch would look applied while
+    /// changing nothing. Only builtin → keep-mine edits the record directly:
+    /// a wrapper that was just showing the built-in display provably honours
+    /// the key it is about to lose.
     private func applyStatusline(_ target: StatuslineSetup.Mode) {
         let current = StatuslineSetup.currentMode()
         guard target != current, !statuslineBusy else { return }
@@ -181,12 +186,14 @@ private struct GeneralSettingsTab: View {
             case .off:
                 let outcome = await HookSetup.runInstaller(arguments: ["--statusline-restore"])
                 if !outcome.succeeded { failure = outcome.output }
-            case .keepOwn, .builtin:
+            case .builtin:
+                let outcome = await HookSetup.runInstaller(arguments: ["--statusline-builtin"])
+                if !outcome.succeeded { failure = outcome.output }
+            case .keepOwn:
                 if current == .off {
-                    let outcome = await HookSetup.runInstaller(
-                        arguments: [target == .builtin ? "--statusline-builtin" : "--statusline"])
+                    let outcome = await HookSetup.runInstaller(arguments: ["--statusline"])
                     if !outcome.succeeded { failure = outcome.output }
-                } else if !StatuslineSetup.setDisplay(builtin: target == .builtin) {
+                } else if !StatuslineSetup.setDisplay(builtin: false) {
                     failure =
                         "The wrapper's record file is missing or unreadable; "
                         + "re-run ./install.sh to repair it."
