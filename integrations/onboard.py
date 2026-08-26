@@ -345,6 +345,17 @@ def run_installer(agent, statusline=False, display=""):
             print(f"  {yellow('!')} {line}")
         return True
     if agent["key"] == "claude" and proc.returncode == 3:
+        if display == "builtin":
+            # An explicitly requested display that was not applied is a
+            # failure, not a warning: exiting 0 here would tell automation
+            # the built-in statusline is showing when it is not.
+            for line in (proc.stdout + proc.stderr).strip().splitlines():
+                print(f"  {red('✗')} {line}")
+            print(
+                f"  {red('✗')} Requested agent-tracker's statusline, but it was "
+                "not applied; the hooks are installed."
+            )
+            return False
         for line in proc.stdout.strip().splitlines():
             print(f"  {green('✓')} {line}")
         print(f"  {yellow('!')} Left your statusLine setting alone; it is set to")
