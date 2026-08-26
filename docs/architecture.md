@@ -39,6 +39,15 @@ Both are plain JSON and readable. `AGENT_TRACKER_DIR` overrides the base
 directory for the app and the hook alike, which is how the test suite avoids
 touching real data.
 
+**A run one session's tool started is not a session of its own.** A `claude -p`
+launched by a script from a session's Bash tool has its own session id and fires
+the same hooks, so it gets a state file too. The hook records the enclosing
+`claude` process as `spawnedByPid`, and the app leaves such a row out of the
+list and the counts while that process is itself a session on the list: its work
+is the parent row's, and
+it has no terminal to jump to. The file stays, so nothing is lost if the link
+is wrong.
+
 The statusline file being **last-writer-wins across sessions** is a property the
 app is built around rather than a limitation it works around: readings are
 accumulated per session id as they arrive, and the file is never treated as a

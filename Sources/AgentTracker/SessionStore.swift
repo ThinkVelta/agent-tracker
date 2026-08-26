@@ -237,7 +237,8 @@ final class SessionStore: ObservableObject {
         // the row timestamps need republishing — and reading the clock separately
         // for each let them disagree about what "now" is.
         let now = Date()
-        var merged = fileSessions.map { session -> AgentSession in
+        let listed = Self.listed(fileSessions)
+        var merged = listed.map { session -> AgentSession in
             var enriched = RegistryEnrichment.apply(
                 to: session, entry: claudeRegistry.entry(forSessionId: session.sessionId),
                 staleAfter: staleShellAfter, now: now)
@@ -338,6 +339,20 @@ final class SessionStore: ObservableObject {
     }
 
     private var lastLoggedSummary = ""
+
+    /// A run another session's tool started is that session's work: its
+    /// parent row already reads "Using Bash", and it has no terminal of its
+    /// own to jump to. Left out while the parent is a session on this list,
+    /// kept on disk so nothing is lost if the parent link is wrong. Requiring
+    /// the parent to be tracked, not merely alive, is what keeps a reused pid
+    /// from hiding an unrelated session.
+    nonisolated static func listed(_ sessions: [AgentSession]) -> [AgentSession] {
+        let tracked = Set(sessions.compactMap(\.pid))
+        return sessions.filter { session in
+            guard let parent = session.spawnedByPid, parent > 0 else { return true }
+            return !tracked.contains(parent)
+        }
+    }
 
     /// The 30-second boundary two things hang off: row timestamps read
     /// "now/3m/2h/1d" and so only change on it, and the usage-limit fallback

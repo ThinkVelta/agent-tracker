@@ -52,6 +52,56 @@ struct HookScriptTests {
         return payload
     }
 
+    /// The process tree walk, on a synthetic table: the first agent above the
+    /// hook is the session's own, and an agent above that is the one whose
+    /// tool started it (a `claude -p` run by a script from a session's Bash).
+    @Test func theWalkFindsTheSessionsAgentAndTheOneItRunsUnder() throws {
+        let program = """
+            import importlib.util, json
+            spec = importlib.util.spec_from_file_location("hook", \"\"\"\(script)\"\"\")
+            hook = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(hook)
+            table = {
+                1: (0, "??", "launchd"),
+                10: (1, "??", "Ghostty"),
+                20: (10, "ttys003", "login"),
+                30: (20, "ttys003", "-zsh"),
+                40: (30, "ttys003", "claude"),
+                50: (40, "??", "zsh"),
+                60: (50, "??", "bash"),
+                70: (60, "??", "claude"),
+                80: (70, "??", "python3"),
+            }
+            walks = [hook.agent_lineage(table, pid) for pid in (80, 50, 99)]
+            print(json.dumps([[str(value) for value in walk] for walk in walks]))
+            """
+        let python = Process()
+        python.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        python.arguments = ["python3", "-c", program]
+        let output = Pipe()
+        python.standardOutput = output
+        try python.run()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        python.waitUntilExit()
+        let walks = try JSONSerialization.jsonObject(with: data) as? [[String]]
+        #expect(walks?[0] == ["70", "??", "40"])
+        #expect(walks?[1] == ["40", "ttys003", "None"])
+        #expect(walks?[2] == ["None", "None", "None"])
+    }
+
+    /// The link is written from each event alone. Under the test runner no
+    /// agent encloses the hook, so a value left by an earlier event must go.
+    @Test func aSpawnedByPidNoLongerReportedIsCleared() throws {
+        let directory = try scratch()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let earlier: [String: Any] = ["sessionId": "s1", "state": "running", "spawnedByPid": 4242]
+        try JSONSerialization.data(withJSONObject: earlier).write(to: stateFile(in: directory))
+        try run(
+            ["hook_event_name": "PreToolUse", "session_id": "s1", "tool_name": "Bash"],
+            in: directory)
+        #expect(try load(directory).spawnedByPid == nil)
+    }
+
     @Test func aStopRecordsTheShellsStillRunning() throws {
         let directory = try scratch()
         defer { try? FileManager.default.removeItem(at: directory) }
