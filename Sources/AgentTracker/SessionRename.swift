@@ -9,13 +9,9 @@ import Foundation
 /// per session and a rule for what to do when they differ, which is a bug
 /// waiting for a user who runs `/rename` in the terminal.
 ///
-/// This is deliberately NOT `ContinueSender.send` with a different message.
-/// That function is gated on the scheduled-continues kill switch and on the
-/// session's permission mode, because it fires unattended on a timer. A rename
-/// happens with the user's finger on it, so neither gate belongs — and widening
-/// `ContinueSender` to express "sometimes these do not apply" would put a
-/// feature that types into terminals unattended at risk to save twenty lines.
-/// The primitives are shared; the policy is not.
+/// The one write path in the app. It types only because the user just clicked
+/// Rename — nothing here ever fires on a timer — and it still proves the pane
+/// before writing, because typing into the wrong session cannot be undone.
 enum SessionRename {
     /// What a rename can be turned down for, before anything is written.
     enum Refusal: Equatable {
@@ -67,9 +63,8 @@ enum SessionRename {
 
     /// Writes the rename, or refuses and says why.
     ///
-    /// Same order as every other write in this app: prove it, then write. The
-    /// one gate carried over from scheduled continues is `lastEvent == "Stop"`,
-    /// and it is not a nicety — pressing Return at an open permission prompt
+    /// Prove it, then write — never write, then check. The `lastEvent == "Stop"`
+    /// gate is not a nicety: pressing Return at an open permission prompt
     /// commits whichever option is focused, so a rename sent into a session
     /// sitting on a dialog would answer that dialog.
     ///
@@ -77,8 +72,7 @@ enum SessionRename {
     ///   - lastEvent: re-read from disk *after* resolution, not captured before
     ///     it. Resolving a Ghostty target runs an Automation preflight measured
     ///     at over 100 seconds, and "the session was at a finished turn" is a
-    ///     claim about the past by the time it returns. Same reason
-    ///     `SendContext` exists for scheduled continues.
+    ///     claim about the past by the time it returns.
     ///   - liveAgent: likewise. Taken as a parameter rather than read off
     ///     `resolved`, whose copy was sampled at the *start* of resolution, so
     ///     that the staleness question is visible in the signature instead of
@@ -90,7 +84,7 @@ enum SessionRename {
         liveAgent: ProcessIdentity?,
         ops: ChannelOps,
         tmux: TmuxOps = .live
-    ) -> ContinueDeliveryResult {
+    ) -> DeliveryResult {
         guard lastEvent == "Stop" else {
             return .refused(
                 "That session isn't sitting at a finished turn "
@@ -102,7 +96,7 @@ enum SessionRename {
         guard let live = liveAgent else {
             return .refused("That session's process is gone")
         }
-        if case .refused(let reason) = ContinueDelivery.foregroundAllows(
+        if case .refused(let reason) = TerminalDelivery.foregroundAllows(
             pgid: live.pgid, tpgid: live.tpgid, comm: live.comm)
         {
             return .refused(reason)
@@ -124,45 +118,45 @@ enum SessionRename {
         }
 
         guard ops.writeText(command, target.surfaceId, target.terminalPid) else {
-            return ContinueDeliveryResult(
+            return DeliveryResult(
                 outcome: .failed, detail: "Ghostty refused to write the rename")
         }
         guard ops.pressReturn(target.surfaceId, target.terminalPid) else {
             // Something IS in that window now, and the user needs to know it is
             // sitting there unsent rather than to be told this simply failed.
-            return ContinueDeliveryResult(
+            return DeliveryResult(
                 outcome: .failed,
                 detail: "Typed \"\(command)\" but couldn't press Return; it's waiting on "
                     + "the prompt")
         }
-        return ContinueDeliveryResult(outcome: .sent, detail: "Renaming…")
+        return DeliveryResult(outcome: .sent, detail: "Renaming…")
     }
 
     private static func sendToPane(
-        _ command: String, recorded: ContinueDelivery.TmuxTarget, ops: TmuxOps
-    ) -> ContinueDeliveryResult {
+        _ command: String, recorded: TerminalDelivery.TmuxTarget, ops: TmuxOps
+    ) -> DeliveryResult {
         let panes: [TmuxScripting.Pane]
         switch ops.panes(recorded.socketPath) {
         case .success(let live): panes = live
         case .failure(let failure): return .refused(failure.reason)
         }
 
-        if case .refused(let reason) = ContinueDelivery.resolveTmux(
+        if case .refused(let reason) = TerminalDelivery.resolveTmux(
             recorded: recorded, among: panes)
         {
             return .refused(reason)
         }
 
         guard ops.writeText(command, recorded.paneId, recorded.socketPath) else {
-            return ContinueDeliveryResult(
+            return DeliveryResult(
                 outcome: .failed, detail: "tmux refused to write the rename")
         }
         guard ops.pressReturn(recorded.paneId, recorded.socketPath) else {
-            return ContinueDeliveryResult(
+            return DeliveryResult(
                 outcome: .failed,
                 detail: "Typed \"\(command)\" but couldn't press Return; it's waiting on "
                     + "the prompt")
         }
-        return ContinueDeliveryResult(outcome: .sent, detail: "Renaming…")
+        return DeliveryResult(outcome: .sent, detail: "Renaming…")
     }
 }

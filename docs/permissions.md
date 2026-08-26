@@ -6,13 +6,12 @@ each is for and what asks for it:
 | Grant | Needed for | Without it |
 | --- | --- | --- |
 | **Accessibility** | click-to-focus | rows do not raise their terminal |
-| **Automation** (Ghostty) | writing into a **Ghostty** window: scheduled continues, app-side rename | those refuse via Ghostty and say why; tmux is unaffected |
-| **Notifications** | needs-you banners, scheduled-continue receipts | no banners; everything else works |
+| **Automation** (Ghostty) | renaming a session in a **Ghostty** window from the app | the rename refuses via Ghostty and says why; tmux is unaffected |
+| **Notifications** | needs-you banners | no banners; everything else works |
 
 Asked for by: **Accessibility** at first-run onboarding; **Automation** when you
-arm a schedule or rename a *Ghostty* session, and never for a tmux one;
-**Notifications** from either the Settings › Sessions toggle or your first
-arming, whichever comes first.
+rename a *Ghostty* session, and never for a tmux one; **Notifications** from the
+Settings › Sessions toggle.
 
 Nothing here is needed to *watch* sessions. Reading state, the menu bar counts,
 the list, context and usage readings all work with no grant at all.
@@ -43,19 +42,15 @@ This bites two groups differently:
 
 ## Automation (Ghostty)
 
-Needed only by the two features that write into a terminal: scheduled continues
-and renaming from the app. Reading session state never needs it.
+Needed only by the one feature that writes into a terminal: renaming a session
+from the app. Reading session state never needs it.
 
-**Grant it in advance** from Settings › General › *Permission to control
-Ghostty*. This is worth doing before you need it, for a specific reason: the
+The prompt is raised the first time you rename a *Ghostty* session — a moment
+you are present for — and never anywhere else. Fair warning about the wait: the
 first request can take a long time. macOS's preflight was measured taking **over
-100 seconds** for an app that is running but not yet granted, and that wait lands
-in front of whatever you were trying to do.
-
-The prompt is only ever raised at a moment you are present for; arming a
-schedule, or renaming. It is never raised while a schedule is firing: a dialog
-appearing at 04:00 would sit unanswered and block the very delivery it was meant
-to authorise.
+100 seconds** for an app that is running but not yet granted, and that wait
+lands in front of the rename you were trying to do; the button says "Renaming…"
+while it does.
 
 ### tmux needs none of this
 
@@ -65,26 +60,17 @@ delivery talks to the tmux server directly, so **no Automation grant is
 involved, and nothing is matched by window title**.
 
 That also removes the whole class of "cannot tell which window is yours"
-refusals. If you use these features heavily, running sessions in tmux is the
+refusals. If you rename from the app often, running sessions in tmux is the
 single biggest reliability improvement available.
 
 ## Notifications
 
-For two things, which is worth knowing because the second can surprise you:
+For **the banner when a session flips to needing you**. **Off by default**: the
+menu bar is the passive channel this app was built to be, and a notification is
+the most intrusive thing it could do. Turn it on in Settings › Sessions, which
+is also what asks for the permission.
 
-- **The banner when a session flips to needing you.** **Off by default**: the menu
-  bar is the passive channel this app was built to be, and a notification is the
-  most intrusive thing it could do. Turn it on in Settings › Sessions.
-- **Receipts from a scheduled continue**: a send, or a failure that left text on
-  a prompt.
-
-So the permission is requested from **either** of two places: enabling the
-banners, or arming your first scheduled continue. Arming asks even if you never
-turned the banners on, deliberately; a feature that types into a terminal while
-you are asleep should not also be silent about having done it.
-
-Declining costs you the announcement and nothing else in both cases. Deliveries
-still happen, and their receipts are still in the scheduling panel and the log.
+Declining costs you the announcement and nothing else.
 
 Banners are deliberately **not** marked time-sensitive, which is what lets Focus
 and Do Not Disturb hold them. Clicking one jumps to that session's terminal;

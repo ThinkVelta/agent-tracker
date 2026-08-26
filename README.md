@@ -95,8 +95,8 @@ installing automatically at launch. A Homebrew install is recognized and
 updated through `brew upgrade`, from the same button.
 
 Agent Tracker asks for up to three macOS permissions (Accessibility for
-click-to-focus, Automation for writing into a Ghostty window, Notifications
-for banners and receipts), and none of them is needed just to watch sessions.
+click-to-focus, Automation for renaming a session in a Ghostty window,
+Notifications for banners), and none of them is needed just to watch sessions.
 See **[permissions](docs/permissions.md)**, which covers which ones you will
 actually be asked for, plus one thing that is not obvious. A lost
 Accessibility grant is fixed by *removing and re-adding* the entry, never by
@@ -234,26 +234,6 @@ terminal disappears without a clean exit.
 how click-to-focus matches a window, why a finished turn is not always "needs you",
 and how writing into a terminal is gated.
 
-## Scheduled continues
-
-Any session can be armed, from the clock on its row, to have a line typed into
-its terminal at a chosen moment. A session that stopped on a usage limit
-anchors to the reset Claude itself reports, never to a guess; every other
-session takes a time you pick. The send waits until the session sits at a
-finished turn, so scheduling a running one is safe.
-
-**Off by default.** It is the only thing this app does that acts on a session
-rather than reporting on one, so it has its own switch in Settings › General.
-
-It refuses far more often than it fires, and that is deliberate, because
-typing into the wrong session is the one thing here that cannot be undone.
-Every attempt is recorded, whether sent, refused or failed, because a feature
-that acts while nobody is watching owes you a receipt.
-
-**[What it refuses and why](docs/scheduled-continues.md)**, including the
-permission modes it allows, and why running sessions in `tmux` removes the
-largest class of refusals outright.
-
 ## Known limitations
 
 - **Several sessions in one repo look alike, and clicking one may open its
@@ -266,12 +246,13 @@ largest class of refusals outright.
   documents the four routes that were tried and closed. **Naming one of them
   fixes it**; see [troubleshooting](docs/troubleshooting.md).
 - **Usage numbers and context readings need the statusline payload.** The
-  usage strip reads `rate_limits` and the per-row percentage reads
-  `context_window`. The payload reaches the app only through the
-  [statusline wrapper](docs/statusline.md) or your own script dumping it, so
-  without one the app says it cannot tell rather than claiming you have room
-  left. Session names travel separately, through `~/.claude/sessions/`, so
-  rows and window matching keep their names either way.
+  usage strip reads `rate_limits`, and only from the
+  [statusline wrapper](docs/statusline.md)'s own capture; the per-row
+  `context_window` percentage also arrives from your own script dumping the
+  payload. Without a source the app says it cannot tell rather than claiming
+  you have room left. Session names travel separately, through
+  `~/.claude/sessions/`, so rows and window matching keep their names either
+  way.
 
 ## Build from source
 
@@ -310,11 +291,14 @@ run `./integrations/uninstall.sh` (add `--purge` to also delete
 Claude's usage windows and context pressure are a separate opt-in, because
 capturing them means
 occupying the one `statusLine` slot in `~/.claude/settings.json`. The picker
-asks, or pass `--statusline` (`--no-statusline` to skip the question). The
-wrapper saves the payload and then runs your previous statusline command with
-the same bytes on its stdin, so what you see is unchanged; the displaced setting
-is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
-`statusLine` is left alone rather than replaced.
+asks, or pass `--statusline` (`--no-statusline` to skip the question,
+`--statusline-builtin` for Agent Tracker's own statusline). The wrapper saves
+the payload and then runs your previous statusline command with the same bytes
+on its stdin — or, when you choose it, shows Agent Tracker's own line instead:
+model, context %, the 5h/7d usage windows, git branch and directory. Either
+way the displaced setting is recorded under `~/.agent-tracker/` and restored
+on uninstall, the choice can be flipped any time in Settings › General, and an
+unrecognized `statusLine` is left alone rather than replaced.
 
 ## Roadmap
 
@@ -322,9 +306,6 @@ is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
       signed, which keeps your Accessibility grant across updates, and
       notarized, which is why Gatekeeper opens them without asking
 - [x] Homebrew tap: `brew install --cask agent-tracker`
-- [x] **Scheduled continues**. Arm any session, from the clock on its row, to
-      type a line at a chosen moment; a usage-limited session anchors to the
-      reset Claude reports. Off by default (Settings › General). See below.
 - [x] **Notifications** when a session flips to needs-you. Opt-in; click
       jumps to that terminal (Settings › Sessions). See below.
 - [x] Onboarding: install as .app + login item

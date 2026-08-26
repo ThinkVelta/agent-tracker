@@ -58,55 +58,6 @@ struct SettingsPreviewStack: View {
 private struct GeneralSettingsTab: View {
     @ObservedObject private var preferences = Preferences.shared
     @State private var launchAtLogin = LoginItem.isEnabled
-    /// Whether this app may drive Ghostty. Not derivable from anything on disk —
-    /// the only way to know is to ask the Apple Event manager.
-    @State private var automationGranted: Bool?
-    @State private var automationChecking = false
-
-    private var automationDetail: String {
-        switch automationGranted {
-        case true:
-            return "Granted."
-        case false:
-            return "Not granted yet, so nothing can be sent."
-        case nil:
-            return "Ghostty isn't running, so there is nothing to ask about yet."
-        }
-    }
-
-    /// Deliberately a button rather than something that happens on launch: this is
-    /// the one call that may raise a permission dialog, and a dialog belongs to a
-    /// moment the user chose. Off the main actor because the check was measured
-    /// taking over 100 seconds for a running-but-ungranted target.
-    private func checkAutomationPermission() {
-        automationChecking = true
-        Task {
-            let granted = await Task.detached { () -> Bool? in
-                guard let pid = GhosttyScripting.runningApplication()?.processIdentifier else {
-                    return nil
-                }
-                if case .success = GhosttyScripting.automationPermission(
-                    pid: pid, promptIfNeeded: true)
-                {
-                    return true
-                }
-                return false
-            }.value
-            automationGranted = granted
-            automationChecking = false
-        }
-    }
-
-    /// Status only, and never prompts — opening Settings must not raise a dialog.
-    private func refreshAutomationStatus() async {
-        automationGranted = await Task.detached { () -> Bool? in
-            guard let pid = GhosttyScripting.runningApplication()?.processIdentifier else {
-                return nil
-            }
-            if case .success = GhosttyScripting.automationPermission(pid: pid) { return true }
-            return false
-        }.value
-    }
 
     /// The user can change login-item state behind our back in System
     /// Settings; re-reading while visible keeps the switch truthful.
@@ -166,65 +117,94 @@ private struct GeneralSettingsTab: View {
                     .frame(width: 180)
                 }
             }
-            // Its own card, and off by default. Everything above changes what the
-            // app shows; this is the only switch that lets it act on a session
-            // while nobody is watching, so it does not belong grouped with the
-            // display preferences.
+            // Its own card: everything above changes what the app shows, and
+            // this is the one control that edits Claude's own configuration.
             SettingsCard {
                 SettingsRow(
-                    title: "Scheduled continues",
-                    detail: "Arm a session that stopped on a usage limit to resume when the "
-                        + "window resets. Needs permission to control Ghostty."
+                    title: "Claude statusline",
+                    detail: "Claude has a single statusline slot; occupying it is how the "
+                        + "app reads the 5h/7d usage shown in the dropdown. Keep your own "
+                        + "statusline rendering behind the capture, or show Agent "
+                        + "Tracker's. Turning it off puts back what was there."
                 ) {
-                    Toggle("", isOn: $preferences.scheduledContinues)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-                if preferences.scheduledContinues {
-                    SettingsRow(
-                        title: "Permission to control Ghostty",
-                        detail: automationDetail,
-                        divided: true
-                    ) {
-                        // No button once it is granted: there is nothing left to
-                        // do, and a live control beside "Granted." reads as an
-                        // unfinished step. Re-checking is still possible by
-                        // revoking it in System Settings, which puts the button
-                        // back.
-                        if automationGranted == true {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        } else {
-                            // Disabled ONLY while a check is in flight. `nil`
-                            // means "Ghostty isn't running", but it is also the
-                            // state before the first check returns — and the
-                            // status is read once, so a Ghostty started after
-                            // Settings opened would leave the only route to the
-                            // grant disabled for the rest of the session. The
-                            // click re-checks anyway, and reports plainly if
-                            // Ghostty still is not there.
-                            Button(automationChecking ? "Checking…" : "Allow…") {
-                                checkAutomationPermission()
-                            }
-                            .disabled(automationChecking)
+                    Picker("", selection: statuslineBinding) {
+                        ForEach(StatuslineSetup.Mode.allCases) { mode in
+                            Text(mode.label).tag(mode)
                         }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(statuslineBusy)
+                }
+                if let note = statuslineNote {
+                    SettingsRow(title: "Not applied", detail: note, divided: true) {
+                        EmptyView()
                     }
                 }
             }
         }
         .padding(20)
-        .task { await refreshAutomationStatus() }
-        // Ghostty may be launched, quit, or have its permission changed in System
-        // Settings while this window sits open, so the status is re-read whenever
-        // the app comes forward rather than only once.
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: NSApplication.didBecomeActiveNotification)
-        ) { _ in
-            Task { await refreshAutomationStatus() }
+        .onReceive(statusTick) { _ in
+            launchAtLogin = LoginItem.isEnabled
+            if !statuslineBusy { statuslineMode = StatuslineSetup.currentMode() }
         }
-        .onReceive(statusTick) { _ in launchAtLogin = LoginItem.isEnabled }
-        .onAppear { launchAtLogin = LoginItem.isEnabled }
+        .onAppear {
+            launchAtLogin = LoginItem.isEnabled
+            statuslineMode = StatuslineSetup.currentMode()
+        }
+    }
+
+    @State private var statuslineMode: StatuslineSetup.Mode = .off
+    @State private var statuslineBusy = false
+    @State private var statuslineNote: String?
+
+    /// The picker reports the mode on disk, never the intent: selection kicks
+    /// off the change, and the control only moves when a re-read says it took.
+    private var statuslineBinding: Binding<StatuslineSetup.Mode> {
+        Binding(
+            get: { statuslineMode },
+            set: { applyStatusline($0) })
+    }
+
+    /// To off, and to builtin, go through the bundled installer: restore backs
+    /// up settings.json and refuses rather than guesses, and builtin re-copies
+    /// the wrapper and renderer before flipping the display — an install from
+    /// before the display existed has a wrapper that ignores the key and no
+    /// renderer at all, so a record-only switch would look applied while
+    /// changing nothing. Only builtin → keep-mine edits the record directly:
+    /// a wrapper that was just showing the built-in display provably honours
+    /// the key it is about to lose.
+    private func applyStatusline(_ target: StatuslineSetup.Mode) {
+        let current = StatuslineSetup.currentMode()
+        guard target != current, !statuslineBusy else { return }
+        statuslineBusy = true
+        statuslineNote = nil
+        Task {
+            var failure: String?
+            switch target {
+            case .off:
+                let outcome = await HookSetup.runInstaller(arguments: ["--statusline-restore"])
+                if !outcome.succeeded { failure = outcome.output }
+            case .builtin:
+                let outcome = await HookSetup.runInstaller(arguments: ["--statusline-builtin"])
+                if !outcome.succeeded { failure = outcome.output }
+            case .keepOwn:
+                if current == .off {
+                    let outcome = await HookSetup.runInstaller(arguments: ["--statusline"])
+                    if !outcome.succeeded { failure = outcome.output }
+                } else if !StatuslineSetup.setDisplay(builtin: false) {
+                    failure =
+                        "The wrapper's record file is missing or unreadable; "
+                        + "re-run ./install.sh to repair it."
+                }
+            }
+            statuslineMode = StatuslineSetup.currentMode()
+            statuslineNote = failure.map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            statuslineBusy = false
+        }
     }
 
     private var loginBinding: Binding<Bool> {
@@ -334,8 +314,7 @@ private struct SessionsSettingsTab: View {
     /// notice by itself.
     private let statusTick = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
-    /// Flipping the switch on is the moment to ask, for the same reason the
-    /// Automation grant is asked for by a button: a permission dialog belongs
+    /// Flipping the switch on is the moment to ask: a permission dialog belongs
     /// to a click the user made.
     private var notifyBinding: Binding<Bool> {
         Binding(

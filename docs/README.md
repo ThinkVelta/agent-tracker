@@ -7,8 +7,7 @@ For people who have already installed it and hit something. The
 | --- | --- |
 | [Troubleshooting](troubleshooting.md) | something is not showing up, or is showing the wrong thing |
 | [The statusline wrapper](statusline.md) | you want usage numbers, context readings, or exact window matching |
-| [Scheduled continues](scheduled-continues.md) | a session refused to resume itself, or you want to know what it will refuse |
-| [Permissions](permissions.md) | click-to-focus does nothing, or a write into a terminal was refused |
+| [Permissions](permissions.md) | click-to-focus does nothing, or a rename was refused |
 | [Uninstalling](uninstall.md) | you want it gone, or want to know what it touched |
 | [How it works](architecture.md) | you want to know what is on disk and what reads it |
 

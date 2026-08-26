@@ -59,7 +59,7 @@ enum TmuxScripting {
     /// `-S` reaches the default server instead — which is a different machine
     /// entirely as far as `%3` is concerned. It cannot mis-deliver, because the
     /// tty pinned alongside the id is unique system-wide, but it would refuse
-    /// every schedule armed on a named socket and never say why.
+    /// every write into a pane on a named socket and never say why.
     static func socketPath(fromTmuxVariable value: String?) -> String? {
         guard let value else { return nil }
         let path = value.split(separator: ",", maxSplits: 1).first.map(String.init) ?? ""
@@ -74,8 +74,8 @@ enum TmuxScripting {
 
     static func panes(socketPath: String?) -> Result<[Pane], Failure> {
         guard let tool = toolPath() else { return .failure(.notInstalled) }
-        // -a: every pane on the server, not just the attached session's. A
-        // schedule fires while nothing is attached at all.
+        // -a: every pane on the server, not just the attached session's — the
+        // pane being written to need not be the one the user is looking at.
         guard
             let output = ProcessProbe.run(
                 tool, arguments(socketPath: socketPath, ["list-panes", "-a", "-F", paneFormat]),

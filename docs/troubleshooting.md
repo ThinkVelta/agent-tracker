@@ -23,7 +23,7 @@ install.
 It deliberately does **not** check the Ghostty Automation grant. Asking macOS
 for that status can block for over a minute even without prompting, and a
 diagnostic that looks like a hang is worse than one that says what it skipped.
-Check it in Settings › General › *Permission to control Ghostty*.
+Renaming a session from the app asks for the grant when it needs it.
 
 The rest of this page is for what the doctor cannot decide.
 
@@ -198,21 +198,12 @@ Finish or dismiss what the session is doing, then rename.
 
 **It sits on "Renaming…" for a long time.** Expected on the first rename of a
 Ghostty session: macOS's Automation preflight was measured taking over 100
-seconds for an app that is running but not yet granted. *Close* cancels. Grant it
-in advance from Settings › General › *Permission to control Ghostty* and later
+seconds for an app that is running but not yet granted. *Close* cancels. Later
 renames are immediate.
 
-## A scheduled continue was refused
-
-Refusals are the normal case for this feature, not a malfunction; it refuses far
-more often than it fires, because typing into the wrong session cannot be undone.
-The panel (click the clock on the row) shows the most recent outcome, and every
-attempt is in the log.
-
-The full list is in [scheduled continues](scheduled-continues.md). The one worth
-knowing here: **running sessions inside `tmux` removes the
-whole class of window-matching refusals**, because a pane reports its own id and
-tty, so nothing is matched by title and no macOS permission is involved.
+Worth knowing: **running sessions inside `tmux` removes the whole class of
+window-matching refusals**, because a pane reports its own id and tty, so
+nothing is matched by title and no macOS permission is involved.
 
 ## The app will not open
 
@@ -253,9 +244,8 @@ tail -f ~/.agent-tracker/logs/agent-tracker.log
 Settings › Advanced › *Diagnostics* › **Show Log** reveals the same file in
 Finder. It is plain text, local only, and capped at 2 MB.
 
-The app writes what it decided and why: every delivery attempt, every refusal
-with its reason, every permission failure. It is the same log the scheduling
-panel reads its receipts from.
+The app writes what it decided and why: every rename attempt, every refusal
+with its reason, every permission failure.
 
 State lives in exactly two places, both plain JSON you can read:
 

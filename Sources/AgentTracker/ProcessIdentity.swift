@@ -5,10 +5,9 @@ import Foundation
 ///
 /// One `proc_pidinfo` call, no fork. `SessionStore` proves a session is alive
 /// with `kill(pid, 0)`, which is right for pruning a row and wrong for deciding
-/// whether to type into a terminal: it passes for a *recycled* pid, and the
-/// window between arming a scheduled continue and firing it is up to twelve
-/// hours. Long enough for the agent to exit and its pid to come back around as
-/// something else.
+/// whether to type into a terminal: it passes for a *recycled* pid, and
+/// resolving a target can take over a minute — long enough for the agent to
+/// exit and its pid to come back around as something else.
 ///
 /// So identity here is pid **plus start time**, and the same call answers the
 /// other question delivery needs — whether the agent still owns its terminal.
@@ -29,7 +28,7 @@ struct ProcessIdentity: Equatable, Codable, Sendable {
 
     /// Whether what gets typed into this terminal would actually reach this
     /// process, rather than something it launched. See
-    /// `ContinueDelivery.foregroundAllows` for why this replaced reading the
+    /// `TerminalDelivery.foregroundAllows` for why this replaced reading the
     /// screen.
     var ownsTerminal: Bool { pgid > 0 && pgid == tpgid }
 
@@ -48,7 +47,7 @@ struct ProcessIdentity: Equatable, Codable, Sendable {
     /// invite someone to act on the difference. Measured: a process owned by
     /// another user returns 0 bytes with EPERM (pid 1 does), while this process
     /// and its parent return all 136 — a boundary that costs this feature nothing,
-    /// since the agents it schedules are always the user's own.
+    /// since the agents it probes are always the user's own.
     static func read(pid: Int32) -> ProcessIdentity? {
         guard pid > 0 else { return nil }
         var info = proc_bsdinfo()

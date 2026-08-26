@@ -3,6 +3,7 @@
 # Run ./install.sh for the interactive picker, or pass flags for automation:
 #   ./install.sh --agents claude --yes
 #   ./install.sh --agents claude --statusline --yes   # + capture usage windows
+#   ./install.sh --agents claude --statusline-builtin --yes   # + agent-tracker's statusline
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

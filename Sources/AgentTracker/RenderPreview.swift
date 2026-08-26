@@ -9,6 +9,15 @@ import SwiftUI
 /// behaviour, and because it grows a branch every time a new picture is needed.
 @MainActor
 enum RenderPreview {
+    /// Whether this process is a preview render rather than the real app.
+    ///
+    /// Exists so machine-specific state cannot leak into the committed docs
+    /// images: the Accessibility banner reads `AXIsProcessTrusted()`, which for
+    /// a freshly built binary depends on which terminal launched it and that
+    /// machine's TCC grants — so the same fixture rendered on two machines
+    /// would disagree about a warning no synthetic session ever caused.
+    nonisolated static let isActive = CommandLine.arguments.contains("--render-preview")
+
     /// Debug utility:
     /// `AgentTracker --render-preview out.png [--filter needsYou] [--appearance dark]
     ///  [--view onboarding]`
@@ -111,8 +120,6 @@ enum RenderPreview {
             content = AnyView(OnboardingView())
         case "settings":
             content = AnyView(SettingsPreviewStack())
-        case "editor":
-            content = AnyView(ContinueEditorPreviewStack())
         case "shell":
             content = AnyView(BackgroundShellPanelPreviewStack())
         case "icons":
@@ -176,7 +183,7 @@ enum RenderPreview {
         default:
             FileHandle.standardError.write(
                 Data(
-                    ("[preview] --view expects popover, onboarding, settings, editor, "
+                    ("[preview] --view expects popover, onboarding, settings, "
                         + "shell, icons, menubar or architecture\n").utf8))
             exit(2)
         }
