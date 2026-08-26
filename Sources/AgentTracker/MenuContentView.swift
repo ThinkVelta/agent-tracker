@@ -80,7 +80,10 @@ struct MenuContentView: View {
                 searchField
             }
             Divider()
-            if !TerminalFocuser.hasAccessibilityPermission {
+            // Never in a preview render: the check reads this process's TCC
+            // state, and the docs images must not depend on which machine —
+            // and which terminal's grant — happened to regenerate them.
+            if !RenderPreview.isActive, !TerminalFocuser.hasAccessibilityPermission {
                 permissionBanner
                 Divider()
             }
