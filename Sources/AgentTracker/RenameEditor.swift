@@ -16,8 +16,8 @@ struct RenameEditor: View {
     /// an edit of what is there rather than a fresh start, and doubles as the
     /// "is this actually a change" comparison.
     let current: String?
-    /// How the session's window is found. Resolved by the caller because it is
-    /// the same value arming uses, and the two must not drift apart.
+    /// How the session's window is found. Supplied by the caller, which owns
+    /// the app's best copy of the live window title.
     let expectedTitle: String
     let onDismiss: () -> Void
 
@@ -75,7 +75,7 @@ struct RenameEditor: View {
     /// taking over 100 seconds for a running-but-ungranted target — so it runs
     /// off the main actor and the button says "Renaming…" meanwhile. The prompt
     /// IS allowed here: the user just asked for this and is looking at the
-    /// panel, which is the same rule arming follows.
+    /// panel.
     private func submit() {
         guard !inFlight else { return }
         // The same check the button is disabled on. Enter reaches here without

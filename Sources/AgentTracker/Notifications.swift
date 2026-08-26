@@ -3,10 +3,10 @@ import UserNotifications
 
 /// The app's one door to Notification Center.
 ///
-/// Two features post: a scheduled continue reporting what it did, and a session
-/// asking for you. Both need the same three answers first — can this process
-/// notify at all, has the user allowed it, does it still allow it now — so the
-/// answers live in one place rather than being decided twice.
+/// Two features post: a session asking for you, and an update being available.
+/// Both need the same three answers first — can this process notify at all, has
+/// the user allowed it, does it still allow it now — so the answers live in one
+/// place rather than being decided twice.
 enum Notifications {
     /// Present and true on an update notification's `userInfo`, so a click is
     /// routed to Settings rather than treated as a session to focus.

@@ -3,9 +3,9 @@ import Foundation
 
 /// Talks to Ghostty over Apple events. Read-only half.
 ///
-/// **Raw `NSAppleEventDescriptor`, never `NSAppleScript`.** The message a
-/// scheduled continue sends is a user-editable text field, and building
-/// AppleScript source with it interpolated would make any quote in that field an
+/// **Raw `NSAppleEventDescriptor`, never `NSAppleScript`.** The line this app
+/// types comes from a user-editable text field, and building AppleScript source
+/// with it interpolated would make any quote in that field an
 /// arbitrary-code-execution route into a language that can drive every scriptable
 /// app on the machine. A raw event carries the string as data, where it cannot be
 /// read as syntax.
@@ -63,9 +63,10 @@ enum GhosttyScripting {
     /// Whether this app may control Ghostty.
     ///
     /// `promptIfNeeded` is the consent checkpoint, and it must be true in exactly
-    /// one place: arming a schedule, where the user is present and has just asked
-    /// for this. At fire time it must be false — a prompt raised at 04:00 sits
-    /// unanswered and blocks the delivery it was meant to authorise.
+    /// one place: the rename panel, where the user is present and has just asked
+    /// for this. Everywhere else it must be false — a prompt raised where nobody
+    /// chose it sits unanswered and blocks the very write it was meant to
+    /// authorise.
     ///
     /// Shipping it false everywhere made the grant unobtainable: macOS raises the
     /// prompt when an app first sends an Apple event, this check bailed out before
@@ -98,7 +99,7 @@ enum GhosttyScripting {
         case OSStatus(errAEEventWouldRequireUserConsent):
             // Only reachable when not prompting: the user has never been asked.
             // Reported as not-permitted so delivery refuses and says so, and the
-            // arming path is what actually raises the prompt.
+            // rename panel is what actually raises the prompt.
             return .failure(.notPermitted)
         default:
             return .failure(.unreadable("permission check returned \(status)"))
@@ -113,7 +114,7 @@ enum GhosttyScripting {
     /// it is how a surface list silently becomes wrong. Nine windows cost a few
     /// milliseconds and this runs once per delivery.
     static func surfaces(pid: pid_t, promptIfNeeded: Bool = false)
-        -> Result<[ContinueDelivery.Surface], Failure>
+        -> Result<[TerminalDelivery.Surface], Failure>
     {
         if case .failure(let failure) = automationPermission(
             pid: pid, promptIfNeeded: promptIfNeeded)
@@ -135,7 +136,7 @@ enum GhosttyScripting {
         }
         guard count > 0 else { return .success([]) }
 
-        var surfaces: [ContinueDelivery.Surface] = []
+        var surfaces: [TerminalDelivery.Surface] = []
         for index in 1...count {
             let specifier = objectSpecifier(
                 container: nil, form: AEKeyword(formAbsolutePosition),
@@ -150,7 +151,7 @@ enum GhosttyScripting {
             let directory =
                 property(Code.workingDirectory, of: specifier, in: pid) ?? ""
             surfaces.append(
-                ContinueDelivery.Surface(id: id, title: name, workingDirectory: directory))
+                TerminalDelivery.Surface(id: id, title: name, workingDirectory: directory))
         }
         return .success(surfaces)
     }
@@ -201,7 +202,7 @@ enum GhosttyScripting {
     /// this command would itself have been a type-into-the-wrong-window route.
     static func writeText(_ text: String, toSurface surfaceId: String, pid: pid_t) -> Bool {
         // The action string is Ghostty's, not a shell's, and the message has
-        // already been reduced to a single line by `ContinueScheduler.sanitize`
+        // already been reduced to a single line by `SessionRename.sanitize`
         // — which is what keeps a newline from becoming an unrequested Return.
         performAction(
             onSurface: surfaceId, pid: pid, parameter: Write.onTerminal,

@@ -121,9 +121,12 @@ the hook did not record is treated as one.
 
 ## Writing into a terminal
 
-Two features write rather than read: scheduled continues and renaming from the
-app. Both go through the same channel and the same proof-then-write ordering, and
-both refuse rather than guess.
+One feature writes rather than reads: renaming a session from the app, which
+types `/rename <name>` into the session's own pane. It proves the pane before
+writing — the session must sit at a finished turn, the agent must own the
+terminal's foreground, and the pane must still be the one that was resolved —
+and refuses rather than guesses, because typing into the wrong session cannot
+be undone.
 
 Two channels exist, and the tmux one is checked first:
 
@@ -134,9 +137,6 @@ Two channels exist, and the tmux one is checked first:
 
 tmux is tried first rather than as a fallback, specifically so a session that
 needs no Automation grant is never asked for one.
-
-The refusals, and why they are most of the feature, are in
-[scheduled continues](scheduled-continues.md).
 
 ## Where the code lives
 

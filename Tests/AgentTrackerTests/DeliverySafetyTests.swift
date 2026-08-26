@@ -35,7 +35,7 @@ final class DeliverySafetyTests {
     }
 
     private var deliveryFiles: [String] {
-        ["GhosttyScripting.swift", "ContinueSender.swift", "ContinueSchedules.swift"]
+        ["GhosttyScripting.swift", "SessionRename.swift", "DeliveryChannels.swift"]
     }
 
     /// The message is a user-editable text field. Interpolating it into
@@ -49,22 +49,22 @@ final class DeliverySafetyTests {
         }
     }
 
-    /// A permission prompt at fire time is a prompt nobody is there to answer,
-    /// and it would block the delivery it was meant to authorise.
+    /// The Automation prompt is allowed in exactly one place — the rename
+    /// panel's resolution, where the user is present and just asked — and the
+    /// write path must never reach it. Asserted on the DELIVERY path rather
+    /// than on the scripting layer, because forbidding it everywhere is what
+    /// once made the grant unobtainable and delivery permanently refuse.
     @Test func automationIsNeverPreflightedWithAPrompt() throws {
-        // The prompt is allowed in exactly one place — arming — and the sender
-        // must never reach it. Asserted on the DELIVERY path rather than on the
-        // scripting layer, because forbidding it everywhere is what made the
-        // grant unobtainable and the feature permanently refuse.
-        let sender = try code("ContinueSender.swift")
-        #expect(sender.contains("promptIfNeeded") == false)
-        for op in ["surfaces:", "writeText:", "pressReturn:"] {
-            #expect(sender.contains(op), "delivery no longer routes \(op) through ChannelOps")
+        for file in ["SessionRename.swift", "DeliveryChannels.swift"] {
+            let text = try code(file)
+            #expect(text.contains("promptIfNeeded") == false, "\(file) can raise the prompt")
         }
-
-        let schedules = try code("ContinueSchedules.swift")
+        let sender = try code("SessionRename.swift")
+        for op in ["ops.writeText(", "ops.pressReturn("] {
+            #expect(sender.contains(op), "delivery no longer routes \(op) through the ops")
+        }
         #expect(
-            schedules.contains("promptIfNeeded: true"),
+            try code("RenameEditor.swift").contains("promptIfNeeded: true"),
             "nothing asks for the Automation grant, so it can never be obtained")
     }
 
@@ -72,7 +72,7 @@ final class DeliverySafetyTests {
     /// different windows, driven by an in-memory click count. Correct for
     /// focusing; catastrophic for typing. Delivery must resolve its own target.
     @Test func deliveryNeverReusesTheFocusRotation() throws {
-        for file in deliveryFiles + ["ContinueDelivery.swift"] {
+        for file in deliveryFiles + ["TerminalDelivery.swift"] {
             let text = try code(file)
             for forbidden in ["chooseAmbiguous", "nextFocusRotation", "TerminalFocuser.focus"] {
                 #expect(text.contains(forbidden) == false, "\(file) references \(forbidden)")
@@ -126,7 +126,7 @@ final class DeliverySafetyTests {
     }
 
     /// Return is its own call, reachable only after a successful write. If these
-    /// ever merge into one command, the ordering test in ContinueSenderTests
+    /// ever merge into one command, the ordering test in SessionRenameTests
     /// stops proving anything.
     @Test func typingAndPressingReturnStayTwoSeparateOperations() throws {
         let scripting = try source("GhosttyScripting.swift")
@@ -135,7 +135,7 @@ final class DeliverySafetyTests {
         // sheet this app can neither see nor dismiss.
         #expect(scripting.contains("performAction"))
 
-        let sender = try source("ContinueSender.swift")
+        let sender = try source("SessionRename.swift")
         #expect(sender.contains("guard ops.writeText("))
         #expect(sender.contains("guard ops.pressReturn("))
     }

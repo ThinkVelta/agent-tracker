@@ -53,8 +53,8 @@ enum Doctor {
         print("")
         print(
             "not checked: Ghostty Automation. The status query itself can block for "
-                + "over a minute,\n             so it is left to Settings > General > "
-                + "Permission to control Ghostty.")
+                + "over a minute;\n             renaming a session from the app asks "
+                + "for the grant when it needs it.")
         print("")
         print(Diagnosis.summary(findings))
         return Diagnosis.exitCode(findings)

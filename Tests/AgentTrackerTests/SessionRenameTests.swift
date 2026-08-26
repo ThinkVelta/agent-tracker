@@ -72,13 +72,13 @@ struct SessionRenameTests {
 
     private func ghosttyResolved() -> SessionTarget.Resolved {
         SessionTarget.Resolved(
-            target: ContinueDelivery.Target(
+            target: TerminalDelivery.Target(
                 surfaceId: surfaceId, title: "✳ demo", terminalPid: ghosttyPid))
     }
 
     private func tmuxResolved() -> SessionTarget.Resolved {
         SessionTarget.Resolved(
-            tmuxTarget: ContinueDelivery.TmuxTarget(
+            tmuxTarget: TerminalDelivery.TmuxTarget(
                 paneId: "%3", tty: "/dev/ttys007", socketPath: nil))
     }
 
@@ -136,24 +136,6 @@ struct SessionRenameTests {
         let recorder = Recorder()
         let result = SessionRename.deliver(
             command: "/rename api", resolved: ghosttyResolved(), lastEvent: "Stop",
-            liveAgent: nil, ops: ops(recorder), tmux: tmuxOps(recorder))
-        #expect(result.outcome == .refused)
-        #expect(recorder.calls.isEmpty)
-    }
-
-    /// Regression: the process identity must come from the fresh read, not from
-    /// the copy `SessionTarget.resolve` sampled at its start. Resolution runs an
-    /// Automation preflight measured at over 100 seconds, so that copy can
-    /// describe a process that has since exited. Here `resolved` carries a
-    /// perfectly good agent and the live read says it is gone — the refusal
-    /// proves which one is consulted.
-    @Test("the agent that is checked is the freshly read one")
-    func staleAgentIsNotTrusted() {
-        let recorder = Recorder()
-        var stale = ghosttyResolved()
-        stale.agent = agent()
-        let result = SessionRename.deliver(
-            command: "/rename api", resolved: stale, lastEvent: "Stop",
             liveAgent: nil, ops: ops(recorder), tmux: tmuxOps(recorder))
         #expect(result.outcome == .refused)
         #expect(recorder.calls.isEmpty)

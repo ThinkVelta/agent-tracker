@@ -86,10 +86,6 @@ struct AgentSession: Codable, Identifiable, Equatable {
     var transcriptPath: String?
     var termProgram: String?
     var lastMessage: String?
-    /// The mode the agent is running in, as its hook reported it. For
-    /// this is the only source: it publishes no transcript for the app to read
-    /// one out of, and `ContinueDelivery` treats an absent mode as permitted.
-    var permissionMode: String?
     /// Which terminal pane the session occupies, as the hook found it. Every
     /// field is optional: it depends on the terminal, and a session the
     /// scanner discovers never had a hook run at all.
@@ -136,7 +132,7 @@ struct AgentSession: Codable, Identifiable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case schema, sessionId, pid, cwd, state, reason, lastEvent, notificationType
         case updatedAt, stateChangedAt, transcriptPath, termProgram, lastMessage
-        case terminal, permissionMode, backgroundTasks, seenBackgroundTaskIds, spawnedByPid
+        case terminal, backgroundTasks, seenBackgroundTaskIds, spawnedByPid
     }
 
     var id: String { sessionId }

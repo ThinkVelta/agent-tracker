@@ -38,15 +38,9 @@ final class SessionStore: ObservableObject {
     /// and then that session goes quiet — so it has to be remembered rather
     /// than re-derived. Entries expire on their own reset time.
     private(set) var accountLimits = AccountLimits()
-    /// The reset each row may be armed against, keyed by session id. Only rows
-    /// a limit actually explains appear here, so the arming affordance and the
-    /// row's own wording can never disagree.
-    private(set) var armableResetBySession: [String: Date] = [:]
     private let usageWatcher = ClaudeUsageWatcher()
-    private let continueSchedules: ContinueSchedules
-    /// The shared instance, for the same reason the schedules use theirs: the
-    /// dropdown observes it directly, and a second one here would mute rows the
-    /// menu never sees.
+    /// The shared instance: the dropdown observes it directly, and a second
+    /// one here would mute rows the menu never sees.
     private let muted = SessionKeySet.muted
     private let pinned = SessionKeySet.pinned
     /// Dot/chip state filter for the dropdown. Set both by clicking a dot in
@@ -77,8 +71,8 @@ final class SessionStore: ObservableObject {
     /// A leftover would not merely show a phantom row. The provider field is no
     /// longer read, so it would be indistinguishable from a Claude session:
     /// Codex's hooks write `lastEvent: "Stop"` too, which is the event the
-    /// arming gate reads, so the row could be armed and typed into. Scoping the
-    /// read is what makes that impossible rather than unlikely.
+    /// rename gate reads, so the row could be typed into. Scoping the read is
+    /// what makes that impossible rather than unlikely.
     nonisolated static func isOwnStateFile(_ file: URL) -> Bool {
         file.pathExtension == "json"
             && file.lastPathComponent.hasPrefix("claude-code-")
@@ -143,16 +137,9 @@ final class SessionStore: ObservableObject {
     init() {
         statuslineDirectory = StatuslineDirectory()
         claudeRegistry = ClaudeSessionRegistry()
-        // The shared instance rather than an injected one: the dropdown observes
-        // it directly, so a second instance here would arm one set of schedules
-        // and display another.
-        continueSchedules = ContinueSchedules.shared
         try? FileManager.default.createDirectory(
             at: Self.sessionsDirectory, withIntermediateDirectories: true
         )
-        // A pass always comes from here, never from the scheduler itself, so
-        // there is exactly one place that reads the clock for both.
-        continueSchedules.requestPass = { [weak self] in self?.reload() }
         // Read now rather than waiting for the sink below: that delivers on a
         // later turn of the main actor, and the first pass must already know
         // the threshold or a one-shot render never sees a stale row.
@@ -257,26 +244,9 @@ final class SessionStore: ObservableObject {
         }
 
         // The limit is account-wide, so two rows must not straddle its reset and
-        // disagree about whether it has passed.
-        // Two maps, deliberately keyed differently, because they answer different
-        // questions. The provider one is for the scheduler: a usage limit is
-        // account-wide, so re-arming a repeating schedule looks up the account's
-        // reset. The session one is for the UI: only a row the limit actually
-        // explains may be armed, and a provider-keyed lookup would offer the
-        // clock on every Claude row the moment any one of them was blocked.
-        var blockingReset: Date?
-        var armableBySession: [String: Date] = [:]
-        merged = merged.map { session in
-            let limit = accountLimits.blockingLimit(now: now)
-            if let moment = limit?.resetsAt {
-                blockingReset = moment
-                if UsageLimitPresentation.explains(session, limit: limit, now: now) {
-                    armableBySession[session.sessionId] = moment
-                }
-            }
-            return UsageLimitPresentation.apply(limit, to: session, now: now)
-        }
-        armableResetBySession = armableBySession
+        // disagree about whether it has passed — one lookup for the whole pass.
+        let blockingLimit = accountLimits.blockingLimit(now: now)
+        merged = merged.map { UsageLimitPresentation.apply(blockingLimit, to: $0, now: now) }
         let readings = UsageSummary.readings(from: accountLimits, now: now)
         if usage != readings { usage = readings }
 
@@ -307,12 +277,6 @@ final class SessionStore: ObservableObject {
             focusRotation = focusRotation.filter { live.contains($0.key) }
         }
         advanceClockIfNeeded(at: now)
-        // The tail of the pass, sharing its single `now`. A scheduler that read
-        // its own clock here would let the schedule pass and the session pass
-        // disagree about the present, which is the bug class that bit this
-        // feature's predecessors three times.
-        continueSchedules.reconcile(
-            sessions: sessions, blockingReset: blockingReset, now: now)
         // Change-only, and NOT DEBUG-gated: this is the line that makes a bug
         // report from the installed app useful, and rebuilds fire on every
         // hook event and timer tick so the change filter is what keeps the
@@ -463,10 +427,10 @@ final class SessionStore: ObservableObject {
 
     /// Reads one session's state file straight from disk, off any actor.
     ///
-    /// Delivery needs the session as it is *now*, not as the pass that scheduled
-    /// it saw it: fires in one fan-out are twenty seconds apart, so by the third
-    /// one "the turn had finished" is a claim about the past. Reading the file
-    /// rather than the published array is also what keeps this callable from the
+    /// A rename needs the session as it is *now*, not as the panel last saw it:
+    /// resolving a pane can take over a minute, so by the time it returns "the
+    /// turn had finished" is a claim about the past. Reading the file rather
+    /// than the published array is also what keeps this callable from the
     /// detached delivery task without hopping to the main actor.
     nonisolated static func loadSessionFromDisk(sessionId: String) -> AgentSession? {
         let decoder = JSONDecoder()

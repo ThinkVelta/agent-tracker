@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The inline panel under a row that is red for a background shell: what the
 /// shell is, how long it has run, and the button that ends it. Inline for the
-/// same reason `ContinueEditor` is, and a second step on purpose — the row's
+/// same reason `RenameEditor` is, and a second step on purpose — the row's
 /// control opens this, and only the button here stops anything.
 struct BackgroundShellPanel: View {
     let task: BackgroundTask

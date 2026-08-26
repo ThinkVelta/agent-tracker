@@ -47,8 +47,8 @@ final class SessionKeySet: ObservableObject {
     /// the app was closed.
     private var absentSince: [String: Date] = [:]
 
-    /// Its own key, never shared with another value in this domain — the
-    /// schedules learned that the hard way.
+    /// Its own key, never shared with another value in this domain, so two
+    /// stores can never clobber each other's writes.
     init(defaults: UserDefaults = .standard, storageKey: String) {
         self.defaults = defaults
         self.storageKey = storageKey
