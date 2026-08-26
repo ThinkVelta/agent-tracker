@@ -30,10 +30,12 @@ watches that directory and renders state. See README for the full picture.
   - `TerminalFocusObserver.swift` — auto-acknowledges sessions whose terminal
     the user visits directly (3s dwell, exact unambiguous matches only)
   - `MenuContentView.swift` — dropdown UI
-- `integrations/` — hook script + statusline wrapper + onboarding CLI (Python,
-  stdlib only) + idempotent installers + uninstaller. The statusline wrapper is
-  opt-in: it occupies Claude's single `statusLine` slot to capture the usage
-  windows, then `exec`s whatever command it displaced
+- `integrations/` — hook script + statusline wrapper + built-in statusline
+  renderer + onboarding CLI (Python, stdlib only) + idempotent installers +
+  uninstaller. The statusline wrapper is opt-in: it occupies Claude's single
+  `statusLine` slot to capture the usage windows, then `exec`s whatever command
+  it displaced — or the shipped renderer, when the record's `display` key says
+  `builtin` (`StatuslineSetup` on the Swift side reads and flips that key)
 - `docs/` — user-facing documentation: troubleshooting, the statusline wrapper,
   permissions, uninstalling, and how it works. **A different
   audience from this file** — `docs/` is for people and agents *using* the app,
@@ -56,7 +58,8 @@ watches that directory and renders state. See README for the full picture.
   `CODESIGN_IDENTITY` overrides); `make install` places it in /Applications.
   First-run onboarding shows once (`--onboarding` re-opens it on demand)
 - Onboard: `./install.sh` (interactive picker; `--agents claude --yes`
-  for automation, `--statusline`/`--no-statusline` for Claude's usage windows;
+  for automation, `--statusline`/`--no-statusline` for Claude's usage windows,
+  `--statusline-builtin` to also show the shipped statusline;
   `integrations/uninstall.sh` reverses it)
 - Docs images: `./scripts/make-docs-images.sh` renders the README's assets from
   synthetic sessions (`scripts/demo-sessions.py`) via the app's own

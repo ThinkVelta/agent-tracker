@@ -246,12 +246,13 @@ and how writing into a terminal is gated.
   documents the four routes that were tried and closed. **Naming one of them
   fixes it**; see [troubleshooting](docs/troubleshooting.md).
 - **Usage numbers and context readings need the statusline payload.** The
-  usage strip reads `rate_limits` and the per-row percentage reads
-  `context_window`. The payload reaches the app only through the
-  [statusline wrapper](docs/statusline.md) or your own script dumping it, so
-  without one the app says it cannot tell rather than claiming you have room
-  left. Session names travel separately, through `~/.claude/sessions/`, so
-  rows and window matching keep their names either way.
+  usage strip reads `rate_limits`, and only from the
+  [statusline wrapper](docs/statusline.md)'s own capture; the per-row
+  `context_window` percentage also arrives from your own script dumping the
+  payload. Without a source the app says it cannot tell rather than claiming
+  you have room left. Session names travel separately, through
+  `~/.claude/sessions/`, so rows and window matching keep their names either
+  way.
 
 ## Build from source
 
@@ -290,11 +291,14 @@ run `./integrations/uninstall.sh` (add `--purge` to also delete
 Claude's usage windows and context pressure are a separate opt-in, because
 capturing them means
 occupying the one `statusLine` slot in `~/.claude/settings.json`. The picker
-asks, or pass `--statusline` (`--no-statusline` to skip the question). The
-wrapper saves the payload and then runs your previous statusline command with
-the same bytes on its stdin, so what you see is unchanged; the displaced setting
-is recorded under `~/.agent-tracker/` and restored on uninstall. An unrecognized
-`statusLine` is left alone rather than replaced.
+asks, or pass `--statusline` (`--no-statusline` to skip the question,
+`--statusline-builtin` for Agent Tracker's own statusline). The wrapper saves
+the payload and then runs your previous statusline command with the same bytes
+on its stdin — or, when you choose it, shows Agent Tracker's own line instead:
+model, context %, the 5h/7d usage windows, git branch and directory. Either
+way the displaced setting is recorded under `~/.agent-tracker/` and restored
+on uninstall, the choice can be flipped any time in Settings › General, and an
+unrecognized `statusLine` is left alone rather than replaced.
 
 ## Roadmap
 

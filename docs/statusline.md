@@ -1,10 +1,13 @@
 # The statusline wrapper
 
 Optional, and the single thing that most changes how much Agent Tracker can tell
-you. Installing it is one flag:
+you. Installing it is one flag — or the **Claude statusline** picker in the
+app's Settings › General, which drives the same installer:
 
 ```sh
-./install.sh --statusline      # or --no-statusline to decline the question
+./install.sh --statusline           # capture; your own statusline keeps rendering
+./install.sh --statusline-builtin   # capture AND show Agent Tracker's statusline
+# or --no-statusline to decline the question
 ```
 
 ## What it is for
@@ -38,6 +41,27 @@ inside `~/.claude/settings.json`, because writing your own keys into someone
 else's config file is how config files end up unparseable. Uninstalling reads
 that file to put your original back.
 
+## Which statusline you see
+
+The capture is the same either way; what renders behind it is a choice, stored
+as a `display` key in that same record file:
+
+- **Keep my statusline** (the default, and what plain `--statusline` does): the
+  wrapper becomes whatever command it displaced, with the same bytes on stdin.
+  An empty slot stays a blank line.
+- **Agent Tracker's** (`--statusline-builtin`, or the Settings picker): the
+  wrapper becomes the shipped renderer instead, which shows the model, effort,
+  context %, the 5h/7d usage windows with their reset times, lines changed this
+  session, the git branch with a dirty mark, and the working directory. Your
+  previous statusline stays recorded and comes back when you switch away.
+
+Switching between the two installed states edits only the `display` key in
+Agent Tracker's own record — `~/.claude/settings.json` is written once at
+install and once at restore, never per switch. The app's Settings picker is the
+convenient way to flip it; re-running the installer with the other flag does
+the same (a plain `--statusline` re-run never silently reverts a builtin
+choice).
+
 ## Where the payload lands
 
 ```text
@@ -59,12 +83,14 @@ it.
 You have two options, and the second needs no wrapper at all.
 
 **Let the wrapper run yours behind it.** This is what `--statusline` does, and
-what the previous section describes. Nothing about your status line changes.
+what the previous sections describe. Nothing about your status line changes.
 
 **Or dump the payload yourself.** The app also reads
 `~/.claude/statusline-last.json`, so if your own script writes its stdin there,
-you get exact window titles with no wrapper involved. This route does not give
-the app the usage or context numbers unless your script writes the whole payload.
+you get exact window titles and per-row context readings with no wrapper
+involved. The **usage windows are the exception**: the app reads those only
+from the wrapper's own capture, never from a file someone's script happens to
+maintain — so the 5h/7d strip stays absent on this route.
 
 ## When it produces nothing, and none of it is a bug
 
@@ -81,15 +107,22 @@ known" and "nothing used" must not look the same.
 
 ## Removing it
 
-`integrations/uninstall.sh` restores whatever the wrapper displaced, or removes
-the `statusLine` entry entirely if there was nothing there before. See
+Pick **Off** in Settings › General › Claude statusline, or run
+`integrations/install-claude-code.sh --statusline-restore`. Both restore
+whatever the wrapper displaced, or remove the `statusLine` entry entirely if
+there was nothing there before, and touch nothing else.
+`integrations/uninstall.sh` does the same as part of removing everything — see
 [uninstall](uninstall.md).
 
 ## Design constraints
 
-Worth knowing if you are reading the script:
+Worth knowing if you are reading the scripts (the wrapper and the built-in
+renderer alike):
 
 - **Python standard library only**, like every integration here.
 - **It must never break a session.** Every failure path ends in a silent exit 0,
   including the directory creation. A blank status line is a cosmetic loss; a
   traceback printed onto Claude's status line is not.
+- **Git is the renderer's one subprocess**, and the one thing that can stall,
+  so every call carries a timeout and any failure just drops the branch
+  segment.
