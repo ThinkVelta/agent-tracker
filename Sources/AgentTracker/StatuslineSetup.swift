@@ -43,17 +43,34 @@ enum StatuslineSetup {
             record: try? Data(contentsOf: recordURL))
     }
 
-    /// Whether the user has a statusline of their own in the slot — the thing
-    /// that decides onboarding's default: displace nothing, or fill an empty
-    /// slot with the built-in display. The wrapper's own registration does not
-    /// count as theirs.
+    /// Whether the user has a statusline of their own — the thing that decides
+    /// onboarding's default: displace nothing, or fill an empty slot with the
+    /// built-in display.
     static func hasOwnStatusline() -> Bool {
-        guard let data = try? Data(contentsOf: claudeSettingsURL),
-            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+        ownStatusline(
+            settings: try? Data(contentsOf: claudeSettingsURL),
+            record: try? Data(contentsOf: recordURL))
+    }
+
+    /// The wrapper's own registration does not count as theirs — but what it
+    /// *displaced* does, read from the record, so a re-run of onboarding over
+    /// an existing keep-mine install cannot misread "wrapper" as "no statusline"
+    /// and default someone's own display away. Mirrors `own_statusline` in
+    /// `integrations/onboard.py`; the two must keep agreeing.
+    static func ownStatusline(settings: Data?, record: Data?) -> Bool {
+        guard let settings,
+            let object = (try? JSONSerialization.jsonObject(with: settings)) as? [String: Any],
             let command = Doctor.statusLineCommand(in: object),
             !command.trimmingCharacters(in: .whitespaces).isEmpty
         else { return false }
-        return !command.contains("agent-tracker-statusline")
+        guard command.contains("agent-tracker-statusline") else { return true }
+        guard let record,
+            let stored = (try? JSONSerialization.jsonObject(with: record)) as? [String: Any],
+            let wrapped = stored["wrapped"] as? [String: Any],
+            let wrappedCommand = wrapped["command"] as? String,
+            !wrappedCommand.trimmingCharacters(in: .whitespaces).isEmpty
+        else { return false }
+        return true
     }
 
     /// Pure, so tests can feed it raw bytes. Unreadable input reads as the

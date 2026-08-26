@@ -55,6 +55,38 @@ struct StatuslineSetupTests {
         #expect(StatuslineSetup.mode(settings: garbage, record: nil) == .off)
     }
 
+    // MARK: - Own-statusline detection (onboarding's default)
+
+    @Test func theirOwnCommandCountsAsOwn() {
+        let own = settings(command: "bash ~/.claude/statusline.sh")
+        #expect(StatuslineSetup.ownStatusline(settings: own, record: nil))
+    }
+
+    /// The wrapper is not theirs — but what it displaced is, so a re-run of
+    /// onboarding over a keep-mine install must not misread "wrapper" as "no
+    /// statusline" and default their display away. Mirrors `own_statusline`
+    /// in integrations/onboard.py.
+    @Test func aDisplacedCommandBehindTheWrapperStillCountsAsOwn() {
+        let record = bytes(["schema": 1, "wrapped": ["type": "command", "command": "bash x.sh"]])
+        #expect(StatuslineSetup.ownStatusline(settings: settings(command: wrapper), record: record))
+    }
+
+    @Test func theWrapperOverAnEmptySlotIsNotTheirs() {
+        let emptyRecord = bytes(["schema": 1, "wrapped": NSNull()])
+        #expect(
+            StatuslineSetup.ownStatusline(settings: settings(command: wrapper), record: emptyRecord)
+                == false)
+        #expect(
+            StatuslineSetup.ownStatusline(settings: settings(command: wrapper), record: nil)
+                == false)
+    }
+
+    @Test func anEmptySlotIsNotTheirs() {
+        let empty = settings(command: nil)
+        #expect(StatuslineSetup.ownStatusline(settings: empty, record: nil) == false)
+        #expect(StatuslineSetup.ownStatusline(settings: nil, record: nil) == false)
+    }
+
     // MARK: - The display write
 
     private func temporaryRecord(_ object: Any?) throws -> URL {
