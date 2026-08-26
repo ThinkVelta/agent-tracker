@@ -10,6 +10,7 @@ Usage:
   onboard.py                              # interactive checkbox picker
   onboard.py --agents claude --yes  # non-interactive (CI, scripts)
   onboard.py --agents claude --statusline --yes   # …and capture usage windows
+  onboard.py --agents claude --statusline-builtin --yes  # …showing agent-tracker's statusline
 
 Design constraints: dependency-free (stdlib only) and must degrade gracefully
 when stdin is not a TTY — no hangs, no tracebacks, flag-driven fallback.
@@ -85,6 +86,12 @@ STATUSLINE_PLAN = [
     ),
 ]
 
+BUILTIN_PLAN_ITEM = (
+    "show agent-tracker's own statusline (model, context %, 5h/7d usage, git "
+    "branch, directory); whatever the slot held is recorded and restored on "
+    "uninstall"
+)
+
 # Everything that makes this less than absolute, said before it is installed
 # rather than discovered later.
 STATUSLINE_CAVEATS = [
@@ -106,8 +113,8 @@ STATUSLINE_CAVEATS = [
         "you have room left."
     ),
     (
-        "If you have no statusline of your own, the line stays blank; the "
-        "wrapper prints nothing by itself."
+        "If you have no statusline of your own and decline agent-tracker's, "
+        "the line stays blank; the wrapper prints nothing by itself."
     ),
 ]
 
@@ -228,13 +235,75 @@ def ask_statusline():
     return answer.strip().lower() in ("y", "yes")
 
 
-def show_plan(selected, statusline=False):
+def own_statusline():
+    """Whether settings.json holds a statusline that is the user's own.
+
+    The wrapper's own registration does not count: what matters for the
+    display question is whether there is anything of theirs to keep, which a
+    previous install recorded in the wrapped file.
+    """
+    import json
+
+    try:
+        with open(os.path.expanduser("~/.claude/settings.json")) as f:
+            settings = json.load(f)
+    except (OSError, ValueError):
+        return False
+    current = settings.get("statusLine")
+    command = current.get("command") if isinstance(current, dict) else None
+    if not (isinstance(command, str) and command.strip()):
+        return False
+    if "agent-tracker-statusline" not in command:
+        return True
+    base = os.environ.get("AGENT_TRACKER_DIR") or os.path.expanduser("~/.agent-tracker")
+    try:
+        with open(os.path.join(base, "claude-statusline-wrapped.json")) as f:
+            record = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return isinstance(record, dict) and isinstance(record.get("wrapped"), dict)
+
+
+def ask_display():
+    """Which statusline to show behind the capture: theirs, or the built-in.
+
+    Only reached interactively and only after yes to capturing. With nothing
+    of their own to keep there is no choice to offer — the built-in is what
+    makes the line non-blank, so it is applied with a note rather than asked.
+    """
+    if not own_statusline():
+        print(
+            wrap_bullet(
+                "You have no statusline of your own, so agent-tracker's will "
+                "show: model, context %, the 5h/7d usage windows, git branch "
+                "and directory.",
+                indent="  ",
+                subsequent="  ",
+            )
+        )
+        return "builtin"
+    try:
+        answer = input(
+            bold("Keep your own statusline, or show agent-tracker's?") + " [K/a] "
+        )
+    except EOFError:
+        return ""
+    # Anything not explicitly choosing agent-tracker's keeps their own: the
+    # conservative reading of a mistyped answer leaves their display alone.
+    return "builtin" if answer.strip().lower() in ("a", "agent-tracker") else ""
+
+
+def show_plan(selected, statusline=False, display=""):
     print(bold("This will:"))
     for agent in selected:
         print(f"\n  {agent['name']}:")
         plan = list(agent["plan"])
         if agent["key"] == "claude" and statusline:
             plan += STATUSLINE_PLAN
+            if display == "builtin":
+                # The built-in display replaces the keeps-running promise, so
+                # say what actually happens instead of both.
+                plan[-1] = BUILTIN_PLAN_ITEM
         for item in plan:
             print(wrap_bullet(item))
     print()
@@ -251,7 +320,7 @@ def confirm():
     return answer.strip().lower() in ("y", "yes")
 
 
-def run_installer(agent, statusline=False):
+def run_installer(agent, statusline=False, display=""):
     """Run one install script, prefixing its output. Returns True on success.
 
     One exit code is a warning rather than a failure: install-claude-code.sh
@@ -262,7 +331,9 @@ def run_installer(agent, statusline=False):
     script = os.path.join(SCRIPT_DIR, agent["script"])
     command = ["bash", script]
     if agent["key"] == "claude" and statusline:
-        command.append("--statusline")
+        command.append(
+            "--statusline-builtin" if display == "builtin" else "--statusline"
+        )
     proc = subprocess.run(command, capture_output=True, text=True, check=False)
     if proc.returncode == 0:
         for line in proc.stdout.strip().splitlines():
@@ -331,7 +402,21 @@ def main():
         action="store_false",
         help="leave the statusLine setting alone without being asked",
     )
+    parser.add_argument(
+        "--statusline-builtin",
+        action="store_true",
+        help="capture the usage windows AND show agent-tracker's own statusline "
+        "(implies --statusline; your previous statusline is recorded and "
+        "restored on uninstall)",
+    )
     args = parser.parse_args()
+    if args.statusline_builtin:
+        if args.statusline is False:
+            print(
+                "--statusline-builtin conflicts with --no-statusline", file=sys.stderr
+            )
+            return 2
+        args.statusline = True
 
     print_banner()
     interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -359,6 +444,7 @@ def main():
 
     claude_selected = any(agent["key"] == "claude" for agent in selected)
     statusline = args.statusline
+    display = "builtin" if args.statusline_builtin else ""
     if statusline and not claude_selected:
         print(dim("--statusline only applies to Claude Code, which is not selected."))
         print()
@@ -370,14 +456,20 @@ def main():
         # stays off, because a pipe pressing Enter is not a person saying
         # yes; --statusline is the explicit route there.
         statusline = ask_statusline() if interactive else False
+        if statusline and interactive:
+            display = ask_display()
         print()
 
-    show_plan(selected, statusline=bool(statusline))
+    show_plan(selected, statusline=bool(statusline), display=display)
     if not args.yes:
         if not interactive:
             print("stdin is not a TTY; re-run with --yes to proceed, e.g.:")
             keys = ",".join(agent["key"] for agent in selected)
-            extra = " --statusline" if statusline else ""
+            extra = ""
+            if statusline:
+                extra = (
+                    " --statusline-builtin" if display == "builtin" else " --statusline"
+                )
             print(f"  ./install.sh --agents {keys} --yes{extra}")
             return 1
         if not confirm():
@@ -386,7 +478,7 @@ def main():
 
     ok = True
     for agent in selected:
-        ok = run_installer(agent, statusline=bool(statusline)) and ok
+        ok = run_installer(agent, statusline=bool(statusline), display=display) and ok
     if not ok:
         print(red("\nSome integrations failed to install; see output above."))
         return 1
