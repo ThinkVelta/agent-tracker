@@ -117,10 +117,87 @@ private struct GeneralSettingsTab: View {
                     .frame(width: 180)
                 }
             }
+            // Its own card: everything above changes what the app shows, and
+            // this is the one control that edits Claude's own configuration.
+            SettingsCard {
+                SettingsRow(
+                    title: "Claude statusline",
+                    detail: "Claude has a single statusline slot; occupying it is how the "
+                        + "app reads the 5h/7d usage shown in the dropdown. Keep your own "
+                        + "statusline rendering behind the capture, or show Agent "
+                        + "Tracker's. Turning it off puts back what was there."
+                ) {
+                    Picker("", selection: statuslineBinding) {
+                        ForEach(StatuslineSetup.Mode.allCases) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .disabled(statuslineBusy)
+                }
+                if let note = statuslineNote {
+                    SettingsRow(title: "Not applied", detail: note, divided: true) {
+                        EmptyView()
+                    }
+                }
+            }
         }
         .padding(20)
-        .onReceive(statusTick) { _ in launchAtLogin = LoginItem.isEnabled }
-        .onAppear { launchAtLogin = LoginItem.isEnabled }
+        .onReceive(statusTick) { _ in
+            launchAtLogin = LoginItem.isEnabled
+            if !statuslineBusy { statuslineMode = StatuslineSetup.currentMode() }
+        }
+        .onAppear {
+            launchAtLogin = LoginItem.isEnabled
+            statuslineMode = StatuslineSetup.currentMode()
+        }
+    }
+
+    @State private var statuslineMode: StatuslineSetup.Mode = .off
+    @State private var statuslineBusy = false
+    @State private var statuslineNote: String?
+
+    /// The picker reports the mode on disk, never the intent: selection kicks
+    /// off the change, and the control only moves when a re-read says it took.
+    private var statuslineBinding: Binding<StatuslineSetup.Mode> {
+        Binding(
+            get: { statuslineMode },
+            set: { applyStatusline($0) })
+    }
+
+    /// Between the two installed states only the app's own record changes, so
+    /// that is done directly. To and from off go through the bundled installer,
+    /// which backs up settings.json and refuses rather than guesses.
+    private func applyStatusline(_ target: StatuslineSetup.Mode) {
+        let current = StatuslineSetup.currentMode()
+        guard target != current, !statuslineBusy else { return }
+        statuslineBusy = true
+        statuslineNote = nil
+        Task {
+            var failure: String?
+            switch target {
+            case .off:
+                let outcome = await HookSetup.runInstaller(arguments: ["--statusline-restore"])
+                if !outcome.succeeded { failure = outcome.output }
+            case .keepOwn, .builtin:
+                if current == .off {
+                    let outcome = await HookSetup.runInstaller(
+                        arguments: [target == .builtin ? "--statusline-builtin" : "--statusline"])
+                    if !outcome.succeeded { failure = outcome.output }
+                } else if !StatuslineSetup.setDisplay(builtin: target == .builtin) {
+                    failure =
+                        "The wrapper's record file is missing or unreadable; "
+                        + "re-run ./install.sh to repair it."
+                }
+            }
+            statuslineMode = StatuslineSetup.currentMode()
+            statuslineNote = failure.map {
+                $0.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            statuslineBusy = false
+        }
     }
 
     private var loginBinding: Binding<Bool> {
