@@ -24,10 +24,11 @@ struct OnboardingView: View {
         case failed(String)
     }
 
-    private let claudePresent = HookSetup.claudePresent()
+    @State private var claudePresent = HookSetup.claudePresent()
 
-    /// Live status: the user grants Accessibility in System Settings, not in
-    /// this window, so the checkmark has to notice by itself.
+    /// Live status: the user grants Accessibility in System Settings and
+    /// installs Claude Code in a terminal, not in this window, so the
+    /// checkmarks have to notice by themselves.
     private let statusTick = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     private var hooksInstalled: Bool { hookInstalled && claudePresent }
@@ -47,6 +48,7 @@ struct OnboardingView: View {
         .onReceive(statusTick) { _ in
             accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
             launchAtLogin = LoginItem.isEnabled
+            claudePresent = HookSetup.claudePresent()
         }
     }
 
@@ -106,8 +108,8 @@ struct OnboardingView: View {
 
     private var hooksDetail: String {
         guard claudePresent else {
-            return "Claude Code not found (~/.claude). Install it, then run ./install.sh from "
-                + "the repo."
+            return "Claude Code not found (~/.claude). Install it and this step unlocks "
+                + "by itself."
         }
         return hooksInstalled
             ? "Claude Code will report its sessions here."
