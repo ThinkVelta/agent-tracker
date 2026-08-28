@@ -578,6 +578,26 @@ private struct AboutSettingsTab: View {
                 }
             }
             .onAppear { installSource = InstallSource.current }
+            SettingsCard {
+                SettingsRow(
+                    title: "Support this project",
+                    detail: "Free and open source. A star or a contribution keeps it going."
+                ) {
+                    HStack(spacing: 10) {
+                        Link("GitHub Sponsors", destination: SupportThanks.sponsorsURL)
+                        Link("PayPal", destination: SupportThanks.paypalURL)
+                    }
+                    .font(.system(size: 11))
+                }
+                SettingsRow(
+                    title: "Thanks after updates",
+                    detail: "A small thank-you window, once per new version.",
+                    divided: true
+                ) {
+                    Toggle("", isOn: $preferences.supportThanks)
+                        .labelsHidden()
+                }
+            }
             credits
         }
         .padding(20)

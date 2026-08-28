@@ -118,6 +118,8 @@ enum RenderPreview {
         switch view {
         case "onboarding":
             content = AnyView(OnboardingView())
+        case "support":
+            content = AnyView(SupportThanksView())
         case "settings":
             content = AnyView(SettingsPreviewStack())
         case "shell":
@@ -183,7 +185,7 @@ enum RenderPreview {
         default:
             FileHandle.standardError.write(
                 Data(
-                    ("[preview] --view expects popover, onboarding, settings, "
+                    ("[preview] --view expects popover, onboarding, support, settings, "
                         + "shell, icons, menubar or architecture\n").utf8))
             exit(2)
         }

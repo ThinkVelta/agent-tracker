@@ -56,7 +56,8 @@ watches that directory and renders state. See README for the full picture.
   block for over a minute
 - Bundle: `make app` → `dist/AgentTracker.app` (self-validating; ad-hoc signed,
   `CODESIGN_IDENTITY` overrides); `make install` places it in /Applications.
-  First-run onboarding shows once (`--onboarding` re-opens it on demand)
+  First-run onboarding shows once (`--onboarding` re-opens it on demand); the
+  support thanks window shows once per update (`--support-thanks` re-opens it)
 - Onboard: `./install.sh` (interactive picker; `--agents claude --yes`
   for automation, `--statusline`/`--no-statusline` for Claude's usage windows,
   `--statusline-builtin` to also show the shipped statusline;

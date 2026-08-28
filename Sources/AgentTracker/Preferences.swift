@@ -152,6 +152,14 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(updateInstallsAutomatically, forKey: Keys.updateInstalls) }
     }
 
+    // MARK: - Support
+
+    /// The once-per-update thanks window. On by default; its own footer and
+    /// Settings › About both flip this.
+    @Published var supportThanks: Bool {
+        didSet { defaults.set(supportThanks, forKey: Keys.supportThanks) }
+    }
+
     // MARK: - Quit confirmation
 
     /// Ask before quitting from the panel's power button. Turned off by the
@@ -175,6 +183,7 @@ final class Preferences: ObservableObject {
         static let notifyNeedsYou = "notifyNeedsYou"
         static let updateChecks = "updateChecksAutomatically"
         static let updateInstalls = "updateInstallsAutomatically"
+        static let supportThanks = "supportThanksAfterUpdates"
     }
 
     /// The mode 0.1.0 stored when monochrome was one of the icon modes rather
@@ -246,5 +255,6 @@ final class Preferences: ObservableObject {
             defaults.object(forKey: Keys.updateChecks) as? Bool ?? true
         updateInstallsAutomatically =
             defaults.object(forKey: Keys.updateInstalls) as? Bool ?? false
+        supportThanks = defaults.object(forKey: Keys.supportThanks) as? Bool ?? true
     }
 }
