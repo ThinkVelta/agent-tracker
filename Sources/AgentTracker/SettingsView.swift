@@ -196,7 +196,7 @@ private struct GeneralSettingsTab: View {
                 } else if !StatuslineSetup.setDisplay(builtin: false) {
                     failure =
                         "The wrapper's record file is missing or unreadable; "
-                        + "re-run ./install.sh to repair it."
+                        + "switch the statusline to Off and back to repair it."
                 }
             }
             statuslineMode = StatuslineSetup.currentMode()

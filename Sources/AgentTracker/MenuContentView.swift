@@ -332,7 +332,7 @@ struct MenuContentView: View {
                 .padding(.bottom, 2)
             Text("No agent sessions")
                 .font(.system(size: 12, weight: .medium))
-            Text("Start a Claude Code session,\nor run ./install.sh from the repo.")
+            Text("Start a Claude Code session\nand it will show up here.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
