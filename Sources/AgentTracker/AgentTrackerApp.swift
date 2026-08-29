@@ -45,8 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var workspaceObserver: NSObjectProtocol?
     private var focusObserver: TerminalFocusObserver?
     private var onboardingWindow: NSWindow?
+    private var supportWindow: NSWindow?
 
     private static let onboardingCompletedKey = "onboardingCompleted"
+    private static let supportThanksVersionKey = "supportThanksLastVersion"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Menu bar only — no Dock icon, no app switcher entry.
@@ -70,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         setUpStatusItem(for: store)
         focusObserver = TerminalFocusObserver(store: store)
         showOnboardingIfNeeded()
+        showSupportThanksIfNeeded()
         // After everything the update could interrupt is set up: the launch
         // check may (opt-in) install and relaunch on the spot.
         UpdateScheduler.shared.start()
@@ -114,6 +117,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center()
         window.delegate = self
         onboardingWindow = window
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// First launch after an update only — see `SupportThanks.shouldShow`.
+    /// The version is recorded before the decision, so a crash or an opt-out
+    /// can never queue up a stale ask, and skipped while onboarding is up:
+    /// that window owns the first launch. `--support-thanks` forces it open
+    /// on demand (debugging, screenshots), like `--onboarding` does.
+    private func showSupportThanksIfNeeded() {
+        let previous = AppDefaults.shared.string(forKey: Self.supportThanksVersionKey)
+        if AppInfo.isBundled {
+            AppDefaults.shared.set(AppInfo.version, forKey: Self.supportThanksVersionKey)
+        }
+        let forced = CommandLine.arguments.contains("--support-thanks")
+        let due =
+            onboardingWindow == nil
+            && SupportThanks.shouldShow(
+                previousVersion: previous, currentVersion: AppInfo.version,
+                isBundled: AppInfo.isBundled, enabled: Preferences.shared.supportThanks)
+        guard forced || due else { return }
+
+        let host = NSHostingController(
+            rootView: SupportThanksView { [weak self] in self?.supportWindow?.close() })
+        let window = NSWindow(contentViewController: host)
+        window.styleMask = [.titled, .closable, .fullSizeContentView]
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isReleasedWhenClosed = false
+        window.center()
+        window.delegate = self
+        supportWindow = window
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -217,14 +252,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     /// Any dismissal of the onboarding window — Done, Skip, the close button,
-    /// Cmd+W — counts as completed, so it can never nag twice.
+    /// Cmd+W — counts as completed, so it can never nag twice. The support
+    /// window shares the focus hand-back but has no flag to set: its
+    /// once-per-version record was written before it was shown.
     func windowWillClose(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === onboardingWindow else {
+        guard let window = notification.object as? NSWindow else { return }
+        if window === onboardingWindow {
+            UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
+            onboardingWindow = nil
+        } else if window === supportWindow {
+            supportWindow = nil
+        } else {
             return
         }
-        UserDefaults.standard.set(true, forKey: Self.onboardingCompletedKey)
-        onboardingWindow = nil
-        // Onboarding activated this accessory app; hand focus back like the
+        // The window activated this accessory app; hand focus back like the
         // popover does, or the user is stranded with no key window.
         NSApp.deactivate()
     }
