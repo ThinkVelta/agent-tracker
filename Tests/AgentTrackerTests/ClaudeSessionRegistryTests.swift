@@ -148,35 +148,59 @@ final class ClaudeSessionRegistryTests {
         #expect(registry.entry(forSessionId: "anything") == nil)
     }
 
-    /// Claude writes `nameSource: "derived"` for the slug it invents, and omits
-    /// the field once the name was chosen — `--name` at launch, or `/rename`,
-    /// which clears it explicitly. Read off the 2.1.227 binary, because the
-    /// whole "show it always or only when ambiguous" rule hangs on it.
+    /// `nameSource` names where a session's name came from, and the whole
+    /// "show it always or only when ambiguous" rule hangs on reading it right.
+    /// Claude prints a name beside a session for exactly three cases — absent,
+    /// `user`, `peer` — and that is the rule mirrored here.
     @Test func aChosenNameIsToldApartFromADerivedOne() {
         let derived = ClaudeSessionRegistry.parse(
             Data(#"{"sessionId":"s1","name":"planner-a5","nameSource":"derived"}"#.utf8))
         #expect(derived?.nameIsChosen == false)
 
+        // `/rename` and `--name`. Spelled out since 2.1.251; before that the
+        // same act wrote no source at all, which is why absence still counts.
+        let renamed = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s2","name":"the migration","nameSource":"user"}"#.utf8))
+        #expect(renamed?.nameIsChosen == true)
+
         let chosen = ClaudeSessionRegistry.parse(
-            Data(#"{"sessionId":"s2","name":"the migration"}"#.utf8))
+            Data(#"{"sessionId":"s3","name":"the migration"}"#.utf8))
         #expect(chosen?.nameIsChosen == true)
+
+        // A peer naming a session is still somebody naming it, and Claude
+        // prints it for that reason.
+        let peer = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s4","name":"reviewer","nameSource":"peer"}"#.utf8))
+        #expect(peer?.nameIsChosen == true)
+
+        // The rest of the vocabulary is Claude naming its own session, however
+        // it got there — a clash it settled, a slug it generated, a hook.
+        for source in ["collision", "auto", "hook"] {
+            let generated = ClaudeSessionRegistry.parse(
+                Data(#"{"sessionId":"s5","name":"planner-b7","nameSource":"\#(source)"}"#.utf8))
+            #expect(generated?.nameIsChosen == false, "\(source) is not a chosen name")
+        }
+
+        // Case is folded, as it is for `status`. A differently-spelled `user`
+        // is the token we already know, not one of the unknown values below.
+        let shouted = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s5b","name":"the migration","nameSource":"User"}"#.utf8))
+        #expect(shouted?.nameIsChosen == true)
 
         // A value nobody has seen counts as derived. This decides whether to
         // put a name on every row, and guessing "chosen" is the wrong way to be
         // wrong about that.
         let unknown = ClaudeSessionRegistry.parse(
-            Data(#"{"sessionId":"s3","name":"planner-b7","nameSource":"something-new"}"#.utf8))
+            Data(#"{"sessionId":"s6","name":"planner-b7","nameSource":"something-new"}"#.utf8))
         #expect(unknown?.nameIsChosen == false)
 
-        // JSON has two spellings for "no source", and the rename path writes
-        // the one that is normally omitted. If it is ever spelled out instead,
-        // it must not demote a renamed session back to a slug.
+        // JSON has two spellings for "no source"; they must agree.
         let explicitNull = ClaudeSessionRegistry.parse(
-            Data(#"{"sessionId":"s5","name":"the migration","nameSource":null}"#.utf8))
+            Data(#"{"sessionId":"s7","name":"the migration","nameSource":null}"#.utf8))
         #expect(explicitNull?.nameIsChosen == true)
 
         // No name at all is not a chosen name.
-        let unnamed = ClaudeSessionRegistry.parse(Data(#"{"sessionId":"s4"}"#.utf8))
+        let unnamed = ClaudeSessionRegistry.parse(Data(#"{"sessionId":"s8"}"#.utf8))
         #expect(unnamed?.nameIsChosen == false)
     }
 
