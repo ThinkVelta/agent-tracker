@@ -31,6 +31,7 @@ struct DiagnosisTests {
             staleSessionCount: 0,
             liveSessions: [live("/Users/dev/code/api-gateway", "api-gateway-02")],
             statuslinePayloadPresent: true,
+            registryContract: RegistryContract.Observation(entriesRead: 3),
             accessibilityGranted: true,
             notifications: .authorized)
     }
@@ -627,5 +628,72 @@ struct DiagnosisTests {
             #expect(
                 slugs.contains(anchor), "no `## ` heading in troubleshooting.md yields #\(anchor)")
         }
+    }
+
+    // MARK: - Registry format drift
+
+    /// The whole point: a value Claude started writing that this build has no
+    /// case for is surfaced, by name, on an otherwise healthy machine.
+    @Test("an unknown registry value warns and names the value")
+    func registryDriftWarns() throws {
+        var input = healthy
+        input.registryContract = RegistryContract.Observation(
+            entriesRead: 4, unknownNameSources: ["sponsor"])
+        let finding = try #require(
+            Diagnosis.findings(input).first { $0.check == "registry format" })
+        #expect(finding.level == .warn)
+        #expect(finding.detail.contains("\"sponsor\""))
+        #expect(finding.detail.contains("nameSource"))
+        #expect(finding.anchor == "the-doctor-reports-an-unknown-registry-value")
+    }
+
+    /// A warning, never a failure. `--doctor` exiting non-zero would break
+    /// scripts over a machine that works fine and is merely ahead of us.
+    @Test("registry drift does not fail the exit code")
+    func registryDriftDoesNotFail() {
+        var input = healthy
+        input.registryContract = RegistryContract.Observation(
+            entriesRead: 1, unknownStatuses: ["compacting"])
+        #expect(Diagnosis.exitCode(Diagnosis.findings(input)) == 0)
+    }
+
+    /// Both fields drift at once when a release changes more than one, and both
+    /// have to reach the reader — reporting whichever came first would hide the
+    /// other.
+    @Test("both fields are reported when both drift")
+    func bothFieldsReported() throws {
+        var input = healthy
+        input.registryContract = RegistryContract.Observation(
+            entriesRead: 2, unknownNameSources: ["sponsor"], unknownStatuses: ["compacting"])
+        let finding = try #require(
+            Diagnosis.findings(input).first { $0.check == "registry format" })
+        #expect(finding.detail.contains("sponsor"))
+        #expect(finding.detail.contains("compacting"))
+    }
+
+    /// Nothing read is `unknown`, not `ok`. No Claude session has to be
+    /// running, and calling that a clean bill claims more than the sweep saw.
+    @Test("no registry entries reports unknown rather than ok")
+    func noEntriesIsUnknown() throws {
+        var input = healthy
+        input.registryContract = RegistryContract.Observation()
+        let finding = try #require(
+            Diagnosis.findings(input).first { $0.check == "registry format" })
+        #expect(finding.level == .unknown)
+        #expect(Diagnosis.exitCode(Diagnosis.findings(input)) == 0)
+    }
+
+    /// An unreadable file rides along on the finding instead of taking a line
+    /// of its own, and does not by itself demote a clean sweep.
+    @Test("unreadable files are mentioned without becoming their own check")
+    func unreadableFilesRideAlong() throws {
+        var input = healthy
+        input.registryContract = RegistryContract.Observation(
+            entriesRead: 2, unreadableFiles: ["torn.json"])
+        let findings = Diagnosis.findings(input)
+        let finding = try #require(findings.first { $0.check == "registry format" })
+        #expect(finding.level == .ok)
+        #expect(finding.detail.contains("1 file(s) unreadable"))
+        #expect(findings.filter { $0.check == "registry format" }.count == 1)
     }
 }

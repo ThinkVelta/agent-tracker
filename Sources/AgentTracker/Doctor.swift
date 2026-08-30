@@ -121,6 +121,8 @@ enum Doctor {
         input.liveSessions = liveSessions(
             live, claude: claude, statuslineTitles: statuslineTitles(statusline))
 
+        input.registryContract = RegistryContract.observe(registryPayloads(claude: claude))
+
         input.accessibilityGranted = TerminalFocuser.hasAccessibilityPermission
         input.notifications = notificationState()
         return input
@@ -427,6 +429,21 @@ enum Doctor {
                 name: SessionStore.coalescedWindowTitle(
                     registryName: names[session.sessionId],
                     statuslineTitle: statuslineTitles[session.sessionId]))
+        }
+    }
+
+    /// Every registry file, unparsed, for the contract check.
+    ///
+    /// Raw `Data` on purpose: `RegistryContract.observe` has to see the values
+    /// as written, and every parser on this side normalizes an unrecognized one
+    /// away — which is the very thing being looked for.
+    private static func registryPayloads(claude: URL) -> [(file: String, data: Data)] {
+        let directory = claude.appendingPathComponent("sessions")
+        let files =
+            (try? FileManager.default.contentsOfDirectory(
+                at: directory, includingPropertiesForKeys: nil)) ?? []
+        return files.filter { $0.pathExtension == "json" }.map { file in
+            (file: file.lastPathComponent, data: (try? Data(contentsOf: file)) ?? Data())
         }
     }
 

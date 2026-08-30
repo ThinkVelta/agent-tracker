@@ -192,10 +192,14 @@ final class ClaudeSessionRegistry {
     /// read a closed vocabulary out of a file another program owns, and a
     /// spelling of a token we already know is not one of the unknown values
     /// the `false` below is guarding against.
+    ///
+    /// Reads the set `RegistryContract` checks the registry against, so the
+    /// rule and the drift check cannot come to disagree about what a chosen
+    /// name is.
     private nonisolated static func sourceMeansChosen(_ source: Any?) -> Bool {
         if source == nil || source is NSNull { return true }
         guard let source = (source as? String)?.lowercased() else { return false }
-        return source == "user" || source == "peer"
+        return RegistryContract.chosenNameSources.contains(source)
     }
 
     /// Timestamps are epoch milliseconds.

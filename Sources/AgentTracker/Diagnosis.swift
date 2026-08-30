@@ -155,6 +155,9 @@ enum Diagnosis {
         /// Whether any statusline source has a payload — the wrapper's capture
         /// or a user's own `statusline-last.json`.
         var statuslinePayloadPresent = false
+        /// What a sweep of Claude's session registry found, against the values
+        /// this build knows how to read. See `RegistryContract`.
+        var registryContract = RegistryContract.Observation()
         var accessibilityGranted = false
         var notifications: NotificationState = .unavailable
     }
@@ -189,6 +192,7 @@ enum Diagnosis {
         }
         findings.append(statuslineFinding(input))
         findings.append(contentsOf: sessionFindings(input))
+        findings.append(registryFormatFinding(input))
         findings.append(contentsOf: permissionFindings(input))
         return findings
     }

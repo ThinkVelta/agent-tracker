@@ -7,7 +7,8 @@
 ```
 
 It checks the mechanical half of this page (hooks, the hook script, the
-statusline wrapper, session files, permissions), and where a finding has a
+statusline wrapper, session files, permissions, and whether Claude's session
+registry still speaks a vocabulary this build knows), and where a finding has a
 section here that explains it, prints the link. Read-only: it never writes,
 installs or grants anything, and never raises a permission dialog, so it is safe
 to run on a machine that is already misbehaving.
@@ -234,6 +235,41 @@ If the row never turns red, check that the hook is current (`AgentTracker
 --doctor`) and that Claude Code is 2.1.145 or later, which is when `Stop` started
 listing background tasks. The state file's `backgroundTasks` field shows what
 the hook recorded.
+
+## The doctor reports an unknown registry value
+
+```text
+WARN registry format  Claude writes value(s) this build does not know: nameSource "sponsor"
+```
+
+Nothing is broken yet. Agent Tracker reads a few fields out of
+`~/.claude/sessions/<pid>.json`, a file Claude Code owns and can change without
+announcement — the fields are undocumented, so no release note mentions them.
+The doctor compares what is actually written there against the values this
+build has cases for, and says so when it meets one it has never seen.
+
+The consequence is quiet, which is why the check exists. An unrecognized value
+falls to a default: an unknown `nameSource` is treated as a name Claude
+invented, so a name **you** chose may stop appearing on its row; an unknown
+`status` expresses no opinion, so a session may sit in the wrong group. Both
+look like the app forgetting something rather than like an error.
+
+There is nothing to fix locally — the value is Claude's, not yours. Report it
+with the version that produced it:
+
+```sh
+claude --version
+grep -ho '"nameSource":"[^"]*"' ~/.claude/sessions/*.json | sort -u
+```
+
+A new value usually means the app needs a case for it in the next release. If
+names are already showing wrongly, [renaming a session](#a-rename-is-refused)
+still works — the app prefers a name you set in its own UI over anything the
+registry says.
+
+The check reads only what the sessions on this machine happen to produce, so
+silence is not proof the format is unchanged — only that nothing unfamiliar
+turned up.
 
 ## Where to look when none of this fits
 
