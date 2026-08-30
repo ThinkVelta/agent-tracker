@@ -31,8 +31,9 @@ final class ClaudeSessionRegistry {
         let name: String?
         /// Whether the user picked that name rather than Claude inventing it.
         ///
-        /// Read from `nameSource`: `user`, `peer`, `derived`, `collision`,
-        /// `auto` or `hook`, anything else normalized away to absent. The
+        /// Read from `nameSource`. Chosen means absent, `user` or `peer`;
+        /// Claude's own sources (`derived`, `collision`, `auto`, `hook`) are
+        /// not, and neither is a value this build has never heard of. The
         /// distinction is a whole feature: a name someone typed is worth
         /// showing, a generated slug only when two rows would be identical.
         ///
@@ -186,9 +187,14 @@ final class ClaudeSessionRegistry {
 
     /// Claude's own rule for a name worth printing, read off the binary rather
     /// than a parallel one invented here. See `Entry.nameIsChosen`.
+    ///
+    /// Case-folded on the way in for the same reason `Status(raw:)` is: both
+    /// read a closed vocabulary out of a file another program owns, and a
+    /// spelling of a token we already know is not one of the unknown values
+    /// the `false` below is guarding against.
     private nonisolated static func sourceMeansChosen(_ source: Any?) -> Bool {
         if source == nil || source is NSNull { return true }
-        guard let source = source as? String else { return false }
+        guard let source = (source as? String)?.lowercased() else { return false }
         return source == "user" || source == "peer"
     }
 

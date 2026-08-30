@@ -181,6 +181,12 @@ final class ClaudeSessionRegistryTests {
             #expect(generated?.nameIsChosen == false, "\(source) is not a chosen name")
         }
 
+        // Case is folded, as it is for `status`. A differently-spelled `user`
+        // is the token we already know, not one of the unknown values below.
+        let shouted = ClaudeSessionRegistry.parse(
+            Data(#"{"sessionId":"s5b","name":"the migration","nameSource":"User"}"#.utf8))
+        #expect(shouted?.nameIsChosen == true)
+
         // A value nobody has seen counts as derived. This decides whether to
         // put a name on every row, and guessing "chosen" is the wrong way to be
         // wrong about that.
