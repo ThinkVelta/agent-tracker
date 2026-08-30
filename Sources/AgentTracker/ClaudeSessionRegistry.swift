@@ -31,13 +31,20 @@ final class ClaudeSessionRegistry {
         let name: String?
         /// Whether the user picked that name rather than Claude inventing it.
         ///
-        /// Read from `nameSource`, which Claude writes as `"derived"` for the
-        /// slug it makes up at startup and **omits** when the name was chosen —
-        /// `--name` at launch, or `/rename` later, which explicitly clears it.
-        /// Verified against the 2.1.227 binary rather than guessed, because the
+        /// Read from `nameSource`: `user`, `peer`, `derived`, `collision`,
+        /// `auto` or `hook`, anything else normalized away to absent. The
         /// distinction is a whole feature: a name someone typed is worth
-        /// showing, a generated slug is only worth showing when two rows would
-        /// otherwise be identical.
+        /// showing, a generated slug only when two rows would be identical.
+        ///
+        /// **Absence does not mean "chosen"** — it only used to. Through
+        /// 2.1.227 the rename path wrote `nameSource: void 0`, so an omitted
+        /// field was the one mark a chosen name carried; by 2.1.251 rename
+        /// writes the source through, and inferring from absence had every
+        /// renamed session reading as a derived slug.
+        ///
+        /// So match the values Claude itself prints a name for — absent,
+        /// `user`, `peer` — which keeps this in step with the user's own
+        /// terminal and right for both spellings of a rename.
         let nameIsChosen: Bool
         let status: Status
         let statusUpdatedAt: Date?
@@ -159,18 +166,11 @@ final class ClaudeSessionRegistry {
             let sessionId = object["sessionId"] as? String, !sessionId.isEmpty
         else { return nil }
         let name = (object["name"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        // Absent means chosen, and so does an explicit null — both say "no
-        // source", and JSON has two spellings for that. The rename path writes
-        // `nameSource: void 0`, which `JSON.stringify` omits today; a
-        // serializer that spelled it `null` instead would otherwise silently
-        // demote every renamed session back to a derived slug, which is the
-        // exact failure this field exists to prevent.
-        //
-        // An unrecognized value stays derived: this decides whether to put a
+        // An unrecognized value is not chosen: this decides whether to put a
         // name on every row, and inventing a reason to do that from a string
         // nobody has seen is the wrong way to be wrong.
         let source = object["nameSource"]
-        let nameIsChosen = name != nil && (source == nil || source is NSNull)
+        let nameIsChosen = name != nil && Self.sourceMeansChosen(source)
         let cwd = (object["cwd"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         return Entry(
             sessionId: sessionId,
@@ -182,6 +182,14 @@ final class ClaudeSessionRegistry {
             statusUpdatedAt: Self.date(from: object["statusUpdatedAt"]),
             waitingFor: (object["waitingFor"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
+    }
+
+    /// Claude's own rule for a name worth printing, read off the binary rather
+    /// than a parallel one invented here. See `Entry.nameIsChosen`.
+    private nonisolated static func sourceMeansChosen(_ source: Any?) -> Bool {
+        if source == nil || source is NSNull { return true }
+        guard let source = source as? String else { return false }
+        return source == "user" || source == "peer"
     }
 
     /// Timestamps are epoch milliseconds.

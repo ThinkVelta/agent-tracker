@@ -19,10 +19,10 @@ import Foundation
 /// all.
 ///
 /// A name the user *chose* is different and always shows. Claude marks the
-/// difference itself: `nameSource: "derived"` for its own slug, and nothing at
-/// all once someone runs `/rename` (or launched with `--name`). Suppressing a
-/// name somebody typed, because the app judged the row unambiguous, would be
-/// the app overruling them about their own session.
+/// difference itself, in `nameSource` — see `ClaudeSessionRegistry.Entry
+/// .nameIsChosen`. Suppressing a name somebody typed, because the app judged
+/// the row unambiguous, would be the app overruling them about their own
+/// session.
 enum SessionNaming {
     /// Row titles keyed by session id.
     ///
