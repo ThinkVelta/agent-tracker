@@ -98,7 +98,7 @@ struct BackgroundShellTests {
         child.arguments = ["-c", "sleep 23"]
         try child.run()
         defer { child.terminate() }
-        let listed = BackgroundShells.children(of: getpid())
+        let listed = Self.childrenOnceListing(child.processIdentifier)
         #expect(listed.contains { $0.pid == child.processIdentifier })
         #expect(
             listed.first { $0.pid == child.processIdentifier }?.arguments.contains("sleep 23")
@@ -113,11 +113,29 @@ struct BackgroundShellTests {
         child.arguments = ["-c", "eval 'sleep 27' < /dev/null"]
         try child.run()
         defer { if child.isRunning { child.terminate() } }
+        Self.childrenOnceListing(child.processIdentifier)
         let task = BackgroundTask(id: "b1", type: "shell", command: "sleep 27")
         let absent = BackgroundTask(id: "b2", type: "shell", command: "sleep 9999")
         #expect(BackgroundShells.stop(absent, ownerPid: Int(getpid())) == .notFound)
         #expect(BackgroundShells.stop(task, ownerPid: Int(getpid())) == .stopped)
         child.waitUntilExit()
         #expect(!child.isRunning)
+    }
+
+    /// `Process.run()` returns when the spawn succeeded, which is a moment
+    /// before the child is visible to the `sysctl` walk `children(of:)` does —
+    /// reading the table right away failed roughly one run in three. Poll until
+    /// it lands, and give up quietly so a genuine absence still fails on the
+    /// expectation it was about rather than here.
+    @discardableResult private static func childrenOnceListing(_ pid: pid_t)
+        -> [BackgroundShells.Candidate]
+    {
+        var listed: [BackgroundShells.Candidate] = []
+        for _ in 0..<100 {
+            listed = BackgroundShells.children(of: getpid())
+            if listed.contains(where: { $0.pid == pid }) { break }
+            usleep(20_000)
+        }
+        return listed
     }
 }
