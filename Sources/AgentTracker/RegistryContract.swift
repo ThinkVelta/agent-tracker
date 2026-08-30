@@ -38,9 +38,12 @@ enum RegistryContract {
     /// rule and the check cannot drift apart.
     static let chosenNameSources: Set<String> = ["user", "peer"]
 
-    /// Claude's activity vocabulary. `ClaudeSessionRegistryTests` asserts
-    /// `Status(raw:)` recognizes exactly these, so the two cannot disagree.
-    static let knownStatuses: Set<String> = ["busy", "shell", "idle", "waiting"]
+    /// Claude's activity vocabulary, derived from the parser's own cases
+    /// rather than restated. A second list would go stale exactly like the
+    /// field this check is watching — and a one-way test over it would still
+    /// pass while it did.
+    static let knownStatuses: Set<String> = Set(
+        ClaudeSessionRegistry.Status.allCases.compactMap(\.raw))
 
     /// What one sweep of the registry directory found.
     struct Observation: Equatable {

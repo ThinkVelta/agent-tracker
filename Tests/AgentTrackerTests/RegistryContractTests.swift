@@ -16,16 +16,37 @@ struct RegistryContractTests {
 
     // MARK: - The vocabularies cannot drift apart
 
-    /// `Status(raw:)` and `knownStatuses` describe the same set. Without this,
-    /// adding a case to one and not the other makes the check silently wrong in
-    /// whichever direction the omission fell.
-    @Test func theStatusVocabularyMatchesTheParser() {
-        for raw in RegistryContract.knownStatuses {
-            #expect(
-                ClaudeSessionRegistry.Status(raw: raw) != .unknown,
-                "\(raw) is listed as known but the parser has no case for it")
+    /// What can still go wrong now that the vocabulary is derived.
+    ///
+    /// An earlier version of this asserted that every known status parsed to
+    /// something, and called that "exactly" — it would have stayed green while
+    /// `Status(raw:)` grew a case the check knew nothing about, which is the
+    /// precise drift this file exists to catch, reproduced inside its own
+    /// guard.
+    ///
+    /// The fix was to delete the second list rather than to compare against it:
+    /// `knownStatuses` is now `Status.allCases`, so a new case propagates to
+    /// the check on its own and the two *cannot* disagree. Comparing them here
+    /// would assert a tautology. What remains genuinely breakable is the
+    /// mapping each case carries, so that is what this covers.
+    @Test func everyStatusCaseContributesADistinctToken() {
+        let cases = ClaudeSessionRegistry.Status.allCases
+
+        // A case added with `raw` returning nil would be invisible to the
+        // check while the parser accepted it — the one way the derivation can
+        // still be quietly holed. `.unknown` is the only case entitled to it.
+        #expect(cases.filter { $0.raw == nil } == [.unknown])
+
+        // Two cases returning the same token would make one unreachable, so a
+        // status would parse to the wrong case rather than to `.unknown`.
+        let tokens = cases.compactMap(\.raw)
+        #expect(tokens.count == Set(tokens).count, "two statuses share a token")
+
+        // Every token round-trips to the case it came from.
+        for status in cases where status.raw != nil {
+            #expect(ClaudeSessionRegistry.Status(raw: status.raw) == status)
         }
-        #expect(ClaudeSessionRegistry.Status(raw: "sponsor") == .unknown)
+        #expect(ClaudeSessionRegistry.Status(raw: "compacting") == .unknown)
     }
 
     /// A chosen source must be a known one. A value in `chosenNameSources` that

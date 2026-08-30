@@ -259,8 +259,12 @@ with the version that produced it:
 
 ```sh
 claude --version
-grep -ho '"nameSource":"[^"]*"' ~/.claude/sessions/*.json | sort -u
+grep -hoE '"(nameSource|status)":"[^"]*"' ~/.claude/sessions/*.json | sort -u
 ```
+
+The warning names which of the two fields drifted; the command lists every
+value present for both, so a report can say what the new one appeared
+alongside.
 
 A new value usually means the app needs a case for it in the next release. If
 names are already showing wrongly, [renaming a session](#a-rename-is-refused)
