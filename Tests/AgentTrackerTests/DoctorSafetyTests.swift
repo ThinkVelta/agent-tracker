@@ -33,7 +33,7 @@ final class DoctorSafetyTests {
     }
 
     private var diagnosticFiles: [String] {
-        ["Doctor.swift", "Diagnosis.swift", "RowAmbiguity.swift"]
+        ["Doctor.swift", "Diagnosis.swift", "RowAmbiguity.swift", "RegistryContract.swift"]
     }
 
     /// Every call that can put a dialog on screen. Each was located in the

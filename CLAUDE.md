@@ -153,5 +153,6 @@ Still defer — surface it instead of doing it silently — when the change is g
 
 Always-on, path-scoped conventions live in `.claude/rules/`; repeatable workflows live in
 `.claude/skills/` as slash commands (`/commit`, `/pr-open`, `/pr-babysit`, `/pr-iterate`,
-`/release`, `/cleanup`, `/wt-open`, `/wt-close`, `/wt-list`, `/wt-cleanup`, `/wt-help`). See
+`/release`, `/cleanup`, `/doctor`, `/wt-open`, `/wt-close`, `/wt-list`, `/wt-cleanup`,
+`/wt-help`). See
 `.claude/README.md` for how the pieces fit together.

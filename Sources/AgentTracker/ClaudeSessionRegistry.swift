@@ -59,7 +59,7 @@ final class ClaudeSessionRegistry {
     /// `["busy","shell","idle","waiting"]`, per the validator in 2.1.220 — but
     /// it is Claude's to change, so an unrecognized value maps to `.unknown`
     /// and expresses no opinion rather than being forced into a state.
-    enum Status: Equatable {
+    enum Status: Equatable, CaseIterable {
         /// The model is generating, or delegated agents are active. Claude
         /// derives it as `isLoading || delegatedActive`, so a lead session
         /// whose teammates and subagents are doing the work reads busy.
@@ -74,14 +74,26 @@ final class ClaudeSessionRegistry {
         case idle
         case unknown
 
-        init(raw: String?) {
-            switch raw?.lowercased() {
-            case "busy": self = .busy
-            case "shell": self = .shell
-            case "idle": self = .idle
-            case "waiting": self = .waiting
-            default: self = .unknown
+        /// The token Claude writes for this status, and nil for the one case
+        /// that is not a token at all.
+        ///
+        /// The vocabulary is spelled here **once**. `RegistryContract` derives
+        /// its known set from these rather than restating them, so a case added
+        /// to this enum and nowhere else cannot leave the drift check quietly
+        /// watching for a value the parser already accepts.
+        var raw: String? {
+            switch self {
+            case .busy: return "busy"
+            case .shell: return "shell"
+            case .waiting: return "waiting"
+            case .idle: return "idle"
+            case .unknown: return nil
             }
+        }
+
+        init(raw: String?) {
+            let token = raw?.lowercased()
+            self = Status.allCases.first { $0.raw != nil && $0.raw == token } ?? .unknown
         }
 
         /// Whether work is still outstanding, whoever is doing it: the model,
@@ -192,10 +204,14 @@ final class ClaudeSessionRegistry {
     /// read a closed vocabulary out of a file another program owns, and a
     /// spelling of a token we already know is not one of the unknown values
     /// the `false` below is guarding against.
+    ///
+    /// Reads the set `RegistryContract` checks the registry against, so the
+    /// rule and the drift check cannot come to disagree about what a chosen
+    /// name is.
     private nonisolated static func sourceMeansChosen(_ source: Any?) -> Bool {
         if source == nil || source is NSNull { return true }
         guard let source = (source as? String)?.lowercased() else { return false }
-        return source == "user" || source == "peer"
+        return RegistryContract.chosenNameSources.contains(source)
     }
 
     /// Timestamps are epoch milliseconds.
