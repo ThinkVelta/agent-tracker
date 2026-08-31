@@ -509,6 +509,12 @@ private struct UsageChip: View {
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }
+        // The tooltip is the only place the reset time is written, so its
+        // target has to be the whole chip. Without this it is only the drawn
+        // glyphs: the bar is 3pt tall in a row three times that, and the gaps
+        // between label, bar and number are not hit-testable at all — so the
+        // obvious thing to hover, the meter itself, mostly answers nothing.
+        .contentShape(Rectangle())
         .help(resetHelp)
     }
 }
