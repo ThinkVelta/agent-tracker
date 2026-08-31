@@ -34,6 +34,7 @@ struct SupportThanksView: View {
             .font(.system(size: 12))
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 32)
         }
         .padding(.bottom, 18)
