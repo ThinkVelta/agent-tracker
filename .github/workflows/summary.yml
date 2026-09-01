@@ -60,7 +60,7 @@ jobs:
       # race it, while the `/head` ref is updated synchronously on every push.
       # Must stay first — a local `uses: ./.github/actions/...` is resolved
       # from the working tree and does not exist until the checkout has run.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/head
 
