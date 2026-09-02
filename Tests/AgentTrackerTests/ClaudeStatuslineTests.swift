@@ -127,4 +127,26 @@ final class ClaudeStatuslineTests {
             .write(to: url)
         #expect(ClaudeStatusline.limits(at: url).count == 1)
     }
+
+    /// The capture is last-writer-wins across sessions, so a reading is only
+    /// meaningful together with which session rendered it.
+    @Test func aReportSaysWhichSessionRenderedIt() throws {
+        let report = try #require(
+            ClaudeStatusline.report(
+                in: payload(#"{"five_hour": {"used_percentage": 7, "resets_at": 1785787741}}"#)))
+        #expect(report.sessionId == "abc-123")
+        #expect(report.limits.count == 1)
+
+        // No `rate_limits` at all is still that session's report, with nothing
+        // in it — not "no report", which the caller could not tell from a
+        // missing file.
+        let quiet = try #require(ClaudeStatusline.report(in: payload(nil)))
+        #expect(quiet.sessionId == "abc-123")
+        #expect(quiet.limits.isEmpty)
+
+        // A foreign schema names no session; something that is not an object
+        // is not a report.
+        #expect(ClaudeStatusline.report(in: Data("{}".utf8))?.sessionId == nil)
+        #expect(ClaudeStatusline.report(in: Data("not json".utf8)) == nil)
+    }
 }

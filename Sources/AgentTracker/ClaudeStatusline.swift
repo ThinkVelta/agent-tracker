@@ -22,21 +22,45 @@ enum ClaudeStatusline {
         "seven_day": .weekly,
     ]
 
-    static func limits(in data: Data) -> [UsageLimit] {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let rateLimits = object["rate_limits"] as? [String: Any]
-        else { return [] }
-        return windowsByKey.compactMap { key, window in
+    /// One payload's readings, and which session rendered it. The capture is
+    /// last-writer-wins across sessions, and each session reports the numbers
+    /// *its* last response carried, so a reading is only meaningful together
+    /// with who said it.
+    struct Report: Equatable {
+        /// Nil on a payload with no `session_id` (a foreign schema).
+        var sessionId: String?
+        var limits: [UsageLimit]
+    }
+
+    /// Nil only for something that is not a JSON object at all; a payload with
+    /// no `rate_limits` is a report with nothing in it.
+    static func report(in data: Data) -> Report? {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        let sessionId = (object["session_id"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        guard let rateLimits = object["rate_limits"] as? [String: Any] else {
+            return Report(sessionId: sessionId, limits: [])
+        }
+        let limits = windowsByKey.compactMap { key, window -> UsageLimit? in
             guard let reported = rateLimits[key] as? [String: Any] else { return nil }
             return limit(from: reported, window: window)
         }
+        return Report(sessionId: sessionId, limits: limits)
+    }
+
+    static func limits(in data: Data) -> [UsageLimit] {
+        report(in: data)?.limits ?? []
     }
 
     /// Convenience for the polling caller: a missing or unreadable file is
     /// simply no reading.
+    static func report(at url: URL) -> Report? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return report(in: data)
+    }
+
     static func limits(at url: URL) -> [UsageLimit] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        return limits(in: data)
+        report(at: url)?.limits ?? []
     }
 
     private static func limit(from object: [String: Any], window: UsageLimit.Window) -> UsageLimit?
