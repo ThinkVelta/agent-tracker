@@ -222,10 +222,14 @@ final class SessionStore: ObservableObject {
         }
         fileSessions = loaded
         // A session that is gone takes its reading with it. The session that
-        // just wrote the payload is alive by definition, state file or not —
-        // its hook may simply not have run yet.
+        // *just* wrote the payload is alive by definition, state file or not —
+        // its hook may simply not have run yet. "Just" is the evidence: a
+        // capture nobody has rewritten in seconds is a leftover, and a
+        // leftover's session is only as alive as its state file says.
         var live = Set(loaded.map(\.sessionId))
-        if let sessionId = report?.sessionId { live.insert(sessionId) }
+        if let report, report.isFresh(now: Date()), let sessionId = report.sessionId {
+            live.insert(sessionId)
+        }
         statuslineUsage.retain(sessions: live)
         rebuild()
     }

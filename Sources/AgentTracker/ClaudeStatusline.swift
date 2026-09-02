@@ -30,7 +30,24 @@ enum ClaudeStatusline {
         /// Nil on a payload with no `session_id` (a foreign schema).
         var sessionId: String?
         var limits: [UsageLimit]
+        /// When the capture was written. Nil for a payload that did not come
+        /// from a file.
+        var modifiedAt: Date?
+
+        /// Whether the session that wrote this is evidently still writing.
+        ///
+        /// A live session rewrites the capture on every render, several times a
+        /// second while it works. A file nobody has touched for longer than
+        /// that was left behind by a session that stopped, and must not vouch
+        /// for it: a leftover's session is only as alive as its state file says.
+        func isFresh(now: Date) -> Bool {
+            guard let modifiedAt else { return false }
+            return now.timeIntervalSince(modifiedAt) < ClaudeStatusline.captureFreshness
+        }
     }
+
+    /// Well above the render cadence, well below anything a person would notice.
+    static let captureFreshness: TimeInterval = 5
 
     /// Nil only for something that is not a JSON object at all; a payload with
     /// no `rate_limits` is a report with nothing in it.
@@ -55,8 +72,12 @@ enum ClaudeStatusline {
     /// Convenience for the polling caller: a missing or unreadable file is
     /// simply no reading.
     static func report(at url: URL) -> Report? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return report(in: data)
+        guard let data = try? Data(contentsOf: url), var report = report(in: data) else {
+            return nil
+        }
+        let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+        report.modifiedAt = attributes?[.modificationDate] as? Date
+        return report
     }
 
     static func limits(at url: URL) -> [UsageLimit] {

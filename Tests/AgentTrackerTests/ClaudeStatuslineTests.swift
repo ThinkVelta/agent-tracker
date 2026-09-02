@@ -149,4 +149,33 @@ final class ClaudeStatuslineTests {
         #expect(ClaudeStatusline.report(in: Data("{}".utf8))?.sessionId == nil)
         #expect(ClaudeStatusline.report(in: Data("not json".utf8)) == nil)
     }
+
+    /// The writer of a capture is alive while it keeps rewriting it. A file
+    /// nobody has touched in a while was left behind, and must not vouch for
+    /// its session: with every session gone, the leftover would otherwise keep
+    /// a dead session's numbers on the strip until their reset.
+    @Test func aCaptureIsFreshOnlyWhileItIsBeingRewritten() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claude-statusline-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("claude-statusline.json")
+        try payload(#"{"five_hour": {"used_percentage": 7, "resets_at": 1785787741}}"#)
+            .write(to: url)
+        let now = Date()
+
+        let fresh = try #require(ClaudeStatusline.report(at: url))
+        #expect(fresh.isFresh(now: now))
+        #expect(fresh.sessionId == "abc-123")
+
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-600)], ofItemAtPath: url.path)
+        let stale = try #require(ClaudeStatusline.report(at: url))
+        #expect(!stale.isFresh(now: now))
+        // Still a reading — staleness is about who wrote it, not what it says.
+        #expect(stale.limits.count == 1)
+
+        // A payload that never came from a file has no age to vouch with.
+        #expect(ClaudeStatusline.report(in: payload(nil))?.isFresh(now: now) == false)
+    }
 }
