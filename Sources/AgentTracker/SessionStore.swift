@@ -33,11 +33,17 @@ struct SessionCounts: Equatable {
 @MainActor
 final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [AgentSession] = []
-    /// What is known about each provider's account limits. Sticky across
-    /// reloads: the evidence appears once, in whichever session hit the wall,
-    /// and then that session goes quiet — so it has to be remembered rather
-    /// than re-derived. Entries expire on their own reset time.
-    private(set) var accountLimits = AccountLimits()
+    /// Refusals, sticky across reloads: the evidence appears once, in whichever
+    /// session hit the wall, and then that session goes quiet — so it has to be
+    /// remembered rather than re-derived. Entries expire on their own reset.
+    ///
+    /// Refusals only. The statusline's readings used to accumulate here too, and
+    /// the by-strength merge that lets a refusal outrank a percentage also let a
+    /// pre-reset 65% outrank every 5% that followed it, for the rest of the
+    /// week. Those live in `statuslineUsage` instead, newest per session, and the
+    /// two are merged fresh on every pass.
+    private var refusals = AccountLimits()
+    private var statuslineUsage = StatuslineUsage()
     private let usageWatcher = ClaudeUsageWatcher()
     /// The shared instance: the dropdown observes it directly, and a second
     /// one here would mute rows the menu never sees.
@@ -199,8 +205,9 @@ final class SessionStore: ObservableObject {
         // wrapper rewrites this file every few hundred milliseconds per live
         // session, so a watcher would fire far more often than the display can
         // use, and re-reading ~1.5 KB on the tick we already run is cheaper.
-        for limit in ClaudeStatusline.limits(at: Self.claudeStatuslineURL) {
-            accountLimits.record(limit)
+        let report = ClaudeStatusline.report(at: Self.claudeStatuslineURL)
+        if let report {
+            statuslineUsage.record(report.limits, from: report.sessionId)
         }
         var loaded: [AgentSession] = []
         for (loadedSession, file) in Self.loadStateFiles() {
@@ -214,6 +221,16 @@ final class SessionStore: ObservableObject {
             loaded.append(session)
         }
         fileSessions = loaded
+        // A session that is gone takes its reading with it. The session that
+        // *just* wrote the payload is alive by definition, state file or not —
+        // its hook may simply not have run yet. "Just" is the evidence: a
+        // capture nobody has rewritten in seconds is a leftover, and a
+        // leftover's session is only as alive as its state file says.
+        var live = Set(loaded.map(\.sessionId))
+        if let report, report.isFresh(now: Date()), let sessionId = report.sessionId {
+            live.insert(sessionId)
+        }
+        statuslineUsage.retain(sessions: live)
         rebuild()
     }
 
@@ -240,8 +257,13 @@ final class SessionStore: ObservableObject {
         let sweeping = lastClockBucket != Self.clockBucket(at: now)
         let candidates = merged.filter { sweeping || $0.state == .needsYou }
         for limit in usageWatcher.check(candidates) {
-            accountLimits.record(limit)
+            refusals.record(limit)
         }
+        // This pass's account picture: refusals, with every live session's
+        // newest reading on top. Rebuilt rather than accumulated, so a number
+        // Claude lowered mid-window — an account-side reset, a boosted limit —
+        // comes down here on the next tick instead of at the window's end.
+        let accountLimits = statuslineUsage.merged(into: refusals)
 
         // The limit is account-wide, so two rows must not straddle its reset and
         // disagree about whether it has passed — one lookup for the whole pass.

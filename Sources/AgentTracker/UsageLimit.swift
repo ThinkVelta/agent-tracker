@@ -120,8 +120,15 @@ struct AccountLimits: Equatable {
     /// **Matching resets are the common case, not an edge case**: every session
     /// on one account shares that account's reset instant, and the same window is
     /// reported by the statusline and by a refusal. Those merge by strength —
-    /// usage only rises within a window, once reached it stays reached until the
-    /// reset, and the later of two near-identical resets is the unrounded one.
+    /// the higher of two sessions' percentages is the fresher view of the same
+    /// window, once reached it stays reached until the reset, and the later of
+    /// two near-identical resets is the unrounded one.
+    ///
+    /// By strength across *sources*, never across time. Claude does lower a
+    /// number mid-window — an account-side reset, a boosted limit — and a
+    /// reading merged in here can never come back down, so a source's older
+    /// reading must be replaced before it gets here. `StatuslineUsage` keeps
+    /// only each session's newest for exactly that reason.
     mutating func record(_ limit: UsageLimit) {
         guard let existing = byWindow[limit.window] else {
             byWindow[limit.window] = limit
