@@ -38,12 +38,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       # Provisions uv and swiftlint from .mise.toml, so CI runs the exact tool
       # versions pinned for dev machines.
       - name: Install pinned tools
-        uses: jdx/mise-action@v4.2.1
+        uses: jdx/mise-action@v4.2.5
         with:
           install: true
           cache: true
@@ -85,7 +85,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
 
       # The SwiftPM scaffolding lands via the menu-bar-mvp feature branch.
       # Until it merges to main, the steps below self-skip and the job stays

@@ -105,7 +105,7 @@ jobs:
       # by value below. This step must stay first, because a local action
       # referenced as `uses: ./.github/actions/...` is resolved from the
       # working tree and so does not exist until the checkout has run.
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@v7
         with:
           ref: refs/pull/${{ github.event.pull_request.number }}/head
 
