@@ -1,7 +1,7 @@
 ---
 name: wt-list
 description: List active worktrees with branch, status, sync state, and staleness info. Use this when the user asks what worktrees exist, wants to see what's in flight, check which branches have worktrees, or asks about stale or forgotten parallel work. Also triggers for `/wt-list [--stale]`.
-model: haiku
+model: sonnet
 allowed-tools: Bash Read Glob Grep
 argument-hint: "[--stale]"
 ---
