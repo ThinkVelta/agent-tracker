@@ -103,7 +103,7 @@ runs:
         mkdir -p "$HOME/.codex"
 
     - id: codex
-      uses: openai/codex-action@v1
+      uses: openai/codex-action@v1.12 # pinned: v1.13 restricts /run sockets with setfacl, which fails on GitHub-hosted runners
       with:
         openai-api-key: ${{ inputs.openai-api-key }}
         model: gpt-5.3-codex
