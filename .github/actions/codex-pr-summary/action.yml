@@ -42,7 +42,7 @@ runs:
     # are the summary itself. Feeding them back in would only invite the model
     # to summarize its own previous summary.
     - id: codex
-      uses: openai/codex-action@v1.12 # pinned: v1.13 restricts /run sockets with setfacl, which fails on GitHub-hosted runners
+      uses: openai/codex-action@86365089eb2b84e0a8fb0717b304f8bdcb13b20e # v1.12, pinned: v1.13 restricts /run sockets with setfacl, which fails on GitHub-hosted runners
       with:
         openai-api-key: ${{ inputs.openai-api-key }}
         model: gpt-5.3-codex
