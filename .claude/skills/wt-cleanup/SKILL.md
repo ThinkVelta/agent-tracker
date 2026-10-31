@@ -1,7 +1,7 @@
 ---
 name: wt-cleanup
 description: Batch cleanup of stale worktrees and orphaned branches. Use this when the user wants to tidy up, has accumulated worktrees over time, asks about old branches, or mentions cleaning up their workspace. Also triggers for `/wt-cleanup [--dry-run]`.
-model: haiku
+model: sonnet
 allowed-tools: Bash Read Glob Grep
 argument-hint: "[--dry-run]"
 ---

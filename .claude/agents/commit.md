@@ -2,7 +2,7 @@
 name: commit
 description: Cluster changes into logical commits and create Conventional Commits. Commits stay local — this agent never pushes.
 tools: Bash, Read, Glob, Grep
-model: haiku
+model: sonnet
 ---
 
 # Commit Agent

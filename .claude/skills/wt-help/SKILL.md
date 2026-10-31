@@ -1,7 +1,7 @@
 ---
 name: wt-help
 description: Answer common questions about working with worktrees — VSCode integration, gitignore, build artifacts, workflow tips. Use this when the user asks how worktrees work, why something looks different in their editor, how to see diffs, or has any question about the worktree setup. Also triggers for `/wt-help [topic]`.
-model: haiku
+model: sonnet
 allowed-tools: Bash Read Glob Grep
 argument-hint: "[question]"
 ---
