@@ -55,7 +55,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v7
         with:
           # Full history: the provenance check below asks whether the tagged
           # commit is an ancestor of main, which a shallow clone cannot answer.
